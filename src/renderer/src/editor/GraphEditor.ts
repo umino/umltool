@@ -1,0 +1,517 @@
+// X6 Graph のラッパ。プラグイン統合・シーケンス図の編集挙動・共通操作を提供する。
+
+import {
+  Graph,
+  History,
+  Scroller,
+  Selection,
+  Snapline,
+  Transform,
+  Export,
+  Clipboard
+} from '@antv/x6'
+import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
+import { ACTIVATION, LIFELINE, MESSAGE, SHAPE } from './constants'
+import {
+  applyLifelineGeometry,
+  getCellKind,
+  getMessageKind,
+  getMessageLabel,
+  getNodeLabel,
+  registerShapes,
+  setMessageLabel,
+  setNodeLabel
+} from './shapes'
+import { autoSizeNode } from './autosize'
+import { closeInlineEditor, openInlineEditor } from './inlineEditor'
+
+const ZOOM_MIN = 0.2
+const ZOOM_MAX = 8
+
+export type EditorMode = 'sequence' | 'activity'
+
+/** ドラッグ接続の端点になれるセル種別 */
+const CONNECTABLE_KINDS = new Set([
+  'lifeline',
+  'activation',
+  'action',
+  'decision',
+  'initial',
+  'final',
+  'fork',
+  'join'
+])
+
+export class GraphEditor {
+  readonly graph: Graph
+  private readonly scroller: Scroller
+  private normalizing = false
+  private mode: EditorMode = 'sequence'
+
+  constructor(container: HTMLElement) {
+    registerShapes()
+
+    // connecting.createEdge から参照するため先に宣言する
+    let graphRef: Graph | null = null
+
+    this.graph = new Graph({
+      container,
+      autoResize: true,
+      background: { color: '#fbfbfd' },
+      grid: { visible: true, size: 8 },
+      scaling: { min: ZOOM_MIN, max: ZOOM_MAX },
+      mousewheel: {
+        enabled: true,
+        modifiers: ['ctrl'],
+        zoomAtMousePosition: true,
+        factor: 1.1
+      },
+      connecting: {
+        snap: { radius: 24 },
+        allowBlank: false,
+        allowNode: true,
+        allowEdge: false,
+        allowLoop: true,
+        allowMulti: true,
+        highlight: true,
+        anchor: SHAPE.centerlineAnchor,
+        connectionPoint: 'anchor',
+        createEdge: () =>
+          this.mode === 'activity'
+            ? graphRef!.createEdge({ shape: SHAPE.flow, data: { kind: 'flow' } })
+            : graphRef!.createEdge({
+                shape: SHAPE.message,
+                data: { kind: 'message', msgKind: 'sync' }
+              }),
+        validateConnection: ({ sourceCell, targetCell }) => {
+          const ok = (c: Cell | null | undefined): boolean =>
+            CONNECTABLE_KINDS.has(getCellKind(c))
+          return ok(sourceCell) && ok(targetCell)
+        }
+      }
+    })
+    graphRef = this.graph
+
+    this.scroller = new Scroller({
+      enabled: true,
+      autoResize: true,
+      pannable: { enabled: true, eventTypes: ['leftMouseDown'] }
+    })
+    this.graph.use(this.scroller)
+    this.graph.use(
+      new Selection({
+        enabled: true,
+        multiple: true,
+        rubberband: true,
+        modifiers: 'shift',
+        movable: true,
+        showNodeSelectionBox: false
+      })
+    )
+    this.graph.use(new Snapline({ enabled: true, sharp: true }))
+    this.graph.use(new History({ enabled: true }))
+    this.graph.use(
+      new Transform({
+        resizing: {
+          enabled: (node: Node) => {
+            const kind = getCellKind(node)
+            return kind === 'lifeline' || kind === 'activation'
+          },
+          minWidth: (node: Node) => (getCellKind(node) === 'activation' ? 6 : 60),
+          minHeight: (node: Node) =>
+            getCellKind(node) === 'activation' ? 24 : LIFELINE.headHeight + 60,
+          preserveAspectRatio: false
+        },
+        rotating: false
+      })
+    )
+    this.graph.use(new Export())
+    this.graph.use(new Clipboard({ enabled: true }))
+
+    this.wireMiddleButtonPan(container)
+    this.wireSequenceBehavior()
+    this.wireInlineEditing()
+  }
+
+  // ---- ダブルクリックでラベル直接編集 ----
+
+  private wireInlineEditing(): void {
+    const graph = this.graph
+
+    graph.on('node:dblclick', ({ node }: { node: Node }) => {
+      const kind = getCellKind(node)
+      if (
+        kind !== 'lifeline' &&
+        kind !== 'action' &&
+        kind !== 'decision' &&
+        kind !== 'swimlane'
+      ) {
+        return
+      }
+      const bbox = node.getBBox()
+      // ラベルの位置: ライフライン/レーンはヘッダ中央、他はノード中央
+      const y =
+        kind === 'lifeline'
+          ? bbox.y + LIFELINE.headHeight / 2
+          : kind === 'swimlane'
+            ? bbox.y + 15
+            : bbox.y + bbox.height / 2
+      openInlineEditor(graph, {
+        x: bbox.x + bbox.width / 2,
+        y,
+        text: getNodeLabel(node),
+        fontSize: kind === 'decision' ? 12 : 13,
+        minWidth: Math.min(bbox.width, 200),
+        onCommit: (text) => {
+          setNodeLabel(node, text)
+          autoSizeNode(node, text)
+        }
+      })
+    })
+
+    graph.on(
+      'edge:dblclick',
+      ({ edge, e }: { edge: Edge; e: { clientX: number; clientY: number } }) => {
+        const kind = getCellKind(edge)
+        if (kind !== 'message' && kind !== 'flow') return
+        const p = graph.clientToLocal(e.clientX, e.clientY)
+        openInlineEditor(graph, {
+          x: p.x,
+          y: p.y - 10,
+          text: getMessageLabel(edge),
+          fontSize: 12,
+          onCommit: (text) => setMessageLabel(edge, text)
+        })
+      }
+    )
+
+    // 図の作り直しや読込時は編集を破棄する
+    graph.on('cell:removed', () => closeInlineEditor())
+  }
+
+  // ---- シーケンス図の編集挙動 ----
+
+  private wireSequenceBehavior(): void {
+    const graph = this.graph
+
+    // 選択したエッジに vertex ハンドル / 端点付け替えハンドルを出す
+    graph.on('edge:selected', ({ edge }: { edge: Edge }) => {
+      const kind = getCellKind(edge)
+      if (kind === 'message') {
+        edge.addTools([
+          { name: 'vertices', args: { addable: false, removable: false, snapRadius: 0 } },
+          { name: 'source-arrowhead' },
+          { name: 'target-arrowhead' }
+        ])
+      } else if (kind === 'flow') {
+        // フローは経由点の追加/削除も自由（直交ルーティングの調整用）
+        edge.addTools([
+          { name: 'vertices' },
+          { name: 'source-arrowhead' },
+          { name: 'target-arrowhead' }
+        ])
+      }
+    })
+    graph.on('edge:unselected', ({ edge }: { edge: Edge }) => {
+      edge.removeTools()
+    })
+
+    // 中央 vertex の X をライフライン間の中点へ正規化（上下ドラッグだけが効く操作感）
+    graph.on('edge:change:vertices', ({ edge }: { edge: Edge }) => {
+      this.normalizeMessage(edge)
+    })
+
+    // 端点の付け替え後も vertex を持たせて水平を保つ。
+    // フローはポート以外（ノード本体）への接続を midSide/boundary に揃える。
+    graph.on(
+      'edge:connected',
+      ({ edge, e }: { edge: Edge; e: { clientX: number; clientY: number } }) => {
+        const kind = getCellKind(edge)
+        if (kind === 'flow') {
+          for (const side of ['source', 'target'] as const) {
+            const terminal = side === 'source' ? edge.getSource() : edge.getTarget()
+            const t = terminal as { cell?: string; port?: string }
+            if (!t.cell || t.port) continue
+            const next = {
+              cell: t.cell,
+              anchor: { name: 'midSide' },
+              connectionPoint: { name: 'boundary' }
+            }
+            this.withNormalizing(() =>
+              side === 'source' ? edge.setSource(next) : edge.setTarget(next)
+            )
+          }
+          graph.select(edge)
+          return
+        }
+        if (kind !== 'message') return
+        if (edge.getVertices().length === 0) {
+          const p = graph.clientToLocal(e.clientX, e.clientY)
+          this.installMessageVertices(edge, p.y)
+        } else {
+          this.normalizeMessage(edge)
+        }
+        graph.select(edge)
+      }
+    )
+
+    // ノード移動: 実行仕様は親ライフラインの中心線に拘束。
+    // ライフライン/実行仕様の移動時は、接続メッセージの vertex を再正規化する。
+    graph.on('node:change:position', ({ node }: { node: Node }) => {
+      if (this.normalizing) return
+      const kind = getCellKind(node)
+      if (kind === 'activation') {
+        this.clampActivation(node)
+        this.renormalizeEdgesOf(node)
+      } else if (kind === 'lifeline') {
+        for (const child of node.getChildren() ?? []) {
+          if (getCellKind(child) === 'activation') this.clampActivation(child as Node)
+        }
+        this.renormalizeEdgesOf(node)
+      }
+    })
+
+    // リサイズ: 活性化バーは中心線に再センタリング（横幅は自由）、
+    // ライフラインは中心線が動くので接続を再正規化
+    graph.on('node:change:size', ({ node }: { node: Node }) => {
+      if (this.normalizing) return
+      const kind = getCellKind(node)
+      if (kind === 'activation') {
+        this.clampActivation(node)
+      } else if (kind === 'lifeline') {
+        this.withNormalizing(() => applyLifelineGeometry(node))
+        this.renormalizeEdgesOf(node)
+      }
+    })
+  }
+
+  /** メッセージに中央 vertex（自己メッセージはループ vertex）を設定する */
+  installMessageVertices(edge: Edge, y: number): void {
+    const src = edge.getSourceCell()
+    const tgt = edge.getTargetCell()
+    if (!src || !tgt) return
+    this.withNormalizing(() => {
+      if (src.id === tgt.id) {
+        const cx = centerXOf(src)
+        edge.setVertices([
+          { x: cx + MESSAGE.selfWidth, y },
+          { x: cx + MESSAGE.selfWidth, y: y + MESSAGE.selfHeight }
+        ])
+        edge.setData({ ...edge.getData(), msgKind: 'self' })
+      } else {
+        edge.setVertices([{ x: (centerXOf(src) + centerXOf(tgt)) / 2, y }])
+      }
+    })
+  }
+
+  /** vertex の X を正規化する（通常: 中点固定 / 自己: 右張り出し位置固定） */
+  private normalizeMessage(edge: Edge): void {
+    if (this.normalizing) return
+    if (getCellKind(edge) !== 'message') return
+    const src = edge.getSourceCell()
+    const tgt = edge.getTargetCell()
+    if (!src || !tgt) return
+    const vertices = edge.getVertices()
+    if (vertices.length === 0) return
+
+    if (src.id === tgt.id || getMessageKind(edge) === 'self') {
+      const wantX = centerXOf(src) + MESSAGE.selfWidth
+      const needs = vertices.some((v) => Math.abs(v.x - wantX) > 0.5)
+      if (needs) {
+        this.withNormalizing(() =>
+          edge.setVertices(vertices.map((v) => ({ x: wantX, y: v.y })))
+        )
+      }
+      return
+    }
+
+    const midX = (centerXOf(src) + centerXOf(tgt)) / 2
+    const v = vertices[0]
+    if (Math.abs(v.x - midX) > 0.5 || vertices.length > 1) {
+      this.withNormalizing(() => edge.setVertices([{ x: midX, y: v.y }]))
+    }
+  }
+
+  /** ノード（とその子）に接続されたメッセージを再正規化する */
+  private renormalizeEdgesOf(node: Node): void {
+    const targets: Cell[] = [node, ...(node.getChildren() ?? [])]
+    const seen = new Set<string>()
+    for (const cell of targets) {
+      for (const edge of this.graph.model.getConnectedEdges(cell)) {
+        if (seen.has(edge.id)) continue
+        seen.add(edge.id)
+        this.normalizeMessage(edge)
+      }
+    }
+  }
+
+  /** 実行仕様を親ライフラインの中心線上・生存線範囲内に収める */
+  private clampActivation(node: Node): void {
+    const parent = node.getParent()
+    if (!parent || getCellKind(parent) !== 'lifeline') return
+    const pb = (parent as Node).getBBox()
+    const size = node.getSize()
+    const pos = node.getPosition()
+    const wantX = pb.x + pb.width / 2 - size.width / 2
+    const minY = pb.y + LIFELINE.headHeight + 4
+    const maxY = pb.y + pb.height - size.height
+    const wantY = Math.min(Math.max(pos.y, minY), Math.max(minY, maxY))
+    if (Math.abs(pos.x - wantX) > 0.5 || Math.abs(pos.y - wantY) > 0.5) {
+      this.withNormalizing(() => node.setPosition(wantX, wantY))
+    }
+  }
+
+  private withNormalizing(fn: () => void): void {
+    const prev = this.normalizing
+    this.normalizing = true
+    try {
+      fn()
+    } finally {
+      this.normalizing = prev
+    }
+  }
+
+  // ---- 中ボタンドラッグでパン ----
+
+  private wireMiddleButtonPan(container: HTMLElement): void {
+    container.addEventListener('mousedown', (e) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      const sc = this.scroller.container
+      const start = { x: e.clientX, y: e.clientY, left: sc.scrollLeft, top: sc.scrollTop }
+      const onMove = (me: MouseEvent): void => {
+        sc.scrollLeft = start.left - (me.clientX - start.x)
+        sc.scrollTop = start.top - (me.clientY - start.y)
+      }
+      const onUp = (): void => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    })
+  }
+
+  // ---- 共通操作 ----
+
+  /** 図種別モード（ドラッグ接続で作られるエッジの種類が変わる） */
+  setMode(mode: EditorMode): void {
+    this.mode = mode
+  }
+
+  getMode(): EditorMode {
+    return this.mode
+  }
+
+  batch(fn: () => void): void {
+    this.graph.batchUpdate(fn)
+  }
+
+  clear(): void {
+    this.graph.clearCells()
+    this.graph.cleanHistory()
+  }
+
+  fit(): void {
+    this.graph.zoomToFit({ padding: 24, maxScale: 1 })
+    this.scroller.centerContent()
+  }
+
+  zoomIn(): void {
+    this.graph.zoom(0.15)
+  }
+
+  zoomOut(): void {
+    this.graph.zoom(-0.15)
+  }
+
+  zoomActual(): void {
+    this.graph.zoomTo(1)
+  }
+
+  undo(): void {
+    if (this.graph.canUndo()) this.graph.undo()
+  }
+
+  redo(): void {
+    if (this.graph.canRedo()) this.graph.redo()
+  }
+
+  deleteSelection(): void {
+    const cells = this.graph.getSelectedCells()
+    if (cells.length > 0) this.graph.removeCells(cells)
+  }
+
+  /** 選択セルをコピー（子・両端が含まれるエッジも一緒に）。対象が無ければ false */
+  copySelection(): boolean {
+    const cells = this.graph.getSelectedCells()
+    if (cells.length === 0) return false
+    this.graph.copy(cells, { deep: true })
+    return true
+  }
+
+  cutSelection(): boolean {
+    const cells = this.graph.getSelectedCells()
+    if (cells.length === 0) return false
+    this.graph.cut(cells, { deep: true })
+    return true
+  }
+
+  /** クリップボードの内容を少しずらして貼り付け、貼り付けたセルを選択する */
+  pasteClipboard(): Cell[] {
+    if (this.graph.isClipboardEmpty()) return []
+    const cells = this.graph.paste({ offset: { dx: 24, dy: 24 } })
+    if (cells.length > 0) {
+      this.graph.resetSelection(cells)
+      this.ensureCellVisible(cells[0])
+    }
+    return cells
+  }
+
+  selectAll(): void {
+    this.graph.resetSelection(this.graph.getCells())
+  }
+
+  isSelectionEmpty(): boolean {
+    return this.graph.getSelectedCells().length === 0
+  }
+
+  /** 読込・生成後にスクロール領域を内容に合わせる */
+  refreshScrollArea(): void {
+    this.scroller.updateScroller()
+  }
+
+  /** 現在表示中の領域の中心（ローカル座標） */
+  getVisibleCenter(): { x: number; y: number } {
+    const area = this.scroller.getVisibleArea()
+    return { x: area.x + area.width / 2, y: area.y + area.height / 2 }
+  }
+
+  /** セルが画面外なら見える位置までスクロールする */
+  ensureCellVisible(cell: Cell): void {
+    if (!this.scroller.isCellVisible(cell)) this.scroller.scrollToCell(cell)
+  }
+
+  onSelectionChange(handler: (cells: Cell[]) => void): void {
+    this.graph.on('selection:changed', ({ selected }: { selected: Cell[] }) => {
+      handler(selected)
+    })
+  }
+
+  onModelChange(handler: () => void): void {
+    this.graph.on('cell:added', handler)
+    this.graph.on('cell:removed', handler)
+    this.graph.on('cell:changed', handler)
+  }
+
+  dispose(): void {
+    this.graph.dispose()
+  }
+}
+
+function centerXOf(cell: Cell): number {
+  const bbox = (cell as Node).getBBox()
+  return bbox.x + bbox.width / 2
+}
+
+export type { Cell, Edge, EdgeView, Node }

@@ -1,0 +1,207 @@
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --border: #d6d9de;
+  --accent: #2d6cdf;
+  --text: #1d2330;
+  --muted: #6b7280;
+  font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  color: var(--text);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+#toolbar .group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding-right: 8px;
+  margin-right: 4px;
+  border-right: 1px solid var(--border);
+}
+
+#toolbar .group:last-child {
+  border-right: none;
+}
+
+#toolbar button {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#toolbar button:hover {
+  background: #eef2fb;
+  border-color: var(--accent);
+}
+
+#toolbar .label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+#workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px 1fr 260px;
+  min-height: 0;
+}
+
+#text-pane,
+#props-pane {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#text-pane {
+  border-right: 1px solid var(--border);
+  padding: 8px;
+}
+
+#props-pane {
+  border-left: 1px solid var(--border);
+  padding: 8px;
+}
+
+.pane-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+#text-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: "Consolas", "Cascadia Code", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#generate-btn {
+  margin-top: 8px;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#generate-btn:hover {
+  background: #245ac0;
+}
+
+.text-error {
+  color: #c0392b;
+  font-size: 12px;
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
+
+#canvas-pane {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#graph-container {
+  position: absolute;
+  inset: 0;
+  background: #fbfbfd;
+  cursor: default;
+  outline: none;
+}
+
+#props-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+#props-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#props-body input,
+#props-body select,
+#props-body textarea {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 6px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+}
+
+#props-body textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
+#props-body .empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* アクティビティ図の接続ポート: ノードにホバーしたときだけ見せる */
+.x6-node .x6-port-body {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.x6-node:hover .x6-port-body {
+  opacity: 1;
+}
+
+#statusbar {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}

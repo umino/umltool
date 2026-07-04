@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+*.log
+*.tsbuildinfo
+diag-output*.png
+diag-output*.svg
+.claude/
+.DS_Store
