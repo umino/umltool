@@ -1,19 +1,30 @@
 import type { Cell, Edge, Node } from '@antv/x6'
 import type { GraphEditor } from '../editor/GraphEditor'
 import { autoSizeNode } from '../editor/autosize'
+import { addFragmentDivider } from '../editor/sequence'
 import {
   getCellKind,
+  getDividerGuard,
+  getFragmentGuard,
+  getFragmentOperator,
   getMessageKind,
   getMessageLabel,
   getNodeLabel,
+  setDividerGuard,
+  setFragmentGuard,
+  setFragmentOperator,
   setMessageKind,
   setMessageLabel,
   setNodeLabel
 } from '../editor/shapes'
 import {
   ACTIVITY_KIND_LABEL,
+  DIVIDABLE_OPERATORS,
+  FRAGMENT,
+  FRAGMENT_OPERATORS,
   MESSAGE_KIND_LABEL,
   type CellKind,
+  type FragmentOperator,
   type MessageKind
 } from '../editor/constants'
 
@@ -69,6 +80,55 @@ export class PropertiesPanel {
           autoSizeNode(cell as Node, value)
         })
       )
+      return
+    }
+
+    if (kind === 'fragment') {
+      const node = cell as Node
+      this.host.appendChild(
+        operatorSelect(getFragmentOperator(node), (op) => {
+          setFragmentOperator(node, op)
+          this.render([node])
+        })
+      )
+      this.host.appendChild(
+        labelInput('条件（ガード）', getFragmentGuard(node), (value) => {
+          setFragmentGuard(node, value)
+        })
+      )
+      if (DIVIDABLE_OPERATORS.includes(getFragmentOperator(node))) {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.textContent = '＋区切り線を追加'
+        btn.title = '破線の区切り線を追加（上下にドラッグで移動、Delete で削除）'
+        btn.addEventListener('click', () => {
+          const bbox = node.getBBox()
+          const dividers = (node.getChildren() ?? []).filter(
+            (c) => getCellKind(c) === 'divider'
+          )
+          // 最後の区切り線（無ければタブ下端）と下端の中間に置く
+          const base =
+            dividers.length > 0
+              ? Math.max(...dividers.map((d) => (d as Node).getBBox().y))
+              : bbox.y + FRAGMENT.tabHeight
+          const y = (base + bbox.y + bbox.height) / 2
+          addFragmentDivider(this.editor.graph, node, y)
+        })
+        this.host.appendChild(btn)
+      }
+      this.host.appendChild(
+        hint('枠線をドラッグで移動、選択してハンドルでリサイズできます。')
+      )
+      return
+    }
+
+    if (kind === 'divider') {
+      this.host.appendChild(
+        labelInput('条件（ガード）', getDividerGuard(cell as Node), (value) => {
+          setDividerGuard(cell as Node, value)
+        })
+      )
+      this.host.appendChild(hint('上下にドラッグで移動、Delete で削除できます。'))
       return
     }
 
@@ -133,6 +193,12 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
     case 'message':
       text = MESSAGE_KIND_LABEL[getMessageKind(cell)]
       break
+    case 'fragment':
+      text = `フラグメント (${getFragmentOperator(cell as Node)})`
+      break
+    case 'divider':
+      text = '区切り線'
+      break
     case 'action':
     case 'decision':
     case 'merge':
@@ -170,6 +236,25 @@ function labelInput(
   input.addEventListener('input', syncRows)
   input.addEventListener('change', () => onCommit(input.value))
   wrap.appendChild(input)
+  return wrap
+}
+
+function operatorSelect(
+  value: FragmentOperator,
+  onChange: (op: FragmentOperator) => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = '種別'
+  const select = document.createElement('select')
+  for (const op of FRAGMENT_OPERATORS) {
+    const opt = document.createElement('option')
+    opt.value = op
+    opt.textContent = op
+    if (op === value) opt.selected = true
+    select.appendChild(opt)
+  }
+  select.addEventListener('change', () => onChange(select.value as FragmentOperator))
+  wrap.appendChild(select)
   return wrap
 }
 

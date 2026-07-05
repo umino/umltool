@@ -11,14 +11,19 @@ import {
   Clipboard
 } from '@antv/x6'
 import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
-import { ACTIVATION, LIFELINE, MESSAGE, SHAPE } from './constants'
+import { ACTIVATION, FRAGMENT, LIFELINE, MESSAGE, SHAPE } from './constants'
 import {
+  applyDividerGeometry,
   applyLifelineGeometry,
   getCellKind,
+  getDividerGuard,
+  getFragmentGuard,
   getMessageKind,
   getMessageLabel,
   getNodeLabel,
   registerShapes,
+  setDividerGuard,
+  setFragmentGuard,
   setMessageLabel,
   setNodeLabel
 } from './shapes'
@@ -116,16 +121,25 @@ export class GraphEditor {
         resizing: {
           enabled: (node: Node) => {
             const kind = getCellKind(node)
-            return kind === 'lifeline' || kind === 'activation' || kind === 'swimlane'
+            return (
+              kind === 'lifeline' ||
+              kind === 'activation' ||
+              kind === 'swimlane' ||
+              kind === 'fragment'
+            )
           },
           minWidth: (node: Node) => {
             const kind = getCellKind(node)
-            return kind === 'activation' ? 6 : kind === 'swimlane' ? 120 : 60
+            if (kind === 'activation') return 6
+            if (kind === 'swimlane') return 120
+            if (kind === 'fragment') return FRAGMENT.minWidth
+            return 60
           },
           minHeight: (node: Node) => {
             const kind = getCellKind(node)
             if (kind === 'activation') return 24
             if (kind === 'swimlane') return 80
+            if (kind === 'fragment') return FRAGMENT.minHeight
             return LIFELINE.headHeight + 60
           },
           preserveAspectRatio: false
@@ -148,6 +162,21 @@ export class GraphEditor {
 
     graph.on('node:dblclick', ({ node }: { node: Node }) => {
       const kind = getCellKind(node)
+      // フラグメント/区切り線はガード（条件）を編集する
+      if (kind === 'fragment' || kind === 'divider') {
+        const bbox = node.getBBox()
+        const isFragment = kind === 'fragment'
+        openInlineEditor(graph, {
+          x: bbox.x + FRAGMENT.tabWidth + 60,
+          y: bbox.y + (isFragment ? FRAGMENT.tabHeight / 2 : 0),
+          text: isFragment ? getFragmentGuard(node) : getDividerGuard(node),
+          fontSize: 11,
+          minWidth: 120,
+          onCommit: (text) =>
+            isFragment ? setFragmentGuard(node, text) : setDividerGuard(node, text)
+        })
+        return
+      }
       if (
         kind !== 'lifeline' &&
         kind !== 'action' &&
@@ -265,6 +294,7 @@ export class GraphEditor {
 
     // ノード移動: 実行仕様は親ライフラインの中心線に拘束。
     // ライフライン/実行仕様の移動時は、接続メッセージの vertex を再正規化する。
+    // フラグメントの区切り線は親フラグメント内で上下移動のみ。
     graph.on('node:change:position', ({ node }: { node: Node }) => {
       if (this.normalizing) return
       const kind = getCellKind(node)
@@ -276,11 +306,14 @@ export class GraphEditor {
           if (getCellKind(child) === 'activation') this.clampActivation(child as Node)
         }
         this.renormalizeEdgesOf(node)
+      } else if (kind === 'divider') {
+        this.clampDivider(node)
       }
     })
 
     // リサイズ: 活性化バーは中心線に再センタリング（横幅は自由）、
-    // ライフラインは中心線が動くので接続を再正規化
+    // ライフラインは中心線が動くので接続を再正規化。
+    // フラグメントは区切り線の幅を追従させる。
     graph.on('node:change:size', ({ node }: { node: Node }) => {
       if (this.normalizing) return
       const kind = getCellKind(node)
@@ -289,6 +322,8 @@ export class GraphEditor {
       } else if (kind === 'lifeline') {
         this.withNormalizing(() => applyLifelineGeometry(node))
         this.renormalizeEdgesOf(node)
+      } else if (kind === 'fragment') {
+        this.syncFragmentDividers(node)
       }
     })
   }
@@ -366,6 +401,35 @@ export class GraphEditor {
     const wantY = Math.min(Math.max(pos.y, minY), Math.max(minY, maxY))
     if (Math.abs(pos.x - wantX) > 0.5 || Math.abs(pos.y - wantY) > 0.5) {
       this.withNormalizing(() => node.setPosition(wantX, wantY))
+    }
+  }
+
+  /** 区切り線を親フラグメントの幅いっぱい・縦範囲内に収める */
+  private clampDivider(node: Node): void {
+    const parent = node.getParent()
+    if (!parent || getCellKind(parent) !== 'fragment') return
+    const pb = (parent as Node).getBBox()
+    const size = node.getSize()
+    const pos = node.getPosition()
+    const minY = pb.y + FRAGMENT.tabHeight + 6
+    const maxY = pb.y + pb.height - size.height - 6
+    const wantY = Math.min(Math.max(pos.y, minY), Math.max(minY, maxY))
+    if (Math.abs(pos.x - pb.x) > 0.5 || Math.abs(pos.y - wantY) > 0.5) {
+      this.withNormalizing(() => node.setPosition(pb.x, wantY))
+    }
+  }
+
+  /** フラグメントのリサイズに区切り線の幅・位置を追従させる */
+  private syncFragmentDividers(node: Node): void {
+    for (const child of node.getChildren() ?? []) {
+      if (getCellKind(child) !== 'divider') continue
+      const divider = child as Node
+      const pb = node.getBBox()
+      this.withNormalizing(() => {
+        divider.resize(pb.width, divider.getSize().height)
+        applyDividerGeometry(divider)
+      })
+      this.clampDivider(divider)
     }
   }
 
@@ -447,7 +511,17 @@ export class GraphEditor {
 
   deleteSelection(): void {
     const cells = this.graph.getSelectedCells()
-    if (cells.length > 0) this.graph.removeCells(cells)
+    if (cells.length === 0) return
+    // graph.removeCells は子孫を消さないため、明示的に集めて一緒に削除する
+    // （フラグメントの区切り線、ライフラインの活性化バーなど）
+    const toRemove = new Map<string, Cell>()
+    const collect = (cell: Cell): void => {
+      if (toRemove.has(cell.id)) return
+      toRemove.set(cell.id, cell)
+      for (const child of cell.getChildren() ?? []) collect(child)
+    }
+    for (const cell of cells) collect(cell)
+    this.graph.removeCells([...toRemove.values()])
   }
 
   /** 選択セルをコピー（子・両端が含まれるエッジも一緒に）。対象が無ければ false */

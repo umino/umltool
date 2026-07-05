@@ -1,5 +1,5 @@
 import type { Node } from '@antv/x6'
-import { addLifeline, addMessage } from '../editor/sequence'
+import { addFragment, addFragmentDivider, addLifeline, addMessage } from '../editor/sequence'
 import type { GraphEditor } from '../editor/GraphEditor'
 import { layoutSequence } from './autoLayout'
 import { parseSequence } from './sequenceParser'
@@ -32,6 +32,18 @@ export function buildSequenceFromText(editor: GraphEditor, text: string): void {
       if (!source || !target) return
       addMessage(graph, source, target, msg.kind, msg.label, { y: layout.messages[i].y })
     })
+
+    for (const f of layout.fragments) {
+      const node = addFragment(graph, f.operator, f.guard, {
+        x: f.x,
+        y: f.y,
+        width: f.width,
+        height: f.height
+      })
+      for (const d of f.dividers) {
+        addFragmentDivider(graph, node, d.y, d.guard)
+      }
+    }
   })
 
   editor.fit()

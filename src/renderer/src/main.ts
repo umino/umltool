@@ -1,13 +1,21 @@
 import './styles.css'
 import type { Node } from '@antv/x6'
 import { GraphEditor } from './editor/GraphEditor'
-import { addActivation, addLifeline, addMessage, nextMessageY } from './editor/sequence'
+import {
+  addActivation,
+  addFragment,
+  addFragmentDivider,
+  addLifeline,
+  addMessage,
+  nextMessageY
+} from './editor/sequence'
 import { addActivityNode, addFlow, addSwimlane } from './editor/activity'
 import { resolveConnectionEndpoints } from './editor/connect'
 import { getCellKind } from './editor/shapes'
 import {
   ACTIVATION,
   ACTIVITY,
+  FRAGMENT,
   LIFELINE,
   MESSAGE,
   SHAPE,
@@ -27,8 +35,12 @@ participant サーバー
 
 ユーザー -> ブラウザ : URLを入力
 ブラウザ -> サーバー : HTTPリクエスト
-サーバー -> サーバー : 認証チェック
-サーバー --> ブラウザ : HTMLを返す
+alt 認証OK
+  サーバー -> サーバー : セッション発行
+  サーバー --> ブラウザ : HTMLを返す
+else 認証NG
+  サーバー --> ブラウザ : エラーページ
+end
 ブラウザ --> ユーザー : ページを表示`
 
 const SAMPLE_ACTIVITY = `start
@@ -73,6 +85,7 @@ class AppController {
       setDiagramType: (t) => void this.switchDiagramType(t),
       addLifeline: () => this.addLifeline(),
       addExecutionSpec: () => this.addExecutionSpec(),
+      addFragment: () => this.addFragment(),
       addConnection: () => this.addConnection(),
       addActivityNode: (kind) => this.addActivityNode(kind),
       addSwimlane: () => this.addSwimlane(),
@@ -301,6 +314,32 @@ class AppController {
         roundtripError = (e as Error).message
       }
 
+      // フラグメントの検証（サンプル DSL の alt/else。roundtrip 後のグラフに対して）
+      const fragment: Record<string, unknown> = {}
+      try {
+        const frag = graph.getNodes().find((n) => getCellKind(n) === 'fragment')
+        const divs = (frag?.getChildren() ?? []).filter((c) => getCellKind(c) === 'divider')
+        fragment['roundtrip'] = frag ? 'ok' : 'ng(no fragment after roundtrip)'
+        fragment['dividers'] = divs.length === 1 ? 'ok' : `ng(${divs.length})`
+        if (frag) {
+          // 枠がメッセージ帯を覆っているか（alt 内の 3 本の vertex y が枠内）
+          const fb = frag.getBBox()
+          const inner = graph
+            .getEdges()
+            .flatMap((e) => e.getVertices())
+            .filter((v) => v.y > fb.y && v.y < fb.y + fb.height)
+          fragment['covers'] = inner.length >= 3 ? 'ok' : `ng(${inner.length})`
+          // フラグメント削除（アプリの削除経路）で区切り線も一緒に消えるか
+          const divId = divs[0]?.id
+          graph.resetSelection(frag)
+          this.editor.deleteSelection()
+          fragment['removeWithChildren'] =
+            divId && !graph.getCellById(divId) ? 'ok' : 'ng(divider remains)'
+        }
+      } catch (e) {
+        fragment['error'] = (e as Error).message
+      }
+
       // アクティビティ図: 生成・書き出し・ラウンドトリップ検証
       // （最後に実行し、DIAG-PNG にアクティビティ図が写るようにする）
       const activity: Record<string, unknown> = {}
@@ -448,6 +487,7 @@ class AppController {
         roundtripVertices,
         roundtripEdges,
         roundtripError,
+        fragment,
         activity
       }
     }
@@ -536,6 +576,29 @@ class AppController {
     if (created) {
       graph.resetSelection(created)
       this.editor.ensureCellVisible(created)
+    }
+  }
+
+  // ---- 複合フラグメント追加 ----
+  private addFragment(): void {
+    const graph = this.editor.graph
+    const c = this.editor.getVisibleCenter()
+    let created: Node | null = null
+    this.editor.batch(() => {
+      created = addFragment(graph, 'alt', '条件', {
+        x: c.x - FRAGMENT.defaultWidth / 2,
+        y: c.y - FRAGMENT.defaultHeight / 2,
+        width: FRAGMENT.defaultWidth,
+        height: FRAGMENT.defaultHeight
+      })
+      addFragmentDivider(graph, created, c.y + FRAGMENT.tabHeight / 2)
+    })
+    if (created) {
+      graph.resetSelection(created)
+      this.editor.ensureCellVisible(created)
+      this.setStatusMessage(
+        'フラグメントを追加しました。種別・条件は右パネル、位置は枠線ドラッグで調整できます。'
+      )
     }
   }
 

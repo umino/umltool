@@ -10,6 +10,7 @@ export interface ToolbarActions {
   setDiagramType: (type: ToolbarDiagramType) => void
   addLifeline: () => void
   addExecutionSpec: () => void
+  addFragment: () => void
   addConnection: () => void
   addActivityNode: (kind: ActivityNodeKind) => void
   addSwimlane: () => void
@@ -87,7 +88,12 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
       '選択したライフラインに活性化バー（実行仕様）を追加',
       actions.addExecutionSpec
     ),
-    button('＋メッセージ', connectTitle, actions.addConnection)
+    button('＋メッセージ', connectTitle, actions.addConnection),
+    button(
+      '＋フラグメント',
+      '複合フラグメント（alt/opt/loop 等）を追加。種別は右パネルで変更',
+      actions.addFragment
+    )
   )
   host.appendChild(seqGroup)
 

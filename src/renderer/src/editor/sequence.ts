@@ -1,8 +1,23 @@
 // シーケンス図の図形ファクトリ
 
 import type { Edge, Graph, Node } from '@antv/x6'
-import { ACTIVATION, LIFELINE, MESSAGE, SHAPE, type MessageKind } from './constants'
-import { applyLifelineGeometry, messageLineAttrs, setMessageLabel } from './shapes'
+import {
+  ACTIVATION,
+  FRAGMENT,
+  LIFELINE,
+  MESSAGE,
+  SHAPE,
+  type FragmentOperator,
+  type MessageKind
+} from './constants'
+import {
+  applyDividerGeometry,
+  applyLifelineGeometry,
+  messageLineAttrs,
+  setDividerGuard,
+  setFragmentGuard,
+  setMessageLabel
+} from './shapes'
 import { autoSizeNode } from './autosize'
 
 export interface LifelineOptions {
@@ -83,6 +98,57 @@ export function addMessage(
 function centerX(node: Node): number {
   const bbox = node.getBBox()
   return bbox.x + bbox.width / 2
+}
+
+export interface FragmentRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** 複合フラグメント（alt/opt/loop など）を追加する。中身は透過の枠 */
+export function addFragment(
+  graph: Graph,
+  operator: FragmentOperator,
+  guard: string,
+  rect: FragmentRect
+): Node {
+  const node = graph.addNode({
+    shape: SHAPE.fragment,
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    attrs: { label: { text: operator } },
+    data: { kind: 'fragment', operator },
+    zIndex: 10
+  })
+  setFragmentGuard(node, guard)
+  return node
+}
+
+/** フラグメントに区切り線（破線）を子として追加する。y は線の中心（絶対座標） */
+export function addFragmentDivider(
+  graph: Graph,
+  fragment: Node,
+  y: number,
+  guard = ''
+): Node {
+  const bbox = fragment.getBBox()
+  const node = graph.addNode({
+    shape: SHAPE.fragmentDivider,
+    x: bbox.x,
+    y: y - FRAGMENT.dividerHeight / 2,
+    width: bbox.width,
+    height: FRAGMENT.dividerHeight,
+    data: { kind: 'divider' },
+    zIndex: 11
+  })
+  setDividerGuard(node, guard)
+  applyDividerGeometry(node)
+  fragment.addChild(node)
+  return node
 }
 
 /** 次に追加するメッセージの y（既存メッセージの下、ライフライン範囲内） */

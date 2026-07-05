@@ -56,6 +56,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - **Reconnect**: select a message and drag an endpoint handle to another lifeline
 - **Kinds**: synchronous (solid line, filled arrow) / asynchronous (solid, open arrow) / return (dashed, open arrow) / self (loop) — switch in the right panel
 - **Activation bars (execution specifications)**: toolbar "＋活性化バー". Constrained to the lifeline's center line; movable vertically and resizable in both directions
+- **Combined fragments**: toolbar "＋フラグメント". Change the operator (alt / opt / loop / break / par / seq / strict / critical) and guard in the right panel; double-click also edits the guard. Drag the border to move, select to resize. For alt / par, use "＋区切り線を追加" in the right panel to add dashed separators (drag vertically to move, Delete to remove)
 
 ### Activity diagrams
 
@@ -79,7 +80,15 @@ User -> Server : synchronous message
 User ->> Server : asynchronous message
 Server --> User : return
 Server -> Server : self message
+alt authenticated
+  Server --> User : success
+else rejected
+  Server --> User : failure
+end
 ```
+
+Combined fragments: `alt` / `opt` / `loop` / `break` / `par` / `seq` / `strict` / `critical` (closed with `end`, nestable).
+Dashed separators via `else` are available inside `alt` / `par`.
 
 ### Activity diagrams
 

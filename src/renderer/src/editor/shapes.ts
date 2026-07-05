@@ -12,10 +12,12 @@ import {
   ACTIVATION,
   ACTIVITY,
   FONT_FAMILY,
+  FRAGMENT,
   LIFELINE,
   MESSAGE,
   SHAPE,
   type CellKind,
+  type FragmentOperator,
   type MessageKind,
   type UmlCellData
 } from './constants'
@@ -163,6 +165,106 @@ export function registerShapes(): void {
         },
         position: { distance: 0.5, offset: { x: 0, y: -6 } }
       }
+    },
+    true
+  )
+
+  // ---- 複合フラグメント（alt/opt/loop など） ----
+  // 中身は透過でクリックが通り、枠線（透明の太い当たり）とタブで掴んで動かす。
+  Graph.registerNode(
+    SHAPE.fragment,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'rect', selector: 'hit' },
+        { tagName: 'path', selector: 'tab' },
+        { tagName: 'text', selector: 'label' },
+        { tagName: 'text', selector: 'guard' }
+      ],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          fill: 'none',
+          stroke: COLOR.lifeline,
+          strokeWidth: 1.4,
+          pointerEvents: 'none'
+        },
+        hit: {
+          refWidth: '100%',
+          refHeight: '100%',
+          fill: 'none',
+          stroke: 'transparent',
+          strokeWidth: 10,
+          pointerEvents: 'stroke',
+          cursor: 'move'
+        },
+        tab: {
+          d: `M 0 0 H ${FRAGMENT.tabWidth} V ${FRAGMENT.tabHeight - 8} L ${FRAGMENT.tabWidth - 10} ${FRAGMENT.tabHeight} H 0 Z`,
+          fill: COLOR.headFill,
+          stroke: COLOR.lifeline,
+          strokeWidth: 1.4,
+          cursor: 'move'
+        },
+        label: {
+          x: FRAGMENT.tabWidth / 2 - 4,
+          y: FRAGMENT.tabHeight / 2 - 1,
+          textAnchor: 'middle',
+          textVerticalAnchor: 'middle',
+          fontSize: 11,
+          fontWeight: 700,
+          fontFamily: FONT_FAMILY,
+          fill: COLOR.stroke,
+          pointerEvents: 'none'
+        },
+        guard: {
+          x: FRAGMENT.tabWidth + 8,
+          y: FRAGMENT.tabHeight / 2 - 1,
+          textAnchor: 'start',
+          textVerticalAnchor: 'middle',
+          fontSize: 11,
+          fontFamily: FONT_FAMILY,
+          fill: COLOR.stroke,
+          pointerEvents: 'none'
+        }
+      }
+    },
+    true
+  )
+
+  // フラグメントの区切り線（破線）。フラグメントの子として上下ドラッグで動かす
+  Graph.registerNode(
+    SHAPE.fragmentDivider,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'hit' },
+        { tagName: 'line', selector: 'line' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: mergeAttrs(
+        {
+          hit: {
+            fill: 'transparent',
+            stroke: 'none',
+            cursor: 'row-resize'
+          },
+          line: {
+            stroke: COLOR.lifeline,
+            strokeWidth: 1.2,
+            strokeDasharray: '6 4',
+            pointerEvents: 'none'
+          },
+          label: {
+            textAnchor: 'start',
+            textVerticalAnchor: 'bottom',
+            fontSize: 11,
+            fontFamily: FONT_FAMILY,
+            fill: COLOR.stroke,
+            pointerEvents: 'none'
+          }
+        },
+        dividerGeometryAttrs(FRAGMENT.defaultWidth, FRAGMENT.dividerHeight)
+      )
     },
     true
   )
@@ -509,6 +611,30 @@ export function lifelineGeometryAttrs(
   }
 }
 
+/** 区切り線のサイズ依存ジオメトリ属性（生成時・リサイズ時に適用する） */
+export function dividerGeometryAttrs(
+  width: number,
+  height: number
+): Record<string, Record<string, number>> {
+  const cy = height / 2
+  return {
+    hit: { x: 0, y: 0, width, height },
+    line: { x1: 0, y1: cy, x2: width, y2: cy },
+    label: { x: 8, y: cy - 3 }
+  }
+}
+
+/** 区切り線の現在サイズにジオメトリ属性を合わせる */
+export function applyDividerGeometry(node: Node): void {
+  const size = node.getSize()
+  const attrs = dividerGeometryAttrs(size.width, size.height)
+  for (const [selector, values] of Object.entries(attrs)) {
+    for (const [name, value] of Object.entries(values)) {
+      node.attr(`${selector}/${name}`, value)
+    }
+  }
+}
+
 /** ライフラインの現在サイズにジオメトリ属性を合わせる */
 export function applyLifelineGeometry(node: Node): void {
   const size = node.getSize()
@@ -606,6 +732,40 @@ export function getNodeLabel(node: Node): string {
 
 export function setNodeLabel(node: Node, text: string): void {
   node.attr('label/text', text)
+}
+
+// ---- 複合フラグメント ----
+
+export function getFragmentOperator(node: Node): FragmentOperator {
+  const data = node.getData<UmlCellData>()
+  return data?.operator ?? 'alt'
+}
+
+export function setFragmentOperator(node: Node, operator: FragmentOperator): void {
+  node.setData({ ...(node.getData<UmlCellData>() ?? { kind: 'fragment' }), operator })
+  node.attr('label/text', operator)
+}
+
+/** フラグメントのガード（条件）文字列。表示は "[条件]" */
+export function getFragmentGuard(node: Node): string {
+  const v = node.attr('guard/text')
+  const text = typeof v === 'string' ? v : ''
+  return text.replace(/^\[/, '').replace(/\]$/, '')
+}
+
+export function setFragmentGuard(node: Node, guard: string): void {
+  node.attr('guard/text', guard === '' ? '' : `[${guard}]`)
+}
+
+/** 区切り線のガード（条件）文字列。表示は "[条件]" */
+export function getDividerGuard(node: Node): string {
+  const v = node.attr('label/text')
+  const text = typeof v === 'string' ? v : ''
+  return text.replace(/^\[/, '').replace(/\]$/, '')
+}
+
+export function setDividerGuard(node: Node, guard: string): void {
+  node.attr('label/text', guard === '' ? '' : `[${guard}]`)
 }
 
 export { ACTIVATION, LIFELINE, MESSAGE }

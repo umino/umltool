@@ -29,11 +29,29 @@ export const ACTIVATION = {
   defaultHeight: 120
 } as const
 
+/** 複合フラグメント（alt/opt/loop など） */
+export const FRAGMENT = {
+  tabWidth: 64,
+  tabHeight: 22,
+  minWidth: 120,
+  minHeight: 70,
+  defaultWidth: 260,
+  defaultHeight: 160,
+  /** 区切り線（divider）ノードの高さ（掴みしろ） */
+  dividerHeight: 14,
+  /** レイアウト時の余白 */
+  padTop: 34,
+  padBottom: 24,
+  padSide: 60
+} as const
+
 // X6 に登録するシェイプ名 / アンカー名
 export const SHAPE = {
   lifeline: 'uml-lifeline',
   activation: 'uml-activation',
   message: 'uml-message',
+  fragment: 'uml-fragment',
+  fragmentDivider: 'uml-fragment-divider',
   centerlineAnchor: 'uml-centerline',
   action: 'uml-action',
   decision: 'uml-decision',
@@ -86,11 +104,38 @@ export type ActivityNodeKind =
   | 'fork'
   | 'join'
 
+/** 複合フラグメントの演算子 */
+export type FragmentOperator =
+  | 'alt'
+  | 'opt'
+  | 'loop'
+  | 'break'
+  | 'par'
+  | 'seq'
+  | 'strict'
+  | 'critical'
+
+export const FRAGMENT_OPERATORS: FragmentOperator[] = [
+  'alt',
+  'opt',
+  'loop',
+  'break',
+  'par',
+  'seq',
+  'strict',
+  'critical'
+]
+
+/** 区切り線（破線）を追加できる演算子 */
+export const DIVIDABLE_OPERATORS: FragmentOperator[] = ['alt', 'par']
+
 /** cell.data に持たせる種別情報 */
 export type CellKind =
   | 'lifeline'
   | 'activation'
   | 'message'
+  | 'fragment'
+  | 'divider'
   | ActivityNodeKind
   | 'swimlane'
   | 'flow'
@@ -112,4 +157,6 @@ export interface UmlCellData {
   kind: CellKind
   /** kind === 'message' のときのみ */
   msgKind?: MessageKind
+  /** kind === 'fragment' のときのみ */
+  operator?: FragmentOperator
 }

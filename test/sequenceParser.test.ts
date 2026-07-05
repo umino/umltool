@@ -53,4 +53,61 @@ A -> B : x
       expect((e as ParseError).line).toBe(2)
     }
   })
+
+  it('alt/else/end でフラグメントと区切りを解析する', () => {
+    const r = parseSequence(`A -> B : 前
+alt 成功
+  B -> B : 処理
+  B --> A : OK
+else 失敗
+  B --> A : NG
+end
+A -> B : 後`)
+    expect(r.fragments).toHaveLength(1)
+    const f = r.fragments[0]
+    expect(f.operator).toBe('alt')
+    expect(f.guard).toBe('成功')
+    expect(f.start).toBe(1)
+    expect(f.end).toBe(3)
+    expect(f.separators).toEqual([{ guard: '失敗', beforeIndex: 3 }])
+    expect(f.depth).toBe(0)
+    expect(r.messages).toHaveLength(5)
+  })
+
+  it('全演算子を受け付け、ネストの depth を持つ', () => {
+    const ops = ['opt', 'loop', 'break', 'par', 'seq', 'strict', 'critical']
+    for (const op of ops) {
+      const r = parseSequence(`${op} 条件\nA -> B : x\nend`)
+      expect(r.fragments[0].operator).toBe(op)
+    }
+    const nested = parseSequence(`alt 外
+A -> B : 1
+opt 内
+B -> A : 2
+end
+end`)
+    expect(nested.fragments).toHaveLength(2)
+    const inner = nested.fragments.find((f) => f.operator === 'opt')!
+    const outer = nested.fragments.find((f) => f.operator === 'alt')!
+    expect(inner.depth).toBe(1)
+    expect(outer.depth).toBe(0)
+    expect(outer.start).toBe(0)
+    expect(outer.end).toBe(1)
+  })
+
+  it('不正なフラグメント構文は ParseError', () => {
+    // end されていない
+    expect(() => parseSequence('alt x\nA -> B : y')).toThrowError(ParseError)
+    // 対応の無い end / else
+    expect(() => parseSequence('A -> B : y\nend')).toThrowError(ParseError)
+    expect(() => parseSequence('A -> B : y\nelse z')).toThrowError(ParseError)
+    // alt/par 以外での else
+    expect(() => parseSequence('loop 3\nA -> B : y\nelse z\nA -> B : w\nend')).toThrowError(
+      ParseError
+    )
+    // 空フラグメント / 空オペランド
+    expect(() => parseSequence('alt x\nend')).toThrowError(ParseError)
+    expect(() => parseSequence('alt x\nA -> B : y\nelse z\nend')).toThrowError(ParseError)
+    expect(() => parseSequence('alt x\nelse z\nA -> B : y\nend')).toThrowError(ParseError)
+  })
 })
