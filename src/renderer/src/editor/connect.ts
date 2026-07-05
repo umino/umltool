@@ -6,7 +6,15 @@ import type { CellKind } from './constants'
 import type { EditorMode } from './GraphEditor'
 
 const SEQUENCE_KINDS: CellKind[] = ['lifeline', 'activation']
-const ACTIVITY_KINDS: CellKind[] = ['action', 'decision', 'initial', 'final', 'fork', 'join']
+const ACTIVITY_KINDS: CellKind[] = [
+  'action',
+  'decision',
+  'merge',
+  'initial',
+  'final',
+  'fork',
+  'join'
+]
 
 export type ConnectionEndpoints =
   | { source: Node; target: Node }

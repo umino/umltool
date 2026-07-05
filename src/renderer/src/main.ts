@@ -321,6 +321,16 @@ class AppController {
         activity['domViews'] = views.length
         activity['domSample'] = (views[0]?.outerHTML ?? '').slice(0, 200)
 
+        // endif の合流が merge ノード（分岐より小さい菱形）になっているか
+        {
+          const merges = graph.getNodes().filter((n) => getCellKind(n) === 'merge')
+          const ms = merges[0]?.getSize()
+          activity['mergeNode'] =
+            merges.length >= 1 && ms && ms.width < ACTIVITY.decision.width
+              ? `ok(${merges.length}, ${ms.width}x${ms.height})`
+              : `ng(count=${merges.length})`
+        }
+
         // ポート接続（対話ドラッグでポートに落とした場合と同じターミナル形）が
         // ノード中心ではなく辺上に付くか
         try {

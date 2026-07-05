@@ -95,6 +95,7 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
     label('追加:'),
     button('＋アクション', 'アクションを追加', () => actions.addActivityNode('action')),
     button('＋分岐', '分岐（デシジョン）を追加', () => actions.addActivityNode('decision')),
+    button('＋合流', '合流（マージ）を追加', () => actions.addActivityNode('merge')),
     button('＋開始', '開始ノードを追加', () => actions.addActivityNode('initial')),
     button('＋終了', '終了ノードを追加', () => actions.addActivityNode('final')),
     button('＋フォーク', 'フォーク（並行開始バー）を追加', () => actions.addActivityNode('fork')),

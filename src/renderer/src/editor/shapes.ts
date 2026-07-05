@@ -254,6 +254,25 @@ export function registerShapes(): void {
     true
   )
 
+  // 合流: 分岐と同系色の小さな菱形（ラベル無し）。分岐と見分けが付くよう小さくする
+  Graph.registerNode(
+    SHAPE.merge,
+    {
+      markup: [{ tagName: 'polygon', selector: 'body' }],
+      attrs: {
+        body: {
+          refPoints: '0,10 10,0 20,10 10,20',
+          fill: '#ffffff',
+          stroke: '#b7791f',
+          strokeWidth: 1.2,
+          cursor: 'move'
+        }
+      },
+      ports: activityPorts
+    },
+    true
+  )
+
   Graph.registerNode(
     SHAPE.initial,
     {

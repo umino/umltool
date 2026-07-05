@@ -150,7 +150,7 @@ export function parseActivity(text: string): ParsedActivity {
       currentCol = frame.baseCol
       cursor = null
       pendingLabel = ''
-      const mergeId = rawNode('decision', '')
+      const mergeId = rawNode('merge', '')
       for (const end of ends) edges.push({ from: end, to: mergeId, label: '' })
       // else 節が無い場合は「偽」側を直接合流へ流す
       if (!frame.hasElse) edges.push({ from: frame.decisionId, to: mergeId, label: '' })

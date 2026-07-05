@@ -36,6 +36,7 @@ const CONNECTABLE_KINDS = new Set([
   'activation',
   'action',
   'decision',
+  'merge',
   'initial',
   'final',
   'fork',
@@ -115,11 +116,18 @@ export class GraphEditor {
         resizing: {
           enabled: (node: Node) => {
             const kind = getCellKind(node)
-            return kind === 'lifeline' || kind === 'activation'
+            return kind === 'lifeline' || kind === 'activation' || kind === 'swimlane'
           },
-          minWidth: (node: Node) => (getCellKind(node) === 'activation' ? 6 : 60),
-          minHeight: (node: Node) =>
-            getCellKind(node) === 'activation' ? 24 : LIFELINE.headHeight + 60,
+          minWidth: (node: Node) => {
+            const kind = getCellKind(node)
+            return kind === 'activation' ? 6 : kind === 'swimlane' ? 120 : 60
+          },
+          minHeight: (node: Node) => {
+            const kind = getCellKind(node)
+            if (kind === 'activation') return 24
+            if (kind === 'swimlane') return 80
+            return LIFELINE.headHeight + 60
+          },
           preserveAspectRatio: false
         },
         rotating: false

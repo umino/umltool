@@ -37,6 +37,7 @@ export const SHAPE = {
   centerlineAnchor: 'uml-centerline',
   action: 'uml-action',
   decision: 'uml-decision',
+  merge: 'uml-merge',
   initial: 'uml-initial',
   final: 'uml-final',
   bar: 'uml-bar',
@@ -48,6 +49,8 @@ export const SHAPE = {
 export const ACTIVITY = {
   action: { width: 150, height: 44 },
   decision: { width: 110, height: 60 },
+  /** 合流は小さな空の菱形（分岐と区別する） */
+  merge: { width: 40, height: 30 },
   terminal: { size: 26 },
   bar: { width: 130, height: 8 },
   /** 列の中心間隔 */
@@ -74,7 +77,14 @@ export const MESSAGE_KIND_LABEL: Record<MessageKind, string> = {
 }
 
 /** アクティビティ図のノード種別 */
-export type ActivityNodeKind = 'action' | 'decision' | 'initial' | 'final' | 'fork' | 'join'
+export type ActivityNodeKind =
+  | 'action'
+  | 'decision'
+  | 'merge'
+  | 'initial'
+  | 'final'
+  | 'fork'
+  | 'join'
 
 /** cell.data に持たせる種別情報 */
 export type CellKind =
@@ -88,7 +98,8 @@ export type CellKind =
 
 export const ACTIVITY_KIND_LABEL: Record<ActivityNodeKind | 'swimlane' | 'flow', string> = {
   action: 'アクション',
-  decision: '分岐/合流',
+  decision: '分岐（デシジョン）',
+  merge: '合流（マージ）',
   initial: '開始',
   final: '終了',
   fork: 'フォーク',

@@ -22,8 +22,8 @@ else (no)
 endif
 stop`)
     const kinds = r.nodes.map((n) => n.kind)
-    // initial, decision, action(yes), action(no), merge(decision), final
-    expect(kinds).toEqual(['initial', 'decision', 'action', 'action', 'decision', 'final'])
+    // initial, decision, action(yes), action(no), merge, final
+    expect(kinds).toEqual(['initial', 'decision', 'action', 'action', 'merge', 'final'])
     const decision = r.nodes[1]
     const yesEdge = r.edges.find((e) => e.from === decision.id && e.label === 'yes')
     const noEdge = r.edges.find((e) => e.from === decision.id && e.label === 'no')
@@ -44,7 +44,7 @@ endif
 stop`)
     const decision = r.nodes[1]
     const merge = r.nodes[3]
-    expect(merge.kind).toBe('decision')
+    expect(merge.kind).toBe('merge')
     expect(r.edges.some((e) => e.from === decision.id && e.to === merge.id)).toBe(true)
   })
 

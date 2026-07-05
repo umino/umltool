@@ -64,6 +64,8 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
   Or use the toolbar "＋フロー" button (with 2 nodes selected, connects them in selection order; with 1, connects to the nearest)
 - Flows use orthogonal (manhattan) routing; select a flow to add and adjust waypoints
 - Edit guard conditions by selecting a flow and using the right panel
+- **Decision and merge are separate nodes**: a decision is a diamond with a condition label, while a merge is a small empty diamond (toolbar "＋合流")
+- **Swimlanes** can be resized: select one and drag the handles to change its width and height
 - New nodes are added at the **center of the current view** (consecutive additions are offset slightly)
 
 ## Text generation (PlantUML subset)

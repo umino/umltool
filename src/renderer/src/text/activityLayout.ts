@@ -36,6 +36,8 @@ function sizeOf(kind: ActivityNodeKind): { width: number; height: number } {
       return { ...ACTIVITY.action }
     case 'decision':
       return { ...ACTIVITY.decision }
+    case 'merge':
+      return { ...ACTIVITY.merge }
     case 'initial':
     case 'final':
       return { width: ACTIVITY.terminal.size, height: ACTIVITY.terminal.size }

@@ -12,6 +12,8 @@ export function activityNodeSize(kind: ActivityNodeKind): { width: number; heigh
       return { ...ACTIVITY.action }
     case 'decision':
       return { ...ACTIVITY.decision }
+    case 'merge':
+      return { ...ACTIVITY.merge }
     case 'initial':
     case 'final':
       return { width: ACTIVITY.terminal.size, height: ACTIVITY.terminal.size }
@@ -41,6 +43,7 @@ export function addActivityNode(
   const shapeByKind: Record<ActivityNodeKind, string> = {
     action: SHAPE.action,
     decision: SHAPE.decision,
+    merge: SHAPE.merge,
     initial: SHAPE.initial,
     final: SHAPE.final,
     fork: SHAPE.bar,

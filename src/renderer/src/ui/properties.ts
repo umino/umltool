@@ -135,6 +135,7 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
       break
     case 'action':
     case 'decision':
+    case 'merge':
     case 'initial':
     case 'final':
     case 'fork':
