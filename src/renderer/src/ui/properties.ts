@@ -3,6 +3,7 @@ import type { GraphEditor } from '../editor/GraphEditor'
 import { autoSizeNode } from '../editor/autosize'
 import { addFragmentDivider } from '../editor/sequence'
 import {
+  applyFrameHeader,
   getCellKind,
   getDividerGuard,
   getFragmentGuard,
@@ -148,6 +149,19 @@ export class PropertiesPanel {
       return
     }
 
+    if (kind === 'frame') {
+      const node = cell as Node
+      this.host.appendChild(
+        labelInput('ヘッダ', getNodeLabel(node), (value) => {
+          applyFrameHeader(node, value)
+        })
+      )
+      this.host.appendChild(
+        hint('枠線またはヘッダをドラッグで移動、選択してハンドルでリサイズできます。')
+      )
+      return
+    }
+
     if (kind === 'action' || kind === 'decision' || kind === 'swimlane') {
       const caption = kind === 'swimlane' ? 'レーン名' : kind === 'decision' ? '条件' : 'アクション'
       this.host.appendChild(
@@ -207,6 +221,7 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
     case 'fork':
     case 'join':
     case 'swimlane':
+    case 'frame':
     case 'flow':
       text = ACTIVITY_KIND_LABEL[kind]
       break

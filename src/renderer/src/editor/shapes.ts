@@ -13,6 +13,7 @@ import {
   ACTIVITY,
   FONT_FAMILY,
   FRAGMENT,
+  FRAME,
   LIFELINE,
   MESSAGE,
   SHAPE,
@@ -484,6 +485,59 @@ export function registerShapes(): void {
     true
   )
 
+  // ---- フレーム（アクティビティ図のコンテナ） ----
+  // 中身は透過でクリックが通り、枠線（透明の太い当たり）とヘッダタブで掴んで動かす。
+  // タブの幅はヘッダテキストに合わせて applyFrameHeader で更新する。
+  Graph.registerNode(
+    SHAPE.frame,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'rect', selector: 'hit' },
+        { tagName: 'path', selector: 'tab' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          rx: 4,
+          fill: 'none',
+          stroke: COLOR.stroke,
+          strokeWidth: 1.4,
+          pointerEvents: 'none'
+        },
+        hit: {
+          refWidth: '100%',
+          refHeight: '100%',
+          rx: 4,
+          fill: 'none',
+          stroke: 'transparent',
+          strokeWidth: 10,
+          pointerEvents: 'stroke',
+          cursor: 'move'
+        },
+        tab: {
+          fill: COLOR.headFill,
+          stroke: COLOR.stroke,
+          strokeWidth: 1.4,
+          cursor: 'move'
+        },
+        label: {
+          y: FRAME.tabHeight / 2 - 1,
+          textAnchor: 'middle',
+          textVerticalAnchor: 'middle',
+          fontSize: 12,
+          fontWeight: 700,
+          fontFamily: FONT_FAMILY,
+          fill: COLOR.stroke,
+          pointerEvents: 'none'
+        }
+      }
+    },
+    true
+  )
+
   // ---- フロー（アクティビティ図のエッジ: 直交ルーティング） ----
   Graph.registerEdge(
     SHAPE.flow,
@@ -732,6 +786,30 @@ export function getNodeLabel(node: Node): string {
 
 export function setNodeLabel(node: Node, text: string): void {
   node.attr('label/text', text)
+}
+
+// ---- フレーム（コンテナ） ----
+
+let measureCtx: CanvasRenderingContext2D | null = null
+
+function measureTextWidth(text: string, fontSize: number): number {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d')
+  if (!measureCtx) return text.length * fontSize
+  measureCtx.font = `${fontSize}px ${FONT_FAMILY}`
+  return measureCtx.measureText(text).width
+}
+
+/**
+ * フレームのヘッダテキストを設定し、タブ（左上の五角形）の幅を
+ * テキストに合わせて更新する。ラベル変更時とリサイズ時に呼ぶ。
+ */
+export function applyFrameHeader(node: Node, text: string): void {
+  node.attr('label/text', text)
+  const maxW = Math.max(FRAME.tabMinWidth, node.getSize().width * 0.7)
+  const w = Math.min(Math.max(FRAME.tabMinWidth, measureTextWidth(text, 12) + 28), maxW)
+  const h = FRAME.tabHeight
+  node.attr('tab/d', `M 0 0 H ${w} V ${h - 9} L ${w - 10} ${h} H 0 Z`)
+  node.attr('label/x', w / 2 - 4)
 }
 
 // ---- 複合フラグメント ----

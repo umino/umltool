@@ -11,9 +11,10 @@ import {
   Clipboard
 } from '@antv/x6'
 import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
-import { ACTIVATION, FRAGMENT, LIFELINE, MESSAGE, SHAPE } from './constants'
+import { ACTIVATION, FRAGMENT, FRAME, LIFELINE, MESSAGE, SHAPE } from './constants'
 import {
   applyDividerGeometry,
+  applyFrameHeader,
   applyLifelineGeometry,
   getCellKind,
   getDividerGuard,
@@ -125,7 +126,8 @@ export class GraphEditor {
               kind === 'lifeline' ||
               kind === 'activation' ||
               kind === 'swimlane' ||
-              kind === 'fragment'
+              kind === 'fragment' ||
+              kind === 'frame'
             )
           },
           minWidth: (node: Node) => {
@@ -133,6 +135,7 @@ export class GraphEditor {
             if (kind === 'activation') return 6
             if (kind === 'swimlane') return 120
             if (kind === 'fragment') return FRAGMENT.minWidth
+            if (kind === 'frame') return FRAME.minWidth
             return 60
           },
           minHeight: (node: Node) => {
@@ -140,6 +143,7 @@ export class GraphEditor {
             if (kind === 'activation') return 24
             if (kind === 'swimlane') return 80
             if (kind === 'fragment') return FRAGMENT.minHeight
+            if (kind === 'frame') return FRAME.minHeight
             return LIFELINE.headHeight + 60
           },
           preserveAspectRatio: false
@@ -174,6 +178,19 @@ export class GraphEditor {
           minWidth: 120,
           onCommit: (text) =>
             isFragment ? setFragmentGuard(node, text) : setDividerGuard(node, text)
+        })
+        return
+      }
+      // フレームはヘッダタブ位置で編集し、確定時にタブ幅を追従させる
+      if (kind === 'frame') {
+        const bbox = node.getBBox()
+        openInlineEditor(graph, {
+          x: bbox.x + 70,
+          y: bbox.y + FRAME.tabHeight / 2,
+          text: getNodeLabel(node),
+          fontSize: 12,
+          minWidth: 120,
+          onCommit: (text) => applyFrameHeader(node, text)
         })
         return
       }
@@ -324,6 +341,9 @@ export class GraphEditor {
         this.renormalizeEdgesOf(node)
       } else if (kind === 'fragment') {
         this.syncFragmentDividers(node)
+      } else if (kind === 'frame') {
+        // タブ幅の上限（幅の 70%）が変わるため再計算する
+        this.withNormalizing(() => applyFrameHeader(node, getNodeLabel(node)))
       }
     })
   }

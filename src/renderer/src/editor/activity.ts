@@ -2,7 +2,7 @@
 
 import type { Edge, Graph, Node } from '@antv/x6'
 import { ACTIVITY, SHAPE, type ActivityNodeKind } from './constants'
-import { setMessageLabel } from './shapes'
+import { applyFrameHeader, setMessageLabel } from './shapes'
 import { autoSizeNode } from './autosize'
 
 /** ノード種別ごとの既定サイズ */
@@ -96,6 +96,21 @@ export interface SwimlaneRect {
   y: number
   width: number
   height: number
+}
+
+/** フレーム（コンテナ）を追加する。中身は透過の枠＋左上のヘッダタブ */
+export function addFrame(graph: Graph, header: string, rect: SwimlaneRect): Node {
+  const node = graph.addNode({
+    shape: SHAPE.frame,
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    data: { kind: 'frame' },
+    zIndex: 10
+  })
+  applyFrameHeader(node, header)
+  return node
 }
 
 /** スイムレーンを追加する（背面に敷く） */

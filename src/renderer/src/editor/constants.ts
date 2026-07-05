@@ -60,6 +60,7 @@ export const SHAPE = {
   final: 'uml-final',
   bar: 'uml-bar',
   swimlane: 'uml-swimlane',
+  frame: 'uml-frame',
   flow: 'uml-flow'
 } as const
 
@@ -83,6 +84,16 @@ export const ACTIVITY = {
   laneWidth: 280,
   laneHeaderHeight: 30,
   lanePaddingY: 40
+} as const
+
+/** アクティビティ図のフレーム（コンテナ） */
+export const FRAME = {
+  tabHeight: 26,
+  tabMinWidth: 80,
+  minWidth: 140,
+  minHeight: 90,
+  defaultWidth: 420,
+  defaultHeight: 300
 } as const
 
 export type MessageKind = 'sync' | 'async' | 'return' | 'self'
@@ -138,10 +149,14 @@ export type CellKind =
   | 'divider'
   | ActivityNodeKind
   | 'swimlane'
+  | 'frame'
   | 'flow'
   | 'unknown'
 
-export const ACTIVITY_KIND_LABEL: Record<ActivityNodeKind | 'swimlane' | 'flow', string> = {
+export const ACTIVITY_KIND_LABEL: Record<
+  ActivityNodeKind | 'swimlane' | 'frame' | 'flow',
+  string
+> = {
   action: 'アクション',
   decision: '分岐（デシジョン）',
   merge: '合流（マージ）',
@@ -150,6 +165,7 @@ export const ACTIVITY_KIND_LABEL: Record<ActivityNodeKind | 'swimlane' | 'flow',
   fork: 'フォーク',
   join: 'ジョイン',
   swimlane: 'スイムレーン',
+  frame: 'フレーム',
   flow: 'フロー'
 }
 

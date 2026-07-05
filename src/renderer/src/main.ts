@@ -9,13 +9,14 @@ import {
   addMessage,
   nextMessageY
 } from './editor/sequence'
-import { addActivityNode, addFlow, addSwimlane } from './editor/activity'
+import { addActivityNode, addFlow, addFrame, addSwimlane } from './editor/activity'
 import { resolveConnectionEndpoints } from './editor/connect'
 import { getCellKind } from './editor/shapes'
 import {
   ACTIVATION,
   ACTIVITY,
   FRAGMENT,
+  FRAME,
   LIFELINE,
   MESSAGE,
   SHAPE,
@@ -89,6 +90,7 @@ class AppController {
       addConnection: () => this.addConnection(),
       addActivityNode: (kind) => this.addActivityNode(kind),
       addSwimlane: () => this.addSwimlane(),
+      addFrame: () => this.addActivityFrame(),
       deleteSelection: () => this.editor.deleteSelection(),
       zoomIn: () => this.editor.zoomIn(),
       zoomOut: () => this.editor.zoomOut(),
@@ -368,6 +370,26 @@ class AppController {
             merges.length >= 1 && ms && ms.width < ACTIVITY.decision.width
               ? `ok(${merges.length}, ${ms.width}x${ms.height})`
               : `ng(count=${merges.length})`
+        }
+
+        // フレーム: 追加・ヘッダ変更（タブ幅追従）・リサイズ・削除
+        {
+          const fr = addFrame(graph, 'フレーム', { x: 600, y: 500, width: 300, height: 200 })
+          const tabD1 = String(fr.attr('tab/d'))
+          const { applyFrameHeader, getNodeLabel } = await import('./editor/shapes')
+          applyFrameHeader(fr, '長いヘッダテキストのフレーム')
+          const tabD2 = String(fr.attr('tab/d'))
+          fr.resize(500, 260)
+          await new Promise((r) => setTimeout(r, 50))
+          const label = getNodeLabel(fr)
+          activity['frame'] =
+            getCellKind(fr) === 'frame' &&
+            label === '長いヘッダテキストのフレーム' &&
+            tabD1 !== tabD2 &&
+            fr.getSize().width === 500
+              ? 'ok'
+              : `ng(label=${label}, tabChanged=${tabD1 !== tabD2}, w=${fr.getSize().width})`
+          graph.removeCells([fr])
         }
 
         // ポート接続（対話ドラッグでポートに落とした場合と同じターミナル形）が
@@ -659,6 +681,27 @@ class AppController {
     if (created) {
       graph.resetSelection(created)
       this.editor.ensureCellVisible(created)
+    }
+  }
+
+  private addActivityFrame(): void {
+    const graph = this.editor.graph
+    const c = this.editor.getVisibleCenter()
+    let created: Node | null = null
+    this.editor.batch(() => {
+      created = addFrame(graph, 'フレーム', {
+        x: c.x - FRAME.defaultWidth / 2,
+        y: c.y - FRAME.defaultHeight / 2,
+        width: FRAME.defaultWidth,
+        height: FRAME.defaultHeight
+      })
+    })
+    if (created) {
+      graph.resetSelection(created)
+      this.editor.ensureCellVisible(created)
+      this.setStatusMessage(
+        'フレームを追加しました。ヘッダは右パネルかダブルクリック、位置は枠線ドラッグで調整できます。'
+      )
     }
   }
 

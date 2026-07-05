@@ -14,6 +14,7 @@ export interface ToolbarActions {
   addConnection: () => void
   addActivityNode: (kind: ActivityNodeKind) => void
   addSwimlane: () => void
+  addFrame: () => void
   deleteSelection: () => void
   zoomIn: () => void
   zoomOut: () => void
@@ -107,6 +108,7 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
     button('＋フォーク', 'フォーク（並行開始バー）を追加', () => actions.addActivityNode('fork')),
     button('＋ジョイン', 'ジョイン（並行合流バー）を追加', () => actions.addActivityNode('join')),
     button('＋レーン', 'スイムレーンを追加', actions.addSwimlane),
+    button('＋フレーム', 'フレーム（コンテナ）を追加。ヘッダは右パネル/ダブルクリックで編集', actions.addFrame),
     button('＋フロー', connectTitle, actions.addConnection)
   )
   host.appendChild(actGroup)

@@ -67,6 +67,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - Edit guard conditions by selecting a flow and using the right panel
 - **Decision and merge are separate nodes**: a decision is a diamond with a condition label, while a merge is a small empty diamond (toolbar "＋合流")
 - **Swimlanes** can be resized: select one and drag the handles to change its width and height
+- **Frames (containers)**: toolbar "＋フレーム". A transparent frame with a header tab in the top-left corner; nodes inside remain fully interactive. Drag the border or header to move, select to resize, and edit the header via the right panel or double-click (the tab width follows the text)
 - New nodes are added at the **center of the current view** (consecutive additions are offset slightly)
 
 ## Text generation (PlantUML subset)
