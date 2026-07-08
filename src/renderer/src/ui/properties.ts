@@ -92,30 +92,45 @@ export class PropertiesPanel {
           this.render([node])
         })
       )
-      this.host.appendChild(
-        labelInput('条件（ガード）', getFragmentGuard(node), (value) => {
-          setFragmentGuard(node, value)
+      const dividable = DIVIDABLE_OPERATORS.includes(getFragmentOperator(node))
+      if (dividable) {
+        // alt / par は複数のオペランド（分岐）を持つ。先頭はフラグメント自身の
+        // ガード、2 つ目以降は区切り線のガードとして、まとめて編集できるようにする。
+        const dividers = childDividers(node)
+        this.host.appendChild(
+          labelInput('オペランド 1 の条件', getFragmentGuard(node), (value) => {
+            setFragmentGuard(node, value)
+          })
+        )
+        dividers.forEach((d, i) => {
+          this.host.appendChild(
+            labelInput(`オペランド ${i + 2} の条件`, getDividerGuard(d), (value) => {
+              setDividerGuard(d, value)
+            })
+          )
         })
-      )
-      if (DIVIDABLE_OPERATORS.includes(getFragmentOperator(node))) {
         const btn = document.createElement('button')
         btn.type = 'button'
-        btn.textContent = '＋区切り線を追加'
+        btn.textContent = '＋オペランド（分岐）を追加'
         btn.title = '破線の区切り線を追加（上下にドラッグで移動、Delete で削除）'
         btn.addEventListener('click', () => {
           const bbox = node.getBBox()
-          const dividers = (node.getChildren() ?? []).filter(
-            (c) => getCellKind(c) === 'divider'
-          )
           // 最後の区切り線（無ければタブ下端）と下端の中間に置く
           const base =
             dividers.length > 0
-              ? Math.max(...dividers.map((d) => (d as Node).getBBox().y))
+              ? Math.max(...dividers.map((d) => d.getBBox().y))
               : bbox.y + FRAGMENT.tabHeight
           const y = (base + bbox.y + bbox.height) / 2
           addFragmentDivider(this.editor.graph, node, y)
+          this.render([node])
         })
         this.host.appendChild(btn)
+      } else {
+        this.host.appendChild(
+          labelInput('条件（ガード）', getFragmentGuard(node), (value) => {
+            setFragmentGuard(node, value)
+          })
+        )
       }
       this.host.appendChild(
         hint('枠線をドラッグで移動、選択してハンドルでリサイズできます。')
@@ -186,6 +201,14 @@ export class PropertiesPanel {
     this.host.appendChild(hint('この要素には編集可能なプロパティがありません。'))
     void this.editor
   }
+}
+
+/** フラグメントの子の区切り線を上から順に返す */
+function childDividers(fragment: Node): Node[] {
+  return (fragment.getChildren() ?? [])
+    .filter((c) => getCellKind(c) === 'divider')
+    .map((c) => c as Node)
+    .sort((a, b) => a.getBBox().y - b.getBBox().y)
 }
 
 function hint(text: string): HTMLElement {

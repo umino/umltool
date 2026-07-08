@@ -140,6 +140,16 @@ function createWindow(): void {
             await writeFile(outSvg, svg, 'utf-8')
             console.log(`[DIAG-SVG] ${outSvg}`)
           }
+
+          // UI 全体のスクリーンショット（部品タブを開いた状態）
+          await wc.executeJavaScript('document.getElementById("tab-btn-palette")?.click()')
+          await sleep(300)
+          const shot = await wc.capturePage()
+          if (!shot.isEmpty()) {
+            const outUi = join(process.cwd(), 'diag-output-ui.png')
+            await writeFile(outUi, shot.toPNG())
+            console.log(`[DIAG-UI] ${outUi}`)
+          }
         } catch (err) {
           console.log(`[DIAG-ERROR] ${(err as Error).message}`)
         }

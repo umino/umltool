@@ -24,6 +24,7 @@ import {
 } from './editor/constants'
 import { PropertiesPanel } from './ui/properties'
 import { buildToolbar, type ToolbarHandle } from './ui/toolbar'
+import { buildPalette, type PaletteHandle } from './ui/palette'
 import { buildSequenceFromText } from './text/buildSequence'
 import { buildActivityFromText } from './text/buildActivity'
 import { ParseError } from './text/sequenceParser'
@@ -31,17 +32,19 @@ import { loadProject, serializeProject, type DiagramType } from './diagram/seria
 import { exportGraphToDataUrl, exportGraphToSvg, type ImageFormat } from './export/raster'
 
 const SAMPLE_SEQUENCE = `participant ユーザー
-participant ブラウザ
+participant "Web ブラウザ" as ブラウザ
 participant サーバー
 
 ユーザー -> ブラウザ : URLを入力
 ブラウザ -> サーバー : HTTPリクエスト
+activate サーバー
 alt 認証OK
   サーバー -> サーバー : セッション発行
   サーバー --> ブラウザ : HTMLを返す
 else 認証NG
   サーバー --> ブラウザ : エラーページ
 end
+deactivate サーバー
 ブラウザ --> ユーザー : ページを表示`
 
 const SAMPLE_ACTIVITY = `start
@@ -62,6 +65,7 @@ stop`
 class AppController {
   private readonly editor: GraphEditor
   private readonly toolbar: ToolbarHandle
+  private readonly palette: PaletteHandle
   private currentPath: string | null = null
   private dirty = false
   private diagramType: DiagramType = 'sequence'
@@ -84,13 +88,6 @@ class AppController {
       save: () => this.save(),
       saveAs: () => this.saveAs(),
       setDiagramType: (t) => void this.switchDiagramType(t),
-      addLifeline: () => this.addLifeline(),
-      addExecutionSpec: () => this.addExecutionSpec(),
-      addFragment: () => this.addFragment(),
-      addConnection: () => this.addConnection(),
-      addActivityNode: (kind) => this.addActivityNode(kind),
-      addSwimlane: () => this.addSwimlane(),
-      addFrame: () => this.addActivityFrame(),
       deleteSelection: () => this.editor.deleteSelection(),
       zoomIn: () => this.editor.zoomIn(),
       zoomOut: () => this.editor.zoomOut(),
@@ -98,6 +95,17 @@ class AppController {
       fit: () => this.editor.fit(),
       exportImage: (f) => this.exportImage(f)
     })
+
+    this.palette = buildPalette(document.getElementById('palette-body') as HTMLElement, {
+      addLifeline: () => this.addLifeline(),
+      addExecutionSpec: () => this.addExecutionSpec(),
+      addFragment: () => this.addFragment(),
+      addConnection: () => this.addConnection(),
+      addActivityNode: (kind) => this.addActivityNode(kind),
+      addSwimlane: () => this.addSwimlane(),
+      addFrame: () => this.addActivityFrame()
+    })
+    this.bindSideTabs()
 
     this.editor.onModelChange(() => this.setDirty(true))
 
@@ -208,6 +216,19 @@ class AppController {
           graph.removeCells(pasted)
           graph.cleanSelection()
         }
+        // 初期サンプル（as / activate 入り）が正しく生成されているか
+        const activations = graph.getNodes().filter((n) => getCellKind(n) === 'activation')
+        behavior['dslActivation'] = activations.length >= 1 ? 'ok' : 'ng(no activation)'
+        const labels = graph
+          .getNodes()
+          .filter((n) => getCellKind(n) === 'lifeline')
+          .map((n) => {
+            const v = n.attr('label/text')
+            return typeof v === 'string' ? v : ''
+          })
+        behavior['dslAsAlias'] = labels.includes('Web ブラウザ')
+          ? 'ok'
+          : `ng(${labels.join(',')})`
       } catch (e) {
         behavior['error'] = (e as Error).message
       }
@@ -392,6 +413,21 @@ class AppController {
           graph.removeCells([fr])
         }
 
+        // 部品パレット: アクティビティ用タイルのクリックでノードが追加されるか
+        {
+          const grids = document.querySelectorAll('#palette-body .palette-grid')
+          const items = grids[1]?.querySelectorAll('.palette-item') ?? []
+          const before = graph.getNodes().length
+          const tile = [...items].find((b) => b.textContent?.includes('アクション'))
+          ;(tile as HTMLButtonElement | undefined)?.click()
+          const nodes = graph.getNodes()
+          activity['palette'] =
+            items.length === 10 && nodes.length === before + 1
+              ? 'ok'
+              : `ng(items=${items.length}, before=${before}, after=${nodes.length})`
+          if (nodes.length === before + 1) graph.removeCells([nodes[nodes.length - 1]])
+        }
+
         // ポート接続（対話ドラッグでポートに落とした場合と同じターミナル形）が
         // ノード中心ではなく辺上に付くか
         try {
@@ -535,11 +571,34 @@ class AppController {
     this.textError.textContent = ''
   }
 
-  /** エディタ・ツールバー・内部状態の図種別を揃える（クリアはしない） */
+  /** エディタ・ツールバー・パレット・内部状態の図種別を揃える（クリアはしない） */
   private applyDiagramType(type: DiagramType): void {
     this.diagramType = type
     this.editor.setMode(type)
     this.toolbar.setDiagramType(type)
+    this.palette.setDiagramType(type)
+  }
+
+  /** 左ペインのタブ（テキスト / 部品）切替 */
+  private bindSideTabs(): void {
+    const tabs: Array<{ btn: HTMLElement; panel: HTMLElement }> = [
+      {
+        btn: document.getElementById('tab-btn-text') as HTMLElement,
+        panel: document.getElementById('tab-text') as HTMLElement
+      },
+      {
+        btn: document.getElementById('tab-btn-palette') as HTMLElement,
+        panel: document.getElementById('tab-palette') as HTMLElement
+      }
+    ]
+    for (const tab of tabs) {
+      tab.btn.addEventListener('click', () => {
+        for (const t of tabs) {
+          t.btn.classList.toggle('active', t === tab)
+          t.panel.hidden = t !== tab
+        }
+      })
+    }
   }
 
   // ---- テキスト → 図 ----

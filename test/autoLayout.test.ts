@@ -85,4 +85,19 @@ end`)
     const withFrag = layoutSequence(parseSequence('A -> B : 1\nopt x\nA -> B : 2\nend'))
     expect(withFrag.messages[1].y).toBeGreaterThan(plain.messages[1].y)
   })
+
+  it('activate で対象ライフラインの中心に活性化バーを配置する', () => {
+    const layout = layoutSequence(
+      parseSequence(`A -> B : req
+activate B
+B --> A : res
+deactivate B`)
+    )
+    expect(layout.activations).toHaveLength(1)
+    const a = layout.activations[0]
+    expect(a.participantId).toBe('B')
+    // B は 2 番目のライフライン
+    expect(a.centerX).toBe(LIFELINE.firstCenterX + LIFELINE.gapX)
+    expect(a.height).toBeGreaterThan(0)
+  })
 })

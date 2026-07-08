@@ -1,5 +1,11 @@
 import type { Node } from '@antv/x6'
-import { addFragment, addFragmentDivider, addLifeline, addMessage } from '../editor/sequence'
+import {
+  addActivation,
+  addFragment,
+  addFragmentDivider,
+  addLifeline,
+  addMessage
+} from '../editor/sequence'
 import type { GraphEditor } from '../editor/GraphEditor'
 import { layoutSequence } from './autoLayout'
 import { parseSequence } from './sequenceParser'
@@ -16,22 +22,27 @@ export function buildSequenceFromText(editor: GraphEditor, text: string): void {
   editor.clear()
 
   editor.batch(() => {
-    const cellByName = new Map<string, Node>()
+    const cellById = new Map<string, Node>()
     for (const ll of layout.lifelines) {
-      const cell = addLifeline(graph, ll.name, {
+      const cell = addLifeline(graph, ll.label, {
         centerX: ll.centerX,
         top: ll.top,
         height: ll.height
       })
-      cellByName.set(ll.name, cell)
+      cellById.set(ll.id, cell)
     }
 
     parsed.messages.forEach((msg, i) => {
-      const source = cellByName.get(msg.from)
-      const target = cellByName.get(msg.to)
+      const source = cellById.get(msg.from)
+      const target = cellById.get(msg.to)
       if (!source || !target) return
       addMessage(graph, source, target, msg.kind, msg.label, { y: layout.messages[i].y })
     })
+
+    for (const a of layout.activations) {
+      const lifeline = cellById.get(a.participantId)
+      if (lifeline) addActivation(graph, lifeline, a.y, a.height)
+    }
 
     for (const f of layout.fragments) {
       const node = addFragment(graph, f.operator, f.guard, {

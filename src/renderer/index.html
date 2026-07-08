@@ -14,10 +14,20 @@
       <header id="toolbar"></header>
       <main id="workspace">
         <section id="text-pane">
-          <div class="pane-title">テキスト入力（初期生成）</div>
-          <textarea id="text-input" spellcheck="false" placeholder="participant ユーザー&#10;participant サーバー&#10;ユーザー -> サーバー : ログイン要求&#10;サーバー --> ユーザー : 応答"></textarea>
-          <button id="generate-btn" type="button">テキストから図を生成 →</button>
-          <div id="text-error" class="text-error"></div>
+          <div id="side-tabs">
+            <button id="tab-btn-text" class="tab-btn active" type="button">テキスト</button>
+            <button id="tab-btn-palette" class="tab-btn" type="button">部品</button>
+          </div>
+          <div id="tab-text" class="tab-panel">
+            <div class="pane-title">テキスト入力（初期生成）</div>
+            <textarea id="text-input" spellcheck="false" placeholder="participant ユーザー&#10;participant サーバー&#10;ユーザー -> サーバー : ログイン要求&#10;サーバー --> ユーザー : 応答"></textarea>
+            <button id="generate-btn" type="button">テキストから図を生成 →</button>
+            <div id="text-error" class="text-error"></div>
+          </div>
+          <div id="tab-palette" class="tab-panel" hidden>
+            <div class="pane-title">部品（クリックで図に追加）</div>
+            <div id="palette-body"></div>
+          </div>
         </section>
         <section id="canvas-pane">
           <div id="graph-container"></div>

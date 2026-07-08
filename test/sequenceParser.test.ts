@@ -7,7 +7,7 @@ describe('parseSequence', () => {
 participant サーバー
 ユーザー -> サーバー : 要求
 サーバー -> DB : 問い合わせ`)
-    expect(r.participants).toEqual(['ユーザー', 'サーバー', 'DB'])
+    expect(r.participants.map((p) => p.label)).toEqual(['ユーザー', 'サーバー', 'DB'])
     expect(r.messages).toHaveLength(2)
   })
 
@@ -32,7 +32,47 @@ A --> B : ret`)
 
   it('引用符付き名称・日本語を扱える', () => {
     const r = parseSequence('"注文 サービス" -> 在庫 : 引当')
-    expect(r.participants).toEqual(['注文 サービス', '在庫'])
+    expect(r.participants.map((p) => p.label)).toEqual(['注文 サービス', '在庫'])
+  })
+
+  it('participant の as 構文で表示名とエイリアスを分離する', () => {
+    const r = parseSequence(`participant "Web ブラウザ" as ブラウザ
+participant サーバー
+ブラウザ -> サーバー : リクエスト`)
+    expect(r.participants).toEqual([
+      { id: 'ブラウザ', label: 'Web ブラウザ' },
+      { id: 'サーバー', label: 'サーバー' }
+    ])
+    // 参照はエイリアス（id）で行われる
+    expect(r.messages[0].from).toBe('ブラウザ')
+    expect(r.messages[0].to).toBe('サーバー')
+  })
+
+  it('activate / deactivate で活性化区間を解析する', () => {
+    const r = parseSequence(`A -> B : req
+activate B
+B -> B : work
+B --> A : res
+deactivate B
+A -> B : after`)
+    expect(r.messages).toHaveLength(4)
+    expect(r.activations).toHaveLength(1)
+    const a = r.activations[0]
+    expect(a.participant).toBe('B')
+    expect(a.startIndex).toBe(0)
+    expect(a.endIndex).toBe(2)
+  })
+
+  it('deactivate 省略時は末尾で自動的に閉じる', () => {
+    const r = parseSequence(`A -> B : req
+activate B
+B --> A : res`)
+    expect(r.activations).toHaveLength(1)
+    expect(r.activations[0].endIndex).toBe(1)
+  })
+
+  it('対応する activate のない deactivate は ParseError', () => {
+    expect(() => parseSequence('A -> B\ndeactivate B')).toThrowError(ParseError)
   })
 
   it('コメント・空行・@startuml を無視する', () => {

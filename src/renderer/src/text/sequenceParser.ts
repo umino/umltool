@@ -7,6 +7,22 @@ export interface ParsedMessage {
   label: string
 }
 
+export interface ParsedParticipant {
+  /** 参照に使う識別子（エイリアス、または宣言名） */
+  id: string
+  /** 描画に使う表示名 */
+  label: string
+}
+
+export interface ParsedActivation {
+  /** 対象参加者の id */
+  participant: string
+  /** バー上端の基準メッセージ index */
+  startIndex: number
+  /** バー下端の基準メッセージ index */
+  endIndex: number
+}
+
 export interface ParsedSeparator {
   guard: string
   /** この区切り以降のオペランドが始まるメッセージ index */
@@ -26,9 +42,10 @@ export interface ParsedFragment {
 }
 
 export interface ParsedSequence {
-  participants: string[]
+  participants: ParsedParticipant[]
   messages: ParsedMessage[]
   fragments: ParsedFragment[]
+  activations: ParsedActivation[]
 }
 
 export class ParseError extends Error {
@@ -43,12 +60,15 @@ export class ParseError extends Error {
 
 // 長い矢印から先にマッチさせる
 const ARROW_RE = /^(.+?)\s*(-->>|-->|->>|->)\s*([^:]+?)\s*(?::\s*(.*))?$/
-const PARTICIPANT_RE = /^(?:participant|actor)\s+(.+?)\s*$/i
+// participant 名 / participant "表示名" as エイリアス
+const PARTICIPANT_RE = /^(?:participant|actor)\s+(.+?)(?:\s+as\s+(.+?))?\s*$/i
 const COMMENT_RE = /^\s*(?:'|#|\/\/)/
 // 複合フラグメント（キーワードは矢印より優先して解釈する）
 const FRAGMENT_OPEN_RE = /^(alt|opt|loop|break|par|seq|strict|critical)\b\s*(.*)$/i
 const ELSE_RE = /^else\b\s*(.*)$/i
 const END_RE = /^end\s*$/i
+const ACTIVATE_RE = /^activate\s+(.+?)\s*$/i
+const DEACTIVATE_RE = /^deactivate\s+(.+?)\s*$/i
 /** else で区切れる演算子 */
 const DIVIDABLE = new Set<string>(['alt', 'par'])
 
@@ -78,18 +98,21 @@ function stripQuotes(name: string): string {
  *
  * 対応構文:
  *   participant 名前 / actor 名前
+ *   participant "表示名" as エイリアス （以降はエイリアスで参照）
  *   A -> B : ラベル   （同期）
  *   A ->> B : ラベル  （非同期）
  *   A --> B : ラベル  （戻り/破線）
+ *   activate 参加者 / deactivate 参加者 （活性化バー。deactivate 省略時は末尾で自動終了）
  *   alt 条件 / opt / loop / break / par / seq / strict / critical … end
  *   else 条件 （alt / par 内の区切り）
  *   コメント: 行頭 ' # //
  */
 export function parseSequence(text: string): ParsedSequence {
-  const participants: string[] = []
-  const seen = new Set<string>()
+  const participants: ParsedParticipant[] = []
+  const partById = new Map<string, ParsedParticipant>()
   const messages: ParsedMessage[] = []
   const fragments: ParsedFragment[] = []
+  const activations: ParsedActivation[] = []
 
   interface Frame {
     operator: FragmentOperator
@@ -100,11 +123,18 @@ export function parseSequence(text: string): ParsedSequence {
     lineNo: number
   }
   const stack: Frame[] = []
+  const activateStack: { participant: string; startIndex: number }[] = []
 
-  const ensure = (name: string): void => {
-    if (!seen.has(name)) {
-      seen.add(name)
-      participants.push(name)
+  // id で参加者を確保する。label 未指定は暗黙宣言（表示名＝id）。
+  // 暗黙宣言済みの参加者に後から表示名が与えられたら上書きする。
+  const ensure = (id: string, label?: string): void => {
+    const existing = partById.get(id)
+    if (!existing) {
+      const p = { id, label: label ?? id }
+      partById.set(id, p)
+      participants.push(p)
+    } else if (label !== undefined && existing.label === existing.id && label !== id) {
+      existing.label = label
     }
   }
 
@@ -117,7 +147,32 @@ export function parseSequence(text: string): ParsedSequence {
 
     const pm = PARTICIPANT_RE.exec(line)
     if (pm) {
-      ensure(stripQuotes(pm[1]))
+      const display = stripQuotes(pm[1])
+      if (pm[2]) ensure(stripQuotes(pm[2]), display)
+      else ensure(display)
+      return
+    }
+
+    const acm = ACTIVATE_RE.exec(line)
+    if (acm) {
+      const id = stripQuotes(acm[1])
+      ensure(id)
+      activateStack.push({ participant: id, startIndex: messages.length > 0 ? messages.length - 1 : 0 })
+      return
+    }
+
+    const dcm = DEACTIVATE_RE.exec(line)
+    if (dcm) {
+      const id = stripQuotes(dcm[1])
+      let k = activateStack.length - 1
+      while (k >= 0 && activateStack[k].participant !== id) k--
+      if (k < 0) throw new ParseError(`対応する activate のない deactivate です: ${id}`, lineNo)
+      const act = activateStack.splice(k, 1)[0]
+      activations.push({
+        participant: id,
+        startIndex: act.startIndex,
+        endIndex: messages.length > 0 ? messages.length - 1 : 0
+      })
       return
     }
 
@@ -196,5 +251,14 @@ export function parseSequence(text: string): ParsedSequence {
     )
   }
 
-  return { participants, messages, fragments }
+  // deactivate されなかった activate は末尾で自動終了する
+  for (const act of activateStack) {
+    activations.push({
+      participant: act.participant,
+      startIndex: act.startIndex,
+      endIndex: messages.length > 0 ? messages.length - 1 : 0
+    })
+  }
+
+  return { participants, messages, fragments, activations }
 }

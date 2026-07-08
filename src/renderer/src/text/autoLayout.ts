@@ -2,7 +2,10 @@ import { FRAGMENT, LIFELINE, MESSAGE, type FragmentOperator } from '../editor/co
 import type { ParsedSequence } from './sequenceParser'
 
 export interface LifelineLayout {
-  name: string
+  /** 参照 id（buildSequence が name→Node の対応に使う） */
+  id: string
+  /** 描画する表示名 */
+  label: string
   centerX: number
   top: number
   height: number
@@ -11,6 +14,13 @@ export interface LifelineLayout {
 export interface MessageLayout {
   index: number
   y: number
+}
+
+export interface ActivationLayout {
+  participantId: string
+  centerX: number
+  y: number
+  height: number
 }
 
 export interface DividerLayout {
@@ -32,6 +42,7 @@ export interface SequenceLayout {
   lifelines: LifelineLayout[]
   messages: MessageLayout[]
   fragments: FragmentLayout[]
+  activations: ActivationLayout[]
 }
 
 /** フラグメントの枠・区切りが入る位置に挿入する余白 */
@@ -65,8 +76,8 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     ys[i] + (parsed.messages[i].kind === 'self' ? MESSAGE.selfHeight : 0)
 
   const centerXOf = new Map<string, number>()
-  parsed.participants.forEach((name, i) => {
-    centerXOf.set(name, LIFELINE.firstCenterX + i * LIFELINE.gapX)
+  parsed.participants.forEach((p, i) => {
+    centerXOf.set(p.id, LIFELINE.firstCenterX + i * LIFELINE.gapX)
   })
 
   // フラグメントの枠: 含まれるメッセージが通るライフラインの範囲 + 余白
@@ -125,14 +136,30 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     }))
   }))
 
+  // 活性化バー: 対象ライフラインの中心線上、startIndex〜endIndex のメッセージを覆う
+  const activations: ActivationLayout[] = parsed.activations
+    .filter((a) => n > 0 && a.startIndex < n && a.endIndex < n && a.endIndex >= a.startIndex)
+    .map((a) => {
+      const top = ys[a.startIndex] - 4
+      const bottom = bottomOf(a.endIndex) + 8
+      return {
+        participantId: a.participant,
+        centerX: centerXOf.get(a.participant) ?? LIFELINE.firstCenterX,
+        y: top,
+        height: Math.max(24, bottom - top)
+      }
+    })
+
   const bottomPadding = MESSAGE.stepY + 24
   let contentBottom: number = MESSAGE.startY
   if (n > 0) contentBottom = bottomOf(n - 1)
   for (const r of rects) contentBottom = Math.max(contentBottom, r.bottom)
+  for (const a of activations) contentBottom = Math.max(contentBottom, a.y + a.height)
   const height = Math.max(LIFELINE.defaultHeight, contentBottom + bottomPadding - LIFELINE.top)
 
-  const lifelines: LifelineLayout[] = parsed.participants.map((name, i) => ({
-    name,
+  const lifelines: LifelineLayout[] = parsed.participants.map((p, i) => ({
+    id: p.id,
+    label: p.label,
     centerX: LIFELINE.firstCenterX + i * LIFELINE.gapX,
     top: LIFELINE.top,
     height
@@ -143,5 +170,5 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     y: ys[i]
   }))
 
-  return { lifelines, messages, fragments }
+  return { lifelines, messages, fragments, activations }
 }
