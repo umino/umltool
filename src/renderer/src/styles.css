@@ -250,6 +250,26 @@ body,
   color: var(--muted);
 }
 
+#props-body label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+#props-body input[type='number'] {
+  width: 88px;
+}
+
+#props-body input[type='color'] {
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+}
+
+#props-body input[type='checkbox'] {
+  width: auto;
+}
+
 #props-body input,
 #props-body select,
 #props-body textarea {

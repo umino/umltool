@@ -7,6 +7,7 @@ import {
   LIFELINE,
   MESSAGE,
   SHAPE,
+  TEXT,
   type FragmentOperator,
   type MessageKind
 } from './constants'
@@ -18,7 +19,7 @@ import {
   setFragmentGuard,
   setMessageLabel
 } from './shapes'
-import { autoSizeNode } from './autosize'
+import { autoSizeNode, fitTextHeight } from './autosize'
 
 export interface LifelineOptions {
   centerX: number
@@ -148,6 +149,44 @@ export function addFragmentDivider(
   setDividerGuard(node, guard)
   applyDividerGeometry(node)
   fragment.addChild(node)
+  return node
+}
+
+export interface AttachedTextRect {
+  x: number
+  y: number
+  width: number
+}
+
+/**
+ * ライフラインに付属するテキストを追加する。
+ * ライフラインの子にして移動に追従させ、破線コネクタで対象と結ぶ。
+ */
+export function addAttachedText(
+  graph: Graph,
+  lifeline: Node,
+  content: string,
+  rect: AttachedTextRect
+): Node {
+  const node = graph.addNode({
+    shape: SHAPE.text,
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: TEXT.minHeight,
+    attrs: { label: { text: content } },
+    data: { kind: 'text' },
+    zIndex: 20
+  })
+  fitTextHeight(node)
+  lifeline.addChild(node)
+  graph.addEdge({
+    shape: SHAPE.attachLink,
+    source: { cell: node.id },
+    target: { cell: lifeline.id },
+    data: { kind: 'attachLink' },
+    zIndex: 5
+  })
   return node
 }
 

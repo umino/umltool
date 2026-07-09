@@ -3,7 +3,7 @@
 // 高さを拡張する。計算部は measurer 注入可能な純関数（ユニットテスト対象）。
 
 import type { Node } from '@antv/x6'
-import { ACTIVITY, FONT_FAMILY, LIFELINE } from './constants'
+import { ACTIVITY, FONT_FAMILY, LIFELINE, NOTE, TEXT } from './constants'
 
 export type TextMeasurer = (text: string) => number
 
@@ -110,4 +110,31 @@ export function autoSizeNode(node: Node, label: string): void {
     position: { x: centerX - width / 2, y: bbox.y },
     size: { width, height }
   })
+}
+
+/**
+ * テキスト/ノートの高さを、現在の幅での折り返し行数に合わせる（幅・位置は維持）。
+ * 幅リサイズ・内容/フォント変更のたびに呼ぶ。
+ */
+export function fitTextHeight(node: Node): void {
+  const kind = (node.getData() as { kind?: string } | undefined)?.kind
+  if (kind !== 'text' && kind !== 'note') return
+  const spec = kind === 'note' ? NOTE : TEXT
+
+  const fontSize = Number(node.attr('label/fontSize')) || spec.defaultFontSize
+  const text = String(node.attr('label/text') ?? '')
+  const width = node.getSize().width
+  const measure = domMeasurer(fontSize, FONT_FAMILY)
+  const innerAvail = Math.max(1, width - spec.padX * 2)
+  const lines =
+    text === ''
+      ? 1
+      : text
+          .split('\n')
+          .reduce((sum, line) => sum + Math.max(1, Math.ceil(measure(line) / innerAvail)), 0)
+
+  const lineH = Math.round(fontSize * spec.lineHeight)
+  const height = Math.max(spec.minHeight, lines * lineH + spec.padY * 2)
+  if (Math.abs(height - node.getSize().height) < 1) return
+  node.resize(width, height)
 }

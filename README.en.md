@@ -43,6 +43,8 @@ then writes `diag-output.png` (activity diagram) and `diag-output-seq.png` (sequ
 | Select all | Ctrl+A |
 | Delete | Delete / Backspace, or the 🗑 toolbar button |
 | Add elements | Click an icon in the "部品" (parts) tab in the left pane |
+| Text (attached) | The "テキスト" palette item. Attaches to the selected lifeline (linked by a dashed connector, follows it when moved; sequence diagrams). Double-click to edit; set font size, bold, and color in the right panel; drag the handle to change width (auto-wraps) |
+| Note | The "ノート" palette item. A top-left dog-eared sticky note, freely placed anywhere (both diagram types). Editing and styling work like text |
 | Edit properties | Select an element → edit name, label, and kind in the right panel |
 | Edit labels in place | **Double-click** a node or message to edit it inline |
 

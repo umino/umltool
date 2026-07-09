@@ -3,6 +3,7 @@ import type { Node } from '@antv/x6'
 import { GraphEditor } from './editor/GraphEditor'
 import {
   addActivation,
+  addAttachedText,
   addFragment,
   addFragmentDivider,
   addLifeline,
@@ -10,6 +11,7 @@ import {
   nextMessageY
 } from './editor/sequence'
 import { addActivityNode, addFlow, addFrame, addSwimlane } from './editor/activity'
+import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
 import { getCellKind } from './editor/shapes'
 import {
@@ -19,7 +21,9 @@ import {
   FRAME,
   LIFELINE,
   MESSAGE,
+  NOTE,
   SHAPE,
+  TEXT,
   type ActivityNodeKind
 } from './editor/constants'
 import { PropertiesPanel } from './ui/properties'
@@ -103,7 +107,9 @@ class AppController {
       addConnection: () => this.addConnection(),
       addActivityNode: (kind) => this.addActivityNode(kind),
       addSwimlane: () => this.addSwimlane(),
-      addFrame: () => this.addActivityFrame()
+      addFrame: () => this.addActivityFrame(),
+      addText: () => this.addText(),
+      addNote: () => this.addNote()
     })
     this.bindSideTabs()
 
@@ -229,6 +235,37 @@ class AppController {
         behavior['dslAsAlias'] = labels.includes('Web ブラウザ')
           ? 'ok'
           : `ng(${labels.join(',')})`
+
+        // 付属テキスト: ライフラインへ付属（子＋破線コネクタ）・移動追従・削除で連動
+        if (byX.length >= 1) {
+          const ll = byX[0]
+          const at = addAttachedText(graph, ll, 'メモ', {
+            x: ll.getBBox().x + 200,
+            y: ll.getBBox().y + 120,
+            width: 160
+          })
+          await new Promise((r) => setTimeout(r, 30))
+          const isChild = at.getParent()?.id === ll.id
+          const link = graph
+            .getEdges()
+            .find((e) => getCellKind(e) === 'attachLink' && e.getSourceCellId() === at.id)
+          // ライフライン移動で付属テキストが追従するか
+          const ny0 = at.getBBox().y
+          ll.translate(0, 40)
+          await new Promise((r) => setTimeout(r, 30))
+          const followed = Math.abs(at.getBBox().y - (ny0 + 40)) < 2
+          ll.translate(0, -40)
+          // 削除で付属テキストと破線コネクタが一緒に消えるか
+          const linkId = link?.id
+          graph.resetSelection(at)
+          this.editor.deleteSelection()
+          const gone = !graph.getCellById(at.id) && !!linkId && !graph.getCellById(linkId)
+          behavior['attachedText'] =
+            isChild && !!link && followed && gone
+              ? 'ok'
+              : `ng(child=${isChild}, link=${!!link}, followed=${followed}, gone=${gone})`
+          graph.cleanSelection()
+        }
       } catch (e) {
         behavior['error'] = (e as Error).message
       }
@@ -413,6 +450,36 @@ class AppController {
           graph.removeCells([fr])
         }
 
+        // ノート: 自由配置・幅リサイズで高さ追従・スタイル設定
+        {
+          const t = addNoteNode(graph, '折り返しの確認のための長めのノートです', {
+            x: 600,
+            y: 800,
+            width: 120
+          })
+          await new Promise((r) => setTimeout(r, 30))
+          const h1 = t.getSize().height
+          t.resize(300, t.getSize().height)
+          await new Promise((r) => setTimeout(r, 30))
+          const h2 = t.getSize().height
+          const { setTextFontSize, setTextBold, setTextColor, getTextBold, getTextColor } =
+            await import('./editor/shapes')
+          const { fitTextHeight } = await import('./editor/autosize')
+          setTextFontSize(t, 20)
+          setTextBold(t, true)
+          setTextColor(t, '#cc0000')
+          fitTextHeight(t)
+          await new Promise((r) => setTimeout(r, 30))
+          activity['note'] =
+            getCellKind(t) === 'note' &&
+            h1 > h2 &&
+            getTextBold(t) &&
+            getTextColor(t) === '#cc0000'
+              ? 'ok'
+              : `ng(h1=${h1}, h2=${h2}, bold=${getTextBold(t)}, color=${getTextColor(t)})`
+          graph.removeCells([t])
+        }
+
         // 部品パレット: アクティビティ用タイルのクリックでノードが追加されるか
         {
           const grids = document.querySelectorAll('#palette-body .palette-grid')
@@ -422,7 +489,7 @@ class AppController {
           ;(tile as HTMLButtonElement | undefined)?.click()
           const nodes = graph.getNodes()
           activity['palette'] =
-            items.length === 10 && nodes.length === before + 1
+            items.length === 11 && nodes.length === before + 1
               ? 'ok'
               : `ng(items=${items.length}, before=${before}, after=${nodes.length})`
           if (nodes.length === before + 1) graph.removeCells([nodes[nodes.length - 1]])
@@ -760,6 +827,53 @@ class AppController {
       this.editor.ensureCellVisible(created)
       this.setStatusMessage(
         'フレームを追加しました。ヘッダは右パネルかダブルクリック、位置は枠線ドラッグで調整できます。'
+      )
+    }
+  }
+
+  // テキスト: 選択中のライフラインに付属（破線で結び、移動に追従）
+  private addText(): void {
+    const graph = this.editor.graph
+    const target = this.resolveTargetLifeline()
+    if (!target) {
+      this.setStatusMessage('ライフラインがありません。先に追加してください。')
+      return
+    }
+    let created: Node | null = null
+    this.editor.batch(() => {
+      const bbox = target.getBBox()
+      created = addAttachedText(graph, target, 'テキスト', {
+        x: bbox.x + bbox.width + 24,
+        y: bbox.y + LIFELINE.headHeight + 40,
+        width: TEXT.defaultWidth
+      })
+    })
+    if (created) {
+      graph.resetSelection(created)
+      this.editor.ensureCellVisible(created)
+      this.setStatusMessage(
+        'ライフラインに付属テキストを追加しました。内容はダブルクリック、フォント等は右パネルで設定できます。'
+      )
+    }
+  }
+
+  // ノート: 自由配置（両図種）
+  private addNote(): void {
+    const graph = this.editor.graph
+    const c = this.editor.getVisibleCenter()
+    let created: Node | null = null
+    this.editor.batch(() => {
+      created = addNoteNode(graph, 'ノート', {
+        x: c.x - NOTE.defaultWidth / 2,
+        y: c.y - NOTE.minHeight / 2,
+        width: NOTE.defaultWidth
+      })
+    })
+    if (created) {
+      graph.resetSelection(created)
+      this.editor.ensureCellVisible(created)
+      this.setStatusMessage(
+        'ノートを追加しました。内容はダブルクリック、フォント等は右パネルで設定できます。'
       )
     }
   }

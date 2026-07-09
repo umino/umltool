@@ -8,10 +8,37 @@ export interface PaletteActions {
   addLifeline: () => void
   addExecutionSpec: () => void
   addFragment: () => void
+  addNote: () => void
   addConnection: () => void
   addActivityNode: (kind: ActivityNodeKind) => void
   addSwimlane: () => void
   addFrame: () => void
+  addText: () => void
+}
+
+/** ライフラインに付属するテキストタイル（シーケンス図） */
+function textItem(a: PaletteActions): PaletteItem {
+  return {
+    label: 'テキスト',
+    title: '選択中のライフラインに付属テキストを追加（フォント・色・太字は右パネルで設定）',
+    icon:
+      `<line x1="8" y1="8" x2="36" y2="8" stroke="${C.gray}" stroke-width="1.6"/>` +
+      `<line x1="8" y1="15" x2="30" y2="15" stroke="${C.gray}" stroke-width="1.6"/>` +
+      `<line x1="8" y1="22" x2="34" y2="22" stroke="${C.gray}" stroke-width="1.6"/>`,
+    onClick: a.addText
+  }
+}
+
+/** 両図種で使える自由配置ノートタイル（左上折りの付箋） */
+function noteItem(a: PaletteActions): PaletteItem {
+  return {
+    label: 'ノート',
+    title: 'ノート（左上折りの付箋）を追加。自由に配置できます',
+    icon:
+      `<path d="M 14 4 H 38 V 26 H 8 V 10 Z" fill="#fffbe6" stroke="#d9b441" stroke-width="1.4"/>` +
+      `<path d="M 14 4 V 10 H 8 Z" fill="#f2e4b8" stroke="#d9b441" stroke-width="1.2"/>`,
+    onClick: a.addNote
+  }
 }
 
 export interface PaletteHandle {
@@ -72,7 +99,9 @@ function sequenceItems(a: PaletteActions): PaletteItem[] {
         `<path d="M 4 3 H 20 V 8 L 16 11 H 4 Z" fill="${C.blueFill}" stroke="${C.gray}" stroke-width="1.2"/>` +
         `<line x1="4" y1="19" x2="40" y2="19" stroke="${C.gray}" stroke-width="1" stroke-dasharray="3 2"/>`,
       onClick: a.addFragment
-    }
+    },
+    textItem(a),
+    noteItem(a)
   ]
 }
 
@@ -149,7 +178,8 @@ function activityItems(a: PaletteActions): PaletteItem[] {
         `<path d="M 6 24 H 22 V 8 H 32" fill="none" stroke="${C.stroke}" stroke-width="1.6"/>` +
         `<path d="M 38 8 L 30 3.5 V 12.5 Z" fill="none" stroke="${C.stroke}" stroke-width="1.4"/>`,
       onClick: () => a.addConnection()
-    }
+    },
+    noteItem(a)
   ]
 }
 

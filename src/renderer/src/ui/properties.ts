@@ -1,6 +1,6 @@
 import type { Cell, Edge, Node } from '@antv/x6'
 import type { GraphEditor } from '../editor/GraphEditor'
-import { autoSizeNode } from '../editor/autosize'
+import { autoSizeNode, fitTextHeight } from '../editor/autosize'
 import { addFragmentDivider } from '../editor/sequence'
 import {
   applyFrameHeader,
@@ -11,12 +11,18 @@ import {
   getMessageKind,
   getMessageLabel,
   getNodeLabel,
+  getTextBold,
+  getTextColor,
+  getTextFontSize,
   setDividerGuard,
   setFragmentGuard,
   setFragmentOperator,
   setMessageKind,
   setMessageLabel,
-  setNodeLabel
+  setNodeLabel,
+  setTextBold,
+  setTextColor,
+  setTextFontSize
 } from '../editor/shapes'
 import {
   ACTIVITY_KIND_LABEL,
@@ -177,6 +183,41 @@ export class PropertiesPanel {
       return
     }
 
+    if (kind === 'text' || kind === 'note') {
+      const node = cell as Node
+      const caption = kind === 'note' ? 'ノート' : 'テキスト'
+      this.host.appendChild(
+        labelInput(caption, getNodeLabel(node), (value) => {
+          setNodeLabel(node, value)
+          fitTextHeight(node)
+        })
+      )
+      this.host.appendChild(
+        numberInput('フォントサイズ', getTextFontSize(node), 8, 96, (value) => {
+          setTextFontSize(node, value)
+          fitTextHeight(node)
+        })
+      )
+      this.host.appendChild(
+        checkboxInput('太字', getTextBold(node), (value) => {
+          setTextBold(node, value)
+        })
+      )
+      this.host.appendChild(
+        colorInput('色', getTextColor(node), (value) => {
+          setTextColor(node, value)
+        })
+      )
+      this.host.appendChild(
+        hint(
+          kind === 'text'
+            ? 'ライフラインに付属します。ドラッグで移動、ハンドルで横幅を変更（自動折り返し）。'
+            : 'ドラッグで移動、ハンドルで横幅を変更（高さは自動で折り返し）。'
+        )
+      )
+      return
+    }
+
     if (kind === 'action' || kind === 'decision' || kind === 'swimlane') {
       const caption = kind === 'swimlane' ? 'レーン名' : kind === 'decision' ? '条件' : 'アクション'
       this.host.appendChild(
@@ -236,6 +277,12 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
     case 'divider':
       text = '区切り線'
       break
+    case 'text':
+      text = 'テキスト'
+      break
+    case 'note':
+      text = 'ノート'
+      break
     case 'action':
     case 'decision':
     case 'merge':
@@ -275,6 +322,65 @@ function labelInput(
   input.addEventListener('change', () => onCommit(input.value))
   wrap.appendChild(input)
   return wrap
+}
+
+function numberInput(
+  caption: string,
+  value: number,
+  min: number,
+  max: number,
+  onCommit: (value: number) => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = caption
+  const input = document.createElement('input')
+  input.type = 'number'
+  input.min = String(min)
+  input.max = String(max)
+  input.value = String(value)
+  input.addEventListener('change', () => {
+    const v = Math.min(max, Math.max(min, Number(input.value) || value))
+    input.value = String(v)
+    onCommit(v)
+  })
+  wrap.appendChild(input)
+  return wrap
+}
+
+function checkboxInput(
+  caption: string,
+  value: boolean,
+  onChange: (value: boolean) => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.className = 'inline'
+  const input = document.createElement('input')
+  input.type = 'checkbox'
+  input.checked = value
+  input.addEventListener('change', () => onChange(input.checked))
+  wrap.appendChild(input)
+  wrap.appendChild(document.createTextNode(caption))
+  return wrap
+}
+
+function colorInput(
+  caption: string,
+  value: string,
+  onChange: (value: string) => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = caption
+  const input = document.createElement('input')
+  input.type = 'color'
+  input.value = toHexColor(value)
+  input.addEventListener('input', () => onChange(input.value))
+  wrap.appendChild(input)
+  return wrap
+}
+
+/** input[type=color] は #rrggbb しか受け付けないため整形する */
+function toHexColor(value: string): string {
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#1d2330'
 }
 
 function operatorSelect(

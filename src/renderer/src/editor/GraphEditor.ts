@@ -11,11 +11,12 @@ import {
   Clipboard
 } from '@antv/x6'
 import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
-import { ACTIVATION, FRAGMENT, FRAME, LIFELINE, MESSAGE, SHAPE } from './constants'
+import { ACTIVATION, FRAGMENT, FRAME, LIFELINE, MESSAGE, NOTE, SHAPE, TEXT } from './constants'
 import {
   applyDividerGeometry,
   applyFrameHeader,
   applyLifelineGeometry,
+  applyNoteGeometry,
   getCellKind,
   getDividerGuard,
   getFragmentGuard,
@@ -28,7 +29,7 @@ import {
   setMessageLabel,
   setNodeLabel
 } from './shapes'
-import { autoSizeNode } from './autosize'
+import { autoSizeNode, fitTextHeight } from './autosize'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 
 const ZOOM_MIN = 0.2
@@ -127,7 +128,9 @@ export class GraphEditor {
               kind === 'activation' ||
               kind === 'swimlane' ||
               kind === 'fragment' ||
-              kind === 'frame'
+              kind === 'frame' ||
+              kind === 'text' ||
+              kind === 'note'
             )
           },
           minWidth: (node: Node) => {
@@ -136,6 +139,8 @@ export class GraphEditor {
             if (kind === 'swimlane') return 120
             if (kind === 'fragment') return FRAGMENT.minWidth
             if (kind === 'frame') return FRAME.minWidth
+            if (kind === 'text') return TEXT.minWidth
+            if (kind === 'note') return NOTE.minWidth
             return 60
           },
           minHeight: (node: Node) => {
@@ -144,6 +149,8 @@ export class GraphEditor {
             if (kind === 'swimlane') return 80
             if (kind === 'fragment') return FRAGMENT.minHeight
             if (kind === 'frame') return FRAME.minHeight
+            if (kind === 'text') return TEXT.minHeight
+            if (kind === 'note') return NOTE.minHeight
             return LIFELINE.headHeight + 60
           },
           preserveAspectRatio: false
@@ -191,6 +198,24 @@ export class GraphEditor {
           fontSize: 12,
           minWidth: 120,
           onCommit: (text) => applyFrameHeader(node, text)
+        })
+        return
+      }
+      // テキスト/ノートは内容を編集し、確定時に高さを追従させる
+      if (kind === 'text' || kind === 'note') {
+        const bbox = node.getBBox()
+        const fallback = kind === 'note' ? NOTE.defaultFontSize : TEXT.defaultFontSize
+        const fontSize = Number(node.attr('label/fontSize')) || fallback
+        openInlineEditor(graph, {
+          x: bbox.x + bbox.width / 2,
+          y: bbox.y + bbox.height / 2,
+          text: getNodeLabel(node),
+          fontSize,
+          minWidth: Math.min(bbox.width, 200),
+          onCommit: (text) => {
+            setNodeLabel(node, text)
+            this.withNormalizing(() => fitTextHeight(node))
+          }
         })
         return
       }
@@ -344,6 +369,15 @@ export class GraphEditor {
       } else if (kind === 'frame') {
         // タブ幅の上限（幅の 70%）が変わるため再計算する
         this.withNormalizing(() => applyFrameHeader(node, getNodeLabel(node)))
+      } else if (kind === 'text') {
+        // 幅リサイズに合わせて折り返し行数から高さを再計算する
+        this.withNormalizing(() => fitTextHeight(node))
+      } else if (kind === 'note') {
+        // 付箋の path を新サイズに合わせ、折り返しで高さを追従させる
+        this.withNormalizing(() => {
+          applyNoteGeometry(node)
+          fitTextHeight(node)
+        })
       }
     })
   }
@@ -532,13 +566,16 @@ export class GraphEditor {
   deleteSelection(): void {
     const cells = this.graph.getSelectedCells()
     if (cells.length === 0) return
-    // graph.removeCells は子孫を消さないため、明示的に集めて一緒に削除する
-    // （フラグメントの区切り線、ライフラインの活性化バーなど）
+    // graph.removeCells は子孫も接続エッジも消さないため、明示的に集めて一緒に削除する
+    // （フラグメントの区切り線・活性化バー、ノートの破線コネクタなど）
     const toRemove = new Map<string, Cell>()
     const collect = (cell: Cell): void => {
       if (toRemove.has(cell.id)) return
       toRemove.set(cell.id, cell)
       for (const child of cell.getChildren() ?? []) collect(child)
+      if (cell.isNode()) {
+        for (const edge of this.graph.model.getConnectedEdges(cell)) collect(edge)
+      }
     }
     for (const cell of cells) collect(cell)
     this.graph.removeCells([...toRemove.values()])

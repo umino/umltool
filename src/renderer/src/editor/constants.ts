@@ -61,6 +61,9 @@ export const SHAPE = {
   bar: 'uml-bar',
   swimlane: 'uml-swimlane',
   frame: 'uml-frame',
+  text: 'uml-text',
+  note: 'uml-note',
+  attachLink: 'uml-attach-link',
   flow: 'uml-flow'
 } as const
 
@@ -94,6 +97,35 @@ export const FRAME = {
   minHeight: 90,
   defaultWidth: 420,
   defaultHeight: 300
+} as const
+
+/** 自由配置テキスト（注釈）。両図種で使える汎用要素 */
+export const TEXT = {
+  defaultWidth: 160,
+  minWidth: 48,
+  minHeight: 24,
+  padX: 8,
+  padY: 6,
+  defaultFontSize: 14,
+  /** フォントサイズに対する行の高さ倍率 */
+  lineHeight: 1.4,
+  defaultColor: '#1d2330'
+} as const
+
+/** ライフラインに付属する UML ノート（左上折りの付箋） */
+export const NOTE = {
+  /** 折り角の一辺の長さ */
+  fold: 12,
+  defaultWidth: 160,
+  minWidth: 64,
+  minHeight: 34,
+  padX: 10,
+  padY: 8,
+  defaultFontSize: 13,
+  lineHeight: 1.4,
+  fill: '#fffbe6',
+  stroke: '#d9b441',
+  textColor: '#5c4a12'
 } as const
 
 export type MessageKind = 'sync' | 'async' | 'return' | 'self'
@@ -150,6 +182,9 @@ export type CellKind =
   | ActivityNodeKind
   | 'swimlane'
   | 'frame'
+  | 'text'
+  | 'note'
+  | 'attachLink'
   | 'flow'
   | 'unknown'
 

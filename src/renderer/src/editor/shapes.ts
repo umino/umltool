@@ -16,7 +16,9 @@ import {
   FRAME,
   LIFELINE,
   MESSAGE,
+  NOTE,
   SHAPE,
+  TEXT,
   type CellKind,
   type FragmentOperator,
   type MessageKind,
@@ -538,6 +540,99 @@ export function registerShapes(): void {
     true
   )
 
+  // ---- 自由配置テキスト（注釈） ----
+  // 背景は透明でクリックを拾い、テキストは幅内で折り返す（高さは fitTextHeight で追従）。
+  Graph.registerNode(
+    SHAPE.text,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          fill: 'transparent',
+          stroke: 'none',
+          cursor: 'move'
+        },
+        label: {
+          refX: '50%',
+          refY: '50%',
+          textAnchor: 'middle',
+          textVerticalAnchor: 'middle',
+          fontSize: TEXT.defaultFontSize,
+          fontFamily: FONT_FAMILY,
+          fill: TEXT.defaultColor,
+          textWrap: { width: -TEXT.padX * 2, breakWord: true },
+          pointerEvents: 'none'
+        }
+      }
+    },
+    true
+  )
+
+  // ---- UML ノート（左上折りの付箋。ライフラインに付属） ----
+  // body/fold の path は幅・高さに依存するため applyNoteGeometry で数値設定する。
+  Graph.registerNode(
+    SHAPE.note,
+    {
+      markup: [
+        { tagName: 'path', selector: 'body' },
+        { tagName: 'path', selector: 'fold' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: mergeAttrs(
+        {
+          body: {
+            fill: NOTE.fill,
+            stroke: NOTE.stroke,
+            strokeWidth: 1.2,
+            cursor: 'move'
+          },
+          fold: {
+            fill: '#f2e4b8',
+            stroke: NOTE.stroke,
+            strokeWidth: 1.2,
+            pointerEvents: 'none'
+          },
+          label: {
+            refX: '50%',
+            refY: '50%',
+            textAnchor: 'middle',
+            textVerticalAnchor: 'middle',
+            fontSize: NOTE.defaultFontSize,
+            fontFamily: FONT_FAMILY,
+            fill: NOTE.textColor,
+            textWrap: { width: -NOTE.padX * 2, breakWord: true },
+            pointerEvents: 'none'
+          }
+        },
+        noteGeometryAttrs(NOTE.defaultWidth, NOTE.minHeight)
+      )
+    },
+    true
+  )
+
+  // 付属テキストとライフラインを結ぶ破線コネクタ（矢印なし）
+  Graph.registerEdge(
+    SHAPE.attachLink,
+    {
+      attrs: {
+        line: {
+          stroke: NOTE.stroke,
+          strokeWidth: 1,
+          strokeDasharray: '4 3',
+          targetMarker: null,
+          sourceMarker: null
+        }
+      },
+      zIndex: 5
+    },
+    true
+  )
+
   // ---- フロー（アクティビティ図のエッジ: 直交ルーティング） ----
   Graph.registerEdge(
     SHAPE.flow,
@@ -665,6 +760,29 @@ export function lifelineGeometryAttrs(
   }
 }
 
+/** ノート（左上折り付箋）のサイズ依存 path（生成時・リサイズ時に適用する） */
+export function noteGeometryAttrs(
+  width: number,
+  height: number
+): Record<string, Record<string, string>> {
+  const f = NOTE.fold
+  return {
+    body: { d: `M ${f} 0 H ${width} V ${height} H 0 V ${f} Z` },
+    fold: { d: `M ${f} 0 V ${f} H 0 Z` }
+  }
+}
+
+/** ノートの現在サイズに path を合わせる */
+export function applyNoteGeometry(node: Node): void {
+  const size = node.getSize()
+  const attrs = noteGeometryAttrs(size.width, size.height)
+  for (const [selector, values] of Object.entries(attrs)) {
+    for (const [name, value] of Object.entries(values)) {
+      node.attr(`${selector}/${name}`, value)
+    }
+  }
+}
+
 /** 区切り線のサイズ依存ジオメトリ属性（生成時・リサイズ時に適用する） */
 export function dividerGeometryAttrs(
   width: number,
@@ -786,6 +904,35 @@ export function getNodeLabel(node: Node): string {
 
 export function setNodeLabel(node: Node, text: string): void {
   node.attr('label/text', text)
+}
+
+// ---- 自由配置テキスト ----
+
+export function getTextFontSize(node: Node): number {
+  const v = Number(node.attr('label/fontSize'))
+  return Number.isFinite(v) && v > 0 ? v : TEXT.defaultFontSize
+}
+
+export function setTextFontSize(node: Node, size: number): void {
+  node.attr('label/fontSize', size)
+}
+
+export function getTextBold(node: Node): boolean {
+  const v = node.attr('label/fontWeight')
+  return v === 'bold' || v === 700 || v === '700'
+}
+
+export function setTextBold(node: Node, bold: boolean): void {
+  node.attr('label/fontWeight', bold ? 700 : 400)
+}
+
+export function getTextColor(node: Node): string {
+  const v = node.attr('label/fill')
+  return typeof v === 'string' ? v : TEXT.defaultColor
+}
+
+export function setTextColor(node: Node, color: string): void {
+  node.attr('label/fill', color)
 }
 
 // ---- フレーム（コンテナ） ----
