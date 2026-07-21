@@ -303,6 +303,46 @@ end note`
               : `ng(texts=${texts.length}, notes=${noteNodes.length}, attached=${attached}, multiline=${multiline}, links=${links.length}, leftOfA=${leftOfA})`
           buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
+
+        // DSL の外部ゲート: 片端が座標だけの点になり、水平が保たれる
+        {
+          buildSequenceFromText(
+            this.editor,
+            `[-> A : 外から
+A ->] : 外へ
+A -> B : 通常`
+          )
+          await new Promise((r) => setTimeout(r, 100))
+          const msgs = graph.getEdges().filter((e) => getCellKind(e) === 'message')
+          const gates = msgs.filter((e) => (e.getData() as { gate?: string })?.gate)
+          const lifelineA = graph.getNodes().find((n) => getNodeLabel(n) === 'A')
+          const aBox = lifelineA?.getBBox()
+          const aCx = aBox ? aBox.x + aBox.width / 2 : 0
+          // ゲート側の端点は座標（cell を持たない）で、相手の左右に出る
+          const inbound = gates.find((e) => (e.getData() as { gate?: string }).gate === 'in')
+          const outbound = gates.find((e) => (e.getData() as { gate?: string }).gate === 'out')
+          const inPoint = inbound?.getSource() as { x?: number; cell?: string } | undefined
+          const outPoint = outbound?.getTarget() as { x?: number; cell?: string } | undefined
+          // 水平か（vertex の y とゲート点の y が一致）
+          const horizontal = gates.every((e) => {
+            const v = e.getVertices()[0]
+            const p = ((e.getData() as { gate?: string }).gate === 'in'
+              ? e.getSource()
+              : e.getTarget()) as { y?: number }
+            return v !== undefined && p.y !== undefined && Math.abs(v.y - p.y) < 0.5
+          })
+          behavior['dslGate'] =
+            gates.length === 2 &&
+            graph.getNodes().filter((n) => getCellKind(n) === 'lifeline').length === 2 &&
+            inPoint?.cell === undefined &&
+            outPoint?.cell === undefined &&
+            (inPoint?.x ?? 0) < aCx &&
+            (outPoint?.x ?? 0) > aCx &&
+            horizontal
+              ? 'ok'
+              : `ng(gates=${gates.length}, inX=${inPoint?.x}, outX=${outPoint?.x}, aCx=${aCx}, horizontal=${horizontal})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+        }
       } catch (e) {
         behavior['error'] = (e as Error).message
       }

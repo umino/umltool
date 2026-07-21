@@ -215,3 +215,42 @@ A -> B : 送信`)
     expect(parseSequence('A -> B : x').notes).toEqual([])
   })
 })
+
+describe('外部ゲート（[-> / ->]）', () => {
+  it('[-> は外から参加者へのメッセージになる', () => {
+    const r = parseSequence('[-> A : 受信')
+    expect(r.messages[0]).toMatchObject({ from: '', to: 'A', gate: 'in', label: '受信' })
+  })
+
+  it('->] は参加者から外へのメッセージになる', () => {
+    const r = parseSequence('A ->] : 送信')
+    expect(r.messages[0]).toMatchObject({ from: 'A', to: '', gate: 'out', label: '送信' })
+  })
+
+  it('ゲートの相手だけが参加者として宣言される', () => {
+    const r = parseSequence('[-> A : x\nA ->] : y')
+    expect(r.participants.map((p) => p.id)).toEqual(['A'])
+  })
+
+  it('矢印の種別はゲートでも反映される', () => {
+    expect(parseSequence('[->> A : x').messages[0].kind).toBe('async')
+    expect(parseSequence('A -->] : x').messages[0].kind).toBe('return')
+  })
+
+  it('通常のメッセージは gate が null', () => {
+    expect(parseSequence('A -> B : x').messages[0].gate).toBeNull()
+  })
+
+  it('両端を外にはできない', () => {
+    expect(() => parseSequence('[->] : x')).toThrowError(ParseError)
+  })
+
+  it('ゲートは activate の対象にできる', () => {
+    const r = parseSequence(`[-> A : 受信
+activate A
+A ->] : 送信
+deactivate A`)
+    expect(r.activations).toHaveLength(1)
+    expect(r.activations[0].participant).toBe('A')
+  })
+})

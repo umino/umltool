@@ -14,6 +14,8 @@ export interface LifelineLayout {
 export interface MessageLayout {
   index: number
   y: number
+  /** ゲート（図の外側の端点）の x。通常のメッセージは null */
+  gateX: number | null
 }
 
 export interface ActivationLayout {
@@ -61,6 +63,9 @@ const FRAG_GAP = { open: 30, separator: 22, close: 26 } as const
 
 /** ライフライン中心から注釈までの横方向の間隔 */
 const NOTE_GAP_X = 30
+
+/** ゲート（図の外の端点）を相手ライフラインの中心からどれだけ離すか */
+const GATE_LENGTH = 90
 /** 注釈が占める高さの見積り（実際の高さは描画時に本文へ合わせて詰め直される） */
 const NOTE_LINE_HEIGHT = 20
 const NOTE_PAD_Y = 16
@@ -111,6 +116,18 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     centerXOf.set(p.id, LIFELINE.firstCenterX + i * LIFELINE.gapX)
   })
 
+  /**
+   * ゲートの端点 x。外から来るものは相手の左、外へ出るものは相手の右に置く。
+   * ゲートでないメッセージは null。
+   */
+  const gateXOf = (i: number): number | null => {
+    const msg = parsed.messages[i]
+    if (msg.gate === null) return null
+    const partner = msg.gate === 'in' ? msg.to : msg.from
+    const cx = centerXOf.get(partner) ?? LIFELINE.firstCenterX
+    return msg.gate === 'in' ? cx - GATE_LENGTH : cx + GATE_LENGTH
+  }
+
   // フラグメントの枠: 含まれるメッセージが通るライフラインの範囲 + 余白
   const rects = parsed.fragments.map((f) => {
     let minX = Infinity
@@ -119,9 +136,16 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     for (let i = f.start; i <= f.end; i++) {
       const msg = parsed.messages[i]
       for (const name of [msg.from, msg.to]) {
+        if (name === '') continue // ゲート側は参加者を持たない
         const cx = centerXOf.get(name) ?? LIFELINE.firstCenterX
         minX = Math.min(minX, cx)
         maxX = Math.max(maxX, cx)
+      }
+      // ゲートは枠の外に出ないよう端点まで含める
+      const gx = gateXOf(i)
+      if (gx !== null) {
+        minX = Math.min(minX, gx)
+        maxX = Math.max(maxX, gx)
       }
       if (msg.kind === 'self' || msg.from === msg.to) {
         const cx = centerXOf.get(msg.from) ?? LIFELINE.firstCenterX
@@ -237,7 +261,8 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
 
   const messages: MessageLayout[] = parsed.messages.map((_m, i) => ({
     index: i,
-    y: ys[i]
+    y: ys[i],
+    gateX: gateXOf(i)
   }))
 
   return { lifelines, messages, fragments, activations, notes }

@@ -4,6 +4,7 @@ import {
   addAttachedText,
   addFragment,
   addFragmentDivider,
+  addGateMessage,
   addLifeline,
   addMessage
 } from '../editor/sequence'
@@ -35,10 +36,20 @@ export function buildSequenceFromText(editor: GraphEditor, text: string): void {
     }
 
     parsed.messages.forEach((msg, i) => {
+      const placed = layout.messages[i]
+      if (msg.gate !== null) {
+        const lifeline = cellById.get(msg.gate === 'in' ? msg.to : msg.from)
+        if (!lifeline || placed.gateX === null) return
+        addGateMessage(graph, lifeline, msg.gate, msg.kind, msg.label, {
+          y: placed.y,
+          gateX: placed.gateX
+        })
+        return
+      }
       const source = cellById.get(msg.from)
       const target = cellById.get(msg.to)
       if (!source || !target) return
-      addMessage(graph, source, target, msg.kind, msg.label, { y: layout.messages[i].y })
+      addMessage(graph, source, target, msg.kind, msg.label, { y: placed.y })
     })
 
     for (const a of layout.activations) {

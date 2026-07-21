@@ -96,6 +96,38 @@ export function addMessage(
   return edge
 }
 
+export interface GateMessageOptions extends MessageOptions {
+  /** 図の外側の端点 x */
+  gateX: number
+}
+
+/**
+ * 図の外を端点にするメッセージ（PlantUML の `[-> A` / `A ->]`）。
+ * 片端はライフライン、もう片端は座標だけの自由な点になる。点側には
+ * centerline アンカーが効かないので、点の y と vertex の y を揃えて水平を保つ。
+ */
+export function addGateMessage(
+  graph: Graph,
+  lifeline: Node,
+  direction: 'in' | 'out',
+  kind: MessageKind,
+  label: string,
+  opts: GateMessageOptions
+): Edge {
+  const lifelineX = centerX(lifeline)
+  const gate = { x: opts.gateX, y: opts.y }
+  const edge = graph.addEdge({
+    shape: SHAPE.message,
+    source: direction === 'in' ? gate : { cell: lifeline.id },
+    target: direction === 'in' ? { cell: lifeline.id } : gate,
+    vertices: [{ x: (lifelineX + opts.gateX) / 2, y: opts.y }],
+    attrs: { line: messageLineAttrs(kind) },
+    data: { kind: 'message', msgKind: kind, gate: direction }
+  })
+  if (label !== '') setMessageLabel(edge, label)
+  return edge
+}
+
 function centerX(node: Node): number {
   const bbox = node.getBBox()
   return bbox.x + bbox.width / 2

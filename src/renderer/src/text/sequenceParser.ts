@@ -1,10 +1,17 @@
 import type { FragmentOperator, MessageKind } from '../editor/constants'
 
 export interface ParsedMessage {
+  /** 送信元の参加者 id。gate が 'in' のときは空（図の外） */
   from: string
+  /** 送信先の参加者 id。gate が 'out' のときは空（図の外） */
   to: string
   kind: MessageKind
   label: string
+  /**
+   * 図の外を端点にするゲート。PlantUML の `[-> A`（外から）が 'in'、
+   * `A ->]`（外へ）が 'out'。通常のメッセージは null。
+   */
+  gate: 'in' | 'out' | null
 }
 
 export interface ParsedParticipant {
@@ -124,6 +131,8 @@ function stripQuotes(name: string): string {
  *   A -> B : ラベル   （同期）
  *   A ->> B : ラベル  （非同期）
  *   A --> B : ラベル  （戻り/破線）
+ *   [-> A : ラベル    （図の外から A へ）
+ *   A ->] : ラベル    （A から図の外へ）
  *   activate 参加者 / deactivate 参加者 （活性化バー。deactivate 省略時は末尾で自動終了）
  *   alt 条件 / opt / loop / break / par / seq / strict / critical … end
  *   else 条件 （alt / par 内の区切り）
@@ -314,9 +323,30 @@ export function parseSequence(text: string): ParsedSequence {
       if (from === '' || to === '') {
         throw new ParseError('送信元または送信先が空です', lineNo)
       }
+      // [ / ] は参加者ではなく「図の外」を表す
+      const fromOutside = from === '['
+      const toOutside = to === ']'
+      if (fromOutside && toOutside) {
+        throw new ParseError('両端を図の外にはできません', lineNo)
+      }
+      if (fromOutside || toOutside) {
+        const inside = fromOutside ? to : from
+        if (inside === '[' || inside === ']') {
+          throw new ParseError(`ゲートの相手が参加者ではありません: ${inside}`, lineNo)
+        }
+        ensure(inside)
+        messages.push({
+          from: fromOutside ? '' : inside,
+          to: toOutside ? '' : inside,
+          kind: arrowToKind(am[2], false),
+          label,
+          gate: fromOutside ? 'in' : 'out'
+        })
+        return
+      }
       ensure(from)
       ensure(to)
-      messages.push({ from, to, kind: arrowToKind(am[2], from === to), label })
+      messages.push({ from, to, kind: arrowToKind(am[2], from === to), label, gate: null })
       return
     }
 

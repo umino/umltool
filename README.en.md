@@ -109,6 +109,8 @@ note left of User
 multi-line bodies
 are supported too
 end note
+[-> Server : a message from outside the diagram
+Server ->] : a message to outside the diagram
 ```
 
 - **Display name and alias**: `participant "Display name" as Alias`. Referenced by the alias afterwards.
@@ -120,6 +122,7 @@ end note
   - `note over <participant>` / `note over <a>, <b>` → **note**, a freely placed sticky note; listing several participants widens it to span them
 
   Either form takes its body after `:`, or omits the `:` and reads everything up to `end note` as a multi-line body. An annotation is placed below the message preceding it, and following messages shift down to make room.
+- **Gates (messages to and from outside the diagram)**: `[-> <participant>` comes in from outside, `<participant> ->]` goes out. Arrow kinds (`->`, `->>`, `-->`) work as usual. The gate end is a free point with no participant, extending to the left for inbound messages and to the right for outbound ones. Both ends cannot be outside (`[->]` is an error).
 
 ### Activity diagrams
 

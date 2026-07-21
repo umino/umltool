@@ -175,3 +175,34 @@ note right of B : メモ`)
     expect(a.top + a.height).toBeGreaterThan(note.y)
   })
 })
+
+describe('ゲートのレイアウト', () => {
+  it('外から来るゲートは相手の左、外へ出るゲートは右に端点を置く', () => {
+    const l = layoutSequence(parseSequence('[-> A : 受信\nA ->] : 送信'))
+    const a = l.lifelines[0]
+    expect(l.messages[0].gateX).toBeLessThan(a.centerX)
+    expect(l.messages[1].gateX).toBeGreaterThan(a.centerX)
+  })
+
+  it('通常のメッセージは gateX が null', () => {
+    const l = layoutSequence(parseSequence('A -> B : x'))
+    expect(l.messages[0].gateX).toBeNull()
+  })
+
+  it('フラグメントの枠はゲートの端点まで広がる', () => {
+    const l = layoutSequence(
+      parseSequence(`alt 条件
+[-> A : 受信
+end`)
+    )
+    const frag = l.fragments[0]
+    const gateX = l.messages[0].gateX!
+    expect(frag.x).toBeLessThanOrEqual(gateX)
+    expect(frag.x + frag.width).toBeGreaterThan(gateX)
+  })
+
+  it('ゲートのみでもライフラインは1本だけ生成される', () => {
+    const l = layoutSequence(parseSequence('[-> A : x'))
+    expect(l.lifelines).toHaveLength(1)
+  })
+})
