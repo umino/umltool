@@ -67,7 +67,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - **Move a message vertically**: select the message and drag its center handle up/down (it always stays horizontal)
 - **Reconnect**: select a message and drag an endpoint handle to another lifeline
 - **Kinds**: synchronous (solid line, filled arrow) / asynchronous (solid, open arrow) / return (dashed, open arrow) / self (loop) — switch in the right panel
-- **Activation bars (execution specifications)**: the "活性化バー" palette item. Constrained to the lifeline's center line; movable vertically and resizable in both directions
+- **Activation bars (execution specifications)**: the "活性化バー" palette item. Constrained to the lifeline's center line; movable vertically and resizable in both directions. Overlapping bars stack astah*-style, each nested level shifted right by half a bar width
 - **Combined fragments**: the "フラグメント" palette item. Change the operator (alt / opt / loop / break / par / seq / strict / critical) and guard in the right panel; double-click also edits the guard. Drag the border to move, select to resize. For alt / par, use "＋区切り線を追加" in the right panel to add dashed separators (drag vertically to move, Delete to remove)
 
 ### Activity diagrams

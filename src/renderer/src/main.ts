@@ -344,6 +344,42 @@ A -> B : 通常`
           buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
 
+        // 入れ子の活性化バーは 1 段ごとに右へずれて積み重なる
+        {
+          buildSequenceFromText(
+            this.editor,
+            `participant A
+participant B
+activate B
+A -> B : 1段目
+activate B
+B -> B : 2段目
+activate B
+B -> B : 3段目
+deactivate B
+deactivate B
+B --> A : 戻り
+deactivate B`
+          )
+          await new Promise((r) => setTimeout(r, 100))
+          const bars = graph
+            .getNodes()
+            .filter((n) => getCellKind(n) === 'activation')
+            .sort((a, b) => a.getBBox().x - b.getBBox().x)
+          const xs = bars.map((b) => b.getBBox().x)
+          const steps = xs.slice(1).map((x, i) => Math.round(x - xs[i]))
+          // 外側ほど左。段差はちょうど nestOffsetX、上端は内側ほど下
+          const nested =
+            bars.length === 3 &&
+            steps.every((s) => s === ACTIVATION.nestOffsetX) &&
+            bars[0].getBBox().y <= bars[1].getBBox().y &&
+            bars[1].getBBox().y <= bars[2].getBBox().y
+          behavior['activationNesting'] = nested
+            ? 'ok'
+            : `ng(bars=${bars.length}, steps=${steps.join('/')})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+        }
+
         // 重なり順: ライフライン < 活性化バー < メッセージ
         // （バーは生存線を隠し、矢印はバーの上を通る）
         {

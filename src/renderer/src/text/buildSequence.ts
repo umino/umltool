@@ -86,5 +86,7 @@ export function buildSequenceFromText(editor: GraphEditor, text: string): void {
     }
   })
 
+  // バーが出揃ってから、重なっているものを入れ子として右へずらす
+  editor.normalizeAllActivations()
   editor.fit()
 }

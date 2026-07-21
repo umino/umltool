@@ -42,6 +42,7 @@ import {
 } from './shapes'
 import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
 import { normalizeBranchPorts } from './activity'
+import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 
 const ZOOM_MIN = 0.2
@@ -232,6 +233,16 @@ export class GraphEditor {
     this.withNormalizing(() => normalizeBranchPorts(this.graph))
   }
 
+  /**
+   * 図の作り直し後などに、全ライフラインの活性化バーを配置し直す。
+   * 生成直後はまだ移動イベントが起きないので、明示的に呼ぶ必要がある。
+   */
+  normalizeAllActivations(): void {
+    for (const node of this.graph.getNodes()) {
+      if (getCellKind(node) === 'lifeline') this.normalizeActivations(node)
+    }
+  }
+
   // ---- ダブルクリックでラベル直接編集 ----
 
   private wireInlineEditing(): void {
@@ -410,9 +421,7 @@ export class GraphEditor {
         this.clampActivation(node)
         this.renormalizeEdgesOf(node)
       } else if (kind === 'lifeline') {
-        for (const child of node.getChildren() ?? []) {
-          if (getCellKind(child) === 'activation') this.clampActivation(child as Node)
-        }
+        this.normalizeActivations(node)
         this.renormalizeEdgesOf(node)
       } else if (kind === 'divider') {
         this.clampDivider(node)
@@ -512,15 +521,38 @@ export class GraphEditor {
   private clampActivation(node: Node): void {
     const parent = node.getParent()
     if (!parent || getCellKind(parent) !== 'lifeline') return
-    const pb = (parent as Node).getBBox()
-    const size = node.getSize()
-    const pos = node.getPosition()
-    const wantX = pb.x + pb.width / 2 - size.width / 2
-    const minY = pb.y + LIFELINE.headHeight + 4
-    const maxY = pb.y + pb.height - size.height
-    const wantY = Math.min(Math.max(pos.y, minY), Math.max(minY, maxY))
-    if (Math.abs(pos.x - wantX) > 0.5 || Math.abs(pos.y - wantY) > 0.5) {
-      this.withNormalizing(() => node.setPosition(wantX, wantY))
+    this.normalizeActivations(parent as Node)
+  }
+
+  /**
+   * ライフライン上の活性化バーを縦範囲内に収め、入れ子の深さだけ右へずらす。
+   *
+   * ずらす量は他のバーとの包含関係で決まるので、1 本だけでは決められず
+   * ライフライン単位でまとめて計算する。
+   */
+  private normalizeActivations(lifeline: Node): void {
+    const bars = (lifeline.getChildren() ?? []).filter(
+      (c) => getCellKind(c) === 'activation'
+    ) as Node[]
+    if (bars.length === 0) return
+
+    const pb = lifeline.getBBox()
+    const centerX = pb.x + pb.width / 2
+    const depths = activationDepths(
+      bars.map((bar) => ({ id: bar.id, y: bar.getPosition().y, height: bar.getSize().height }))
+    )
+
+    for (const bar of bars) {
+      const size = bar.getSize()
+      const pos = bar.getPosition()
+      const depth = depths.get(bar.id) ?? 0
+      const wantX = centerX - size.width / 2 + depth * ACTIVATION.nestOffsetX
+      const minY = pb.y + LIFELINE.headHeight + 4
+      const maxY = pb.y + pb.height - size.height
+      const wantY = Math.min(Math.max(pos.y, minY), Math.max(minY, maxY))
+      if (Math.abs(pos.x - wantX) > 0.5 || Math.abs(pos.y - wantY) > 0.5) {
+        this.withNormalizing(() => bar.setPosition(wantX, wantY))
+      }
     }
   }
 

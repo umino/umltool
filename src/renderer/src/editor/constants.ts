@@ -72,7 +72,12 @@ export const MESSAGE = {
 
 export const ACTIVATION = {
   width: 12,
-  defaultHeight: 120
+  defaultHeight: 120,
+  /**
+   * 入れ子 1 段あたり右へずらす量（astah* 風の積み重ね表現）。
+   * 幅の半分にして、外側のバーが半分見えたまま重なるようにする。
+   */
+  nestOffsetX: 6
 } as const
 
 /** 複合フラグメント（alt/opt/loop など） */
