@@ -37,5 +37,7 @@ export function buildActivityFromText(editor: GraphEditor, text: string): void {
     }
   })
 
+  // 全ノードが揃ってから、分岐/合流の枝が重ならないよう接続辺を決める
+  editor.normalizeBranchPorts()
   editor.fit()
 }

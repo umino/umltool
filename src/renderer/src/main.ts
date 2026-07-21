@@ -1,5 +1,5 @@
 import './styles.css'
-import type { Node } from '@antv/x6'
+import type { Edge, Node } from '@antv/x6'
 import { GraphEditor } from './editor/GraphEditor'
 import {
   addActivation,
@@ -429,6 +429,37 @@ class AppController {
             merges.length >= 1 && ms && ms.width < ACTIVITY.decision.width
               ? `ok(${merges.length}, ${ms.width}x${ms.height})`
               : `ng(count=${merges.length})`
+        }
+
+        // 分岐/合流の枝が別々の辺から出入りしているか（ラウンドトリップ後も維持）
+        {
+          const portOf = (edge: Edge, at: 'source' | 'target'): string => {
+            const terminal = at === 'source' ? edge.getSource() : edge.getTarget()
+            return String((terminal as { port?: string }).port ?? '(none)')
+          }
+          const problems: string[] = []
+          for (const node of graph.getNodes()) {
+            const kind = getCellKind(node)
+            if (kind !== 'decision' && kind !== 'merge') continue
+            const flows = graph.getConnectedEdges(node).filter((e) => getCellKind(e) === 'flow')
+            // 分岐は出る枝、合流は入る枝を見る
+            const branches = flows.filter((e) =>
+              kind === 'decision'
+                ? e.getSourceCellId() === node.id
+                : e.getTargetCellId() === node.id
+            )
+            const sides = branches.map((e) =>
+              portOf(e, kind === 'decision' ? 'source' : 'target')
+            )
+            const forbidden = kind === 'decision' ? 'top' : 'bottom'
+            if (sides.includes('(none)')) problems.push(`${kind}:no-port`)
+            if (sides.includes(forbidden)) problems.push(`${kind}:uses-${forbidden}`)
+            // 枝が 3 本以内なら重なってはいけない
+            if (branches.length <= 3 && new Set(sides).size !== sides.length) {
+              problems.push(`${kind}:dup(${sides.join('/')})`)
+            }
+          }
+          activity['branchPorts'] = problems.length === 0 ? 'ok' : `ng(${problems.join(',')})`
         }
 
         // フレーム: 追加・ヘッダ変更（タブ幅追従）・リサイズ・削除

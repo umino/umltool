@@ -6,7 +6,7 @@
 //     Y をノード範囲にクランプし (中心X, y) へ投影するため、常に水平になる
 //   - 中央 vertex を上下ドラッグするとメッセージ全体が連続的に上下移動する
 
-import { Graph, Point } from '@antv/x6'
+import { Graph, Point, routerPresets } from '@antv/x6'
 import type { Cell, Edge, Node } from '@antv/x6'
 import {
   ACTIVATION,
@@ -44,6 +44,36 @@ export { FONT_FAMILY }
  */
 const ROUTER_TRANSPARENT_SHAPES = [SHAPE.swimlane, SHAPE.frame, SHAPE.note, SHAPE.text]
 
+/** フロー用のルータ名（manhattan を包んだもの） */
+export const FLOW_ROUTER = 'uml-manhattan'
+
+const MANHATTAN_FAILURE_WARNING = 'Unable to execute manhattan algorithm'
+
+/**
+ * manhattan は経路が見つからないと orth へフォールバックする。これは想定内の
+ * 動作だが、その都度 console.warn するため、ノードが密集した図では警告が延々と
+ * 流れ続ける（issue #8）。X6 側に抑止オプションが無いので、フォールバック自体は
+ * そのままに、この 1 種類の警告だけを飲み込むラッパを登録する。
+ */
+function registerFlowRouter(): void {
+  Graph.registerRouter(
+    FLOW_ROUTER,
+    function (this: unknown, vertices, options, edgeView) {
+      const original = console.warn
+      console.warn = (...args: unknown[]) => {
+        if (typeof args[0] === 'string' && args[0].includes(MANHATTAN_FAILURE_WARNING)) return
+        original.apply(console, args)
+      }
+      try {
+        return routerPresets.manhattan.call(this as never, vertices, options, edgeView)
+      } finally {
+        console.warn = original
+      }
+    },
+    true
+  )
+}
+
 /** 塗り矢印（同期） */
 const MARKER_FILLED = {
   name: 'block',
@@ -68,6 +98,8 @@ let registered = false
 export function registerShapes(): void {
   if (registered) return
   registered = true
+
+  registerFlowRouter()
 
   // ---- ライフライン: ヘッダ矩形 + 破線の生存線 + 接続用ヒット領域 ----
   // X6 v3 に calc() 構文は無いため、サイズ依存の座標は lifelineGeometryAttrs で
@@ -647,7 +679,10 @@ export function registerShapes(): void {
   Graph.registerEdge(
     SHAPE.flow,
     {
-      router: { name: 'manhattan', args: { padding: 16, excludeShapes: ROUTER_TRANSPARENT_SHAPES } },
+      router: {
+        name: FLOW_ROUTER,
+        args: { padding: 12, excludeShapes: ROUTER_TRANSPARENT_SHAPES }
+      },
       connector: { name: 'rounded', args: { radius: 8 } },
       attrs: {
         line: {

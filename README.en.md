@@ -76,6 +76,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - Flows use orthogonal (manhattan) routing; select a flow to add and adjust waypoints
 - Edit guard conditions by selecting a flow and using the right panel
 - **Decision and merge are separate nodes**: a decision is a diamond with a condition label, while a merge is a small empty diamond (the "合流" palette item)
+- **Branches do not overlap**: branches leave a decision through its bottom, right and left sides and enter a merge through its top, right and left sides, each on its own side. The assignment follows the position of the node at the other end and is redone when nodes move. Sides are only reused once a node has four or more branches
 - **Swimlanes** can be resized: select one and drag the handles to change its width and height
 - **Node resizing**: action / decision / merge / initial / final / fork / join nodes show handles when selected, and can also be sized via the "幅" and "高さ" fields in the right panel (initial and final keep a fixed aspect ratio so they stay circular). Actions and decisions normally auto-size to their label; resizing one manually pins that size instead. Use "サイズを自動に戻す" in the right panel to restore the automatic behaviour
 - **Frames (containers)**: the "フレーム" palette item. A transparent frame with a header tab in the top-left corner; nodes inside remain fully interactive. Drag the border or header to move, select to resize, and edit the header via the right panel or double-click (the tab width follows the text)

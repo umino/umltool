@@ -41,6 +41,7 @@ import {
   setNodeLabel
 } from './shapes'
 import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
+import { normalizeBranchPorts } from './activity'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 
 const ZOOM_MIN = 0.2
@@ -183,6 +184,7 @@ export class GraphEditor {
     this.wireSequenceBehavior()
     this.wireInlineEditing()
     this.wireActivityResize()
+    this.wireBranchPorts()
   }
 
   // ---- アクティビティノードの手動リサイズ ----
@@ -196,6 +198,33 @@ export class GraphEditor {
     this.graph.on('node:resized', ({ node }: { node: Node }) => {
       if (isActivityNodeKind(getCellKind(node))) markManuallySized(node)
     })
+  }
+
+  // ---- 分岐/合流の枝が重ならないよう接続辺を割り当て直す ----
+
+  /**
+   * 枝の向きは相手ノードの位置で決まるので、フローの増減・繋ぎ替えだけでなく
+   * ノードの移動・リサイズでも計算し直す。割り当ては edge の source/target を
+   * 書き換えるため、withNormalizing で自身の再入を止める。
+   */
+  private wireBranchPorts(): void {
+    const graph = this.graph
+    const rerun = (): void => {
+      if (this.normalizing || this.mode !== 'activity') return
+      this.withNormalizing(() => normalizeBranchPorts(graph))
+    }
+    graph.on('edge:added', rerun)
+    graph.on('edge:removed', rerun)
+    graph.on('edge:change:source', rerun)
+    graph.on('edge:change:target', rerun)
+    graph.on('node:change:position', rerun)
+    graph.on('node:change:size', rerun)
+  }
+
+  /** 図の作り直し後などに、分岐/合流の接続辺をまとめて割り当て直す */
+  normalizeBranchPorts(): void {
+    if (this.mode !== 'activity') return
+    this.withNormalizing(() => normalizeBranchPorts(this.graph))
   }
 
   // ---- ダブルクリックでラベル直接編集 ----
