@@ -11,6 +11,8 @@ import type { Cell, Edge, Node } from '@antv/x6'
 import {
   ACTIVATION,
   ACTIVITY,
+  DECISION_SHAPE_POINTS,
+  DEFAULT_DECISION_SHAPE,
   FONT_FAMILY,
   FRAGMENT,
   FRAME,
@@ -21,6 +23,7 @@ import {
   TEXT,
   Z,
   type CellKind,
+  type DecisionShape,
   type FragmentOperator,
   type MessageKind,
   type UmlCellData
@@ -817,6 +820,18 @@ export function noteGeometryAttrs(
     body: { d: `M ${f} 0 H ${width} V ${height} H 0 V ${f} Z` },
     fold: { d: `M ${f} 0 V ${f} H 0 Z` }
   }
+}
+
+/** 分岐ノードの輪郭を指定の図形に差し替える */
+export function applyDecisionShape(node: Node, shape: DecisionShape): void {
+  if (getCellKind(node) !== 'decision') return
+  node.attr('body/refPoints', DECISION_SHAPE_POINTS[shape])
+}
+
+/** 分岐ノードの現在の図形（未設定なら既定） */
+export function getDecisionShape(node: Node): DecisionShape {
+  const points = String(node.attr('body/refPoints') ?? '')
+  return points === DECISION_SHAPE_POINTS.hexagon ? 'hexagon' : DEFAULT_DECISION_SHAPE
 }
 
 /** ノートの現在サイズに path を合わせる */

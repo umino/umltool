@@ -3,7 +3,26 @@
 // 高さを拡張する。計算部は measurer 注入可能な純関数（ユニットテスト対象）。
 
 import type { Node } from '@antv/x6'
-import { ACTIVITY, FONT_FAMILY, LIFELINE, NOTE, TEXT } from './constants'
+import {
+  ACTIVITY,
+  DECISION_SHAPE_POINTS,
+  DECISION_WIDTH_FACTOR,
+  DEFAULT_DECISION_SHAPE,
+  FONT_FAMILY,
+  LIFELINE,
+  NOTE,
+  TEXT,
+  type DecisionShape
+} from './constants'
+
+/**
+ * 分岐ノードの図形を輪郭の点列から判定する。
+ * shapes.ts を参照すると循環参照になるのでここで直接見る。
+ */
+function decisionShapeOf(node: Node): DecisionShape {
+  const points = String(node.attr('body/refPoints') ?? '')
+  return points === DECISION_SHAPE_POINTS.hexagon ? 'hexagon' : DEFAULT_DECISION_SHAPE
+}
 
 export type TextMeasurer = (text: string) => number
 
@@ -125,7 +144,11 @@ export function autoSizeNode(node: Node, label: string): void {
   const fontFamily = typeof attrFamily === 'string' && attrFamily !== '' ? attrFamily : FONT_FAMILY
   const spec: AutoSizeSpec = {
     ...defaults,
-    lineHeight: Math.round(fontSize * (defaults.lineHeight / defaultFontSize))
+    lineHeight: Math.round(fontSize * (defaults.lineHeight / defaultFontSize)),
+    // 分岐は図形（菱形 / 6 角形）によって文字を置ける幅が変わる
+    ...(kind === 'decision'
+      ? { widthFactor: DECISION_WIDTH_FACTOR[decisionShapeOf(node)] }
+      : {})
   }
   const size = computeAutoSize(label, spec, domMeasurer(fontSize, fontFamily))
 

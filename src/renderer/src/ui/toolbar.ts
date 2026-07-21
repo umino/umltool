@@ -1,3 +1,5 @@
+import { DECISION_SHAPE_LABEL, type DecisionShape } from '../editor/constants'
+
 export type ToolbarDiagramType = 'sequence' | 'activity'
 
 export interface ToolbarActions {
@@ -6,6 +8,7 @@ export interface ToolbarActions {
   save: () => void
   saveAs: () => void
   setDiagramType: (type: ToolbarDiagramType) => void
+  setDecisionShape: (shape: DecisionShape) => void
   deleteSelection: () => void
   zoomIn: () => void
   zoomOut: () => void
@@ -17,6 +20,8 @@ export interface ToolbarActions {
 export interface ToolbarHandle {
   /** セレクトの表示値を図種別に合わせる */
   setDiagramType: (type: ToolbarDiagramType) => void
+  /** セレクトの表示値を分岐図形に合わせる */
+  setDecisionShape: (shape: DecisionShape) => void
 }
 
 function button(label: string, title: string, onClick: () => void): HTMLButtonElement {
@@ -70,6 +75,22 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
   )
   host.appendChild(group(label('図:'), typeSelect))
 
+  // 分岐の図形（図全体に効く設定）。アクティビティ図でだけ意味があるので
+  // シーケンス図のときは隠す。
+  const shapeSelect = document.createElement('select')
+  for (const value of ['diamond', 'hexagon'] as const) {
+    const opt = document.createElement('option')
+    opt.value = value
+    opt.textContent = DECISION_SHAPE_LABEL[value]
+    shapeSelect.appendChild(opt)
+  }
+  shapeSelect.title = '分岐（デシジョン）の図形。図の中のすべての分岐に適用されます'
+  shapeSelect.addEventListener('change', () =>
+    actions.setDecisionShape(shapeSelect.value as DecisionShape)
+  )
+  const shapeGroup = group(label('分岐:'), shapeSelect)
+  host.appendChild(shapeGroup)
+
   host.appendChild(group(button('🗑 削除', '選択を削除 (Delete)', actions.deleteSelection)))
 
   host.appendChild(
@@ -92,8 +113,13 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
 
   const setDiagramType = (type: ToolbarDiagramType): void => {
     typeSelect.value = type
+    shapeGroup.hidden = type !== 'activity'
+  }
+  const setDecisionShape = (shape: DecisionShape): void => {
+    shapeSelect.value = shape
   }
   setDiagramType('sequence')
+  setDecisionShape('diamond')
 
-  return { setDiagramType }
+  return { setDiagramType, setDecisionShape }
 }

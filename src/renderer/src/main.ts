@@ -95,6 +95,10 @@ class AppController {
       save: () => this.save(),
       saveAs: () => this.saveAs(),
       setDiagramType: (t) => void this.switchDiagramType(t),
+      setDecisionShape: (s) => {
+        this.editor.setDecisionShape(s)
+        this.setDirty(true)
+      },
       deleteSelection: () => this.editor.deleteSelection(),
       zoomIn: () => this.editor.zoomIn(),
       zoomOut: () => this.editor.zoomOut(),
@@ -628,6 +632,38 @@ B --> A : 返す`
           activity['branchPorts'] = problems.length === 0 ? 'ok' : `ng(${problems.join(',')})`
         }
 
+        // 分岐の図形: 既存・新規ともに切り替わり、保存で往復し、合流は菱形のまま
+        {
+          const { getDecisionShape } = await import('./editor/shapes')
+          const decisionsOf = (): Node[] =>
+            graph.getNodes().filter((n) => getCellKind(n) === 'decision')
+          this.editor.setDecisionShape('hexagon')
+          const existing = decisionsOf().every((n) => getDecisionShape(n) === 'hexagon')
+          // 切り替え後に追加した分岐も同じ形になる
+          const added = addActivityNode(graph, 'decision', '新しい分岐', {
+            centerX: 1200,
+            centerY: 700
+          })
+          const newOne = getDecisionShape(added) === 'hexagon'
+          // 合流は分岐と見分けが付くよう菱形のまま
+          const merge = graph.getNodes().find((n) => getCellKind(n) === 'merge')
+          const mergeUnchanged =
+            merge !== undefined && String(merge.attr('body/refPoints')).split(' ').length === 4
+          // 保存 → 読込で図形が保たれる
+          const saved2 = serializeProject(this.editor, 'activity')
+          loadProject(this.editor, saved2)
+          const survived =
+            this.editor.getDecisionShape() === 'hexagon' &&
+            decisionsOf().every((n) => getDecisionShape(n) === 'hexagon')
+          this.editor.setDecisionShape('diamond')
+          const backToDiamond = decisionsOf().every((n) => getDecisionShape(n) === 'diamond')
+          activity['decisionShape'] =
+            existing && newOne && mergeUnchanged && survived && backToDiamond
+              ? 'ok'
+              : `ng(existing=${existing}, new=${newOne}, merge=${mergeUnchanged}, roundtrip=${survived}, back=${backToDiamond})`
+          graph.removeCells(decisionsOf().filter((n) => getNodeLabel(n) === '新しい分岐'))
+        }
+
         // フレーム: 追加・ヘッダ変更（タブ幅追従）・リサイズ・削除
         {
           const fr = addFrame(graph, 'フレーム', { x: 600, y: 500, width: 300, height: 200 })
@@ -985,6 +1021,7 @@ B --> A : 返す`
     this.diagramType = type
     this.editor.setMode(type)
     this.toolbar.setDiagramType(type)
+    this.toolbar.setDecisionShape(this.editor.getDecisionShape())
     this.palette.setDiagramType(type)
   }
 

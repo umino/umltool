@@ -14,6 +14,7 @@ import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
 import {
   ACTIVATION,
   ACTIVITY_MIN_SIZE,
+  DEFAULT_DECISION_SHAPE,
   FRAGMENT,
   FRAME,
   LIFELINE,
@@ -21,9 +22,11 @@ import {
   NOTE,
   SHAPE,
   TEXT,
-  isActivityNodeKind
+  isActivityNodeKind,
+  type DecisionShape
 } from './constants'
 import {
+  applyDecisionShape,
   applyDividerGeometry,
   applyFrameHeader,
   applyLifelineGeometry,
@@ -68,6 +71,7 @@ export class GraphEditor {
   private readonly scroller: Scroller
   private normalizing = false
   private mode: EditorMode = 'sequence'
+  private decisionShape: DecisionShape = DEFAULT_DECISION_SHAPE
 
   constructor(container: HTMLElement) {
     registerShapes()
@@ -191,6 +195,11 @@ export class GraphEditor {
     this.wireInlineEditing()
     this.wireActivityResize()
     this.wireBranchPorts()
+
+    // 新しく増えた分岐は、パレット・DSL・貼り付けのどれで来ても現在の図形に揃える
+    this.graph.on('node:added', ({ node }: { node: Node }) => {
+      if (getCellKind(node) === 'decision') applyDecisionShape(node, this.decisionShape)
+    })
   }
 
   // ---- アクティビティノードの手動リサイズ ----
@@ -231,6 +240,29 @@ export class GraphEditor {
   normalizeBranchPorts(): void {
     if (this.mode !== 'activity') return
     this.withNormalizing(() => normalizeBranchPorts(this.graph))
+  }
+
+  // ---- 分岐（デシジョン）の図形 ----
+
+  /** 現在の分岐図形（プロジェクト単位の設定） */
+  getDecisionShape(): DecisionShape {
+    return this.decisionShape
+  }
+
+  /**
+   * 分岐の図形を切り替える。既存の分岐すべてに適用し、以降に追加される分岐も
+   * この形になる（`node:added` で新規ノードに当てている）。
+   * 図形が変わると文字を置ける幅も変わるので、自動サイズを計算し直す。
+   */
+  setDecisionShape(shape: DecisionShape): void {
+    this.decisionShape = shape
+    this.withNormalizing(() => {
+      for (const node of this.graph.getNodes()) {
+        if (getCellKind(node) !== 'decision') continue
+        applyDecisionShape(node, shape)
+        autoSizeNode(node, getNodeLabel(node))
+      }
+    })
   }
 
   /**

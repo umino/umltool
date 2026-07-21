@@ -141,6 +141,34 @@ export const ACTIVITY = {
 } as const
 
 /**
+ * 分岐（デシジョン）の図形。プロジェクト単位の設定で、全ての分岐に一括で効く。
+ * PlantUML は横長の 6 角形で描くため、菱形と選べるようにする。
+ */
+export type DecisionShape = 'diamond' | 'hexagon'
+
+export const DEFAULT_DECISION_SHAPE: DecisionShape = 'diamond'
+
+/** polygon の refPoints（0〜20 の相対座標） */
+export const DECISION_SHAPE_POINTS: Record<DecisionShape, string> = {
+  diamond: '0,10 10,0 20,10 10,20',
+  hexagon: '0,10 5,0 15,0 20,10 15,20 5,20'
+}
+
+export const DECISION_SHAPE_LABEL: Record<DecisionShape, string> = {
+  diamond: '菱形',
+  hexagon: '6 角形'
+}
+
+/**
+ * 図形内でラベルに使える幅の割合。6 角形は上下の辺が平らな分、
+ * 菱形より横に広く文字を置ける。
+ */
+export const DECISION_WIDTH_FACTOR: Record<DecisionShape, number> = {
+  diamond: 0.55,
+  hexagon: 0.75
+}
+
+/**
  * アクティビティ図ノードを手動リサイズするときの下限。
  * 図形が潰れて種別を判別できなくならない程度に留める。
  */

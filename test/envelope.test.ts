@@ -45,3 +45,36 @@ describe('project envelope', () => {
     expect(() => parseEnvelope(v1)).toThrow(/旧形式/)
   })
 })
+
+describe('プロジェクト設定（settings）', () => {
+  it('既定では菱形として書き出す', () => {
+    const env = parseEnvelope(wrapEnvelope({ cells: [] }, 'activity'))
+    expect(env.settings.decisionShape).toBe('diamond')
+  })
+
+  it('指定した分岐図形が往復する', () => {
+    const text = wrapEnvelope({ cells: [] }, 'activity', { decisionShape: 'hexagon' })
+    expect(parseEnvelope(text).settings.decisionShape).toBe('hexagon')
+  })
+
+  it('settings が無い旧ファイルは既定値になる', () => {
+    const legacy = JSON.stringify({
+      format: 'umltool-project',
+      version: 2,
+      diagramType: 'activity',
+      graph: { cells: [] }
+    })
+    expect(parseEnvelope(legacy).settings.decisionShape).toBe('diamond')
+  })
+
+  it('未知の分岐図形は既定値に倒す', () => {
+    const broken = JSON.stringify({
+      format: 'umltool-project',
+      version: 2,
+      diagramType: 'activity',
+      settings: { decisionShape: 'triangle' },
+      graph: { cells: [] }
+    })
+    expect(parseEnvelope(broken).settings.decisionShape).toBe('diamond')
+  })
+})
