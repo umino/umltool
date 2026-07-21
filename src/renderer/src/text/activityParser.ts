@@ -47,11 +47,23 @@ const RE = {
   lane: /^\|(.+?)\|$/
 }
 
+/**
+ * 分岐の各枝の終端。
+ *
+ * 枝に中身があれば終端はその最後のノードで、分岐ラベル（yes/no）は既に
+ * decision → 先頭ノードの edge が消費しているため label は空。枝が空の場合は
+ * 終端が decision 自身になり、合流へ引く edge がラベルを持つ必要がある。
+ */
+interface BranchEnd {
+  id: string
+  label: string
+}
+
 interface IfFrame {
   type: 'if'
   decisionId: string
   baseCol: number
-  branchEnds: string[]
+  branchEnds: BranchEnd[]
   hasElse: boolean
 }
 
@@ -91,6 +103,15 @@ export function parseActivity(text: string): ParsedActivity {
     cursor = id
     return id
   }
+
+  /**
+   * 枝の終端を作る。終端が decision 自身＝枝が空なので、未消費の分岐ラベルを
+   * 合流への edge に引き継ぐ
+   */
+  const branchEnd = (endId: string, decisionId: string): BranchEnd => ({
+    id: endId,
+    label: endId === decisionId ? pendingLabel : ''
+  })
 
   const lines = text.split(/\r?\n/)
   lines.forEach((raw, idx) => {
@@ -133,7 +154,7 @@ export function parseActivity(text: string): ParsedActivity {
         throw new ParseError('対応する if のない else です', lineNo)
       }
       if (frame.hasElse) throw new ParseError('else が重複しています', lineNo)
-      if (cursor !== null) frame.branchEnds.push(cursor)
+      if (cursor !== null) frame.branchEnds.push(branchEnd(cursor, frame.decisionId))
       frame.hasElse = true
       cursor = frame.decisionId
       pendingLabel = (m[1] ?? '').trim()
@@ -146,14 +167,16 @@ export function parseActivity(text: string): ParsedActivity {
         throw new ParseError('対応する if のない endif です', lineNo)
       }
       const ends = [...frame.branchEnds]
-      if (cursor !== null && cursor !== frame.decisionId) ends.push(cursor)
+      if (cursor !== null) ends.push(branchEnd(cursor, frame.decisionId))
+      // else 節が無い場合は「偽」側を直接合流へ流す。ただし then 節も空だった
+      // ときは既に decision 発の終端があるので二重に引かない
+      if (!frame.hasElse && !ends.some((e) => e.id === frame.decisionId)) {
+        ends.push({ id: frame.decisionId, label: '' })
+      }
       currentCol = frame.baseCol
-      cursor = null
       pendingLabel = ''
       const mergeId = rawNode('merge', '')
-      for (const end of ends) edges.push({ from: end, to: mergeId, label: '' })
-      // else 節が無い場合は「偽」側を直接合流へ流す
-      if (!frame.hasElse) edges.push({ from: frame.decisionId, to: mergeId, label: '' })
+      for (const end of ends) edges.push({ from: end.id, to: mergeId, label: end.label })
       cursor = mergeId
       return
     }

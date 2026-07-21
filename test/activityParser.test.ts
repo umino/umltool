@@ -48,6 +48,37 @@ stop`)
     expect(r.edges.some((e) => e.from === decision.id && e.to === merge.id)).toBe(true)
   })
 
+  it('else 節が空でも decision から合流へラベル付きで流れる', () => {
+    const r = parseActivity(`start
+if (要確認?) then (yes)
+  :確認する;
+else (no)
+endif
+stop`)
+    const decision = r.nodes[1]
+    const merge = r.nodes.find((n) => n.kind === 'merge')!
+    const noEdge = r.edges.find((e) => e.from === decision.id && e.to === merge.id)
+    expect(noEdge).toBeDefined()
+    expect(noEdge!.label).toBe('no')
+    // 両枝が merge に合流する
+    expect(r.edges.filter((e) => e.to === merge.id)).toHaveLength(2)
+  })
+
+  it('then 節が空でも decision から合流へラベル付きで流れる', () => {
+    const r = parseActivity(`start
+if (要確認?) then (yes)
+else (no)
+  :確認する;
+endif
+stop`)
+    const decision = r.nodes[1]
+    const merge = r.nodes.find((n) => n.kind === 'merge')!
+    const yesEdge = r.edges.find((e) => e.from === decision.id && e.to === merge.id)
+    expect(yesEdge).toBeDefined()
+    expect(yesEdge!.label).toBe('yes')
+    expect(r.edges.filter((e) => e.to === merge.id)).toHaveLength(2)
+  })
+
   it('fork / fork again / end fork で並行フローになる', () => {
     const r = parseActivity(`start
 fork
