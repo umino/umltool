@@ -1,6 +1,12 @@
 import type { Cell, Edge, Node } from '@antv/x6'
 import type { GraphEditor } from '../editor/GraphEditor'
-import { autoSizeNode, fitTextHeight } from '../editor/autosize'
+import {
+  autoSizeNode,
+  clearManualSize,
+  fitTextHeight,
+  isManuallySized,
+  markManuallySized
+} from '../editor/autosize'
 import { addFragmentDivider } from '../editor/sequence'
 import {
   applyFrameHeader,
@@ -26,10 +32,12 @@ import {
 } from '../editor/shapes'
 import {
   ACTIVITY_KIND_LABEL,
+  ACTIVITY_MIN_SIZE,
   DIVIDABLE_OPERATORS,
   FRAGMENT,
   FRAGMENT_OPERATORS,
   MESSAGE_KIND_LABEL,
+  isActivityNodeKind,
   type CellKind,
   type FragmentOperator,
   type MessageKind
@@ -226,6 +234,12 @@ export class PropertiesPanel {
           autoSizeNode(cell as Node, value)
         })
       )
+      if (kind !== 'swimlane') this.appendSizeSection(cell as Node)
+      return
+    }
+
+    if (isActivityNodeKind(kind)) {
+      this.appendSizeSection(cell as Node)
       return
     }
 
@@ -241,6 +255,55 @@ export class PropertiesPanel {
 
     this.host.appendChild(hint('この要素には編集可能なプロパティがありません。'))
     void this.editor
+  }
+
+  /**
+   * アクティビティノードのサイズ欄。手動リサイズするとラベル連動の自動リサイズを
+   * 止めるため、自動に戻す導線もここに置く（戻せないと詰むので必須）。
+   */
+  private appendSizeSection(node: Node): void {
+    const kind = getCellKind(node)
+    const autoSized = kind === 'action' || kind === 'decision'
+    const { width, height } = node.getSize()
+    const min = isActivityNodeKind(kind) ? ACTIVITY_MIN_SIZE[kind] : { width: 1, height: 1 }
+
+    const resize = (w: number, h: number): void => {
+      const bbox = node.getBBox()
+      // 中心を保ったままリサイズする（ハンドル操作と揃える）
+      node.prop({
+        position: { x: bbox.x + (bbox.width - w) / 2, y: bbox.y + (bbox.height - h) / 2 },
+        size: { width: w, height: h }
+      })
+      markManuallySized(node)
+    }
+
+    this.host.appendChild(
+      numberInput('幅', width, min.width, 2000, (value) => resize(value, node.getSize().height))
+    )
+    this.host.appendChild(
+      numberInput('高さ', height, min.height, 2000, (value) => resize(node.getSize().width, value))
+    )
+
+    if (autoSized && isManuallySized(node)) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.textContent = 'サイズを自動に戻す'
+      btn.title = 'ラベルに合わせた自動リサイズを再び有効にする'
+      btn.addEventListener('click', () => {
+        clearManualSize(node)
+        autoSizeNode(node, getNodeLabel(node))
+        this.render([node])
+      })
+      this.host.appendChild(btn)
+    }
+
+    this.host.appendChild(
+      hint(
+        autoSized
+          ? 'ハンドルまたは上の数値でリサイズできます。リサイズするとラベル連動の自動サイズは止まります。'
+          : 'ハンドルまたは上の数値でリサイズできます。'
+      )
+    )
   }
 }
 

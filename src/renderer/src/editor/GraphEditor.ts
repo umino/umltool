@@ -11,7 +11,18 @@ import {
   Clipboard
 } from '@antv/x6'
 import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
-import { ACTIVATION, FRAGMENT, FRAME, LIFELINE, MESSAGE, NOTE, SHAPE, TEXT } from './constants'
+import {
+  ACTIVATION,
+  ACTIVITY_MIN_SIZE,
+  FRAGMENT,
+  FRAME,
+  LIFELINE,
+  MESSAGE,
+  NOTE,
+  SHAPE,
+  TEXT,
+  isActivityNodeKind
+} from './constants'
 import {
   applyDividerGeometry,
   applyFrameHeader,
@@ -29,7 +40,7 @@ import {
   setMessageLabel,
   setNodeLabel
 } from './shapes'
-import { autoSizeNode, fitTextHeight } from './autosize'
+import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 
 const ZOOM_MIN = 0.2
@@ -130,11 +141,13 @@ export class GraphEditor {
               kind === 'fragment' ||
               kind === 'frame' ||
               kind === 'text' ||
-              kind === 'note'
+              kind === 'note' ||
+              isActivityNodeKind(kind)
             )
           },
           minWidth: (node: Node) => {
             const kind = getCellKind(node)
+            if (isActivityNodeKind(kind)) return ACTIVITY_MIN_SIZE[kind].width
             if (kind === 'activation') return 6
             if (kind === 'swimlane') return 120
             if (kind === 'fragment') return FRAGMENT.minWidth
@@ -145,6 +158,7 @@ export class GraphEditor {
           },
           minHeight: (node: Node) => {
             const kind = getCellKind(node)
+            if (isActivityNodeKind(kind)) return ACTIVITY_MIN_SIZE[kind].height
             if (kind === 'activation') return 24
             if (kind === 'swimlane') return 80
             if (kind === 'fragment') return FRAGMENT.minHeight
@@ -153,7 +167,11 @@ export class GraphEditor {
             if (kind === 'note') return NOTE.minHeight
             return LIFELINE.headHeight + 60
           },
-          preserveAspectRatio: false
+          // 開始/終了は真円で描かれる（refR は 50%）ので縦横比を保つ
+          preserveAspectRatio: (node: Node) => {
+            const kind = getCellKind(node)
+            return kind === 'initial' || kind === 'final'
+          }
         },
         rotating: false
       })
@@ -164,6 +182,20 @@ export class GraphEditor {
     this.wireMiddleButtonPan(container)
     this.wireSequenceBehavior()
     this.wireInlineEditing()
+    this.wireActivityResize()
+  }
+
+  // ---- アクティビティノードの手動リサイズ ----
+
+  /**
+   * 手動でリサイズしたアクション/分岐は、以後ラベル編集で自動リサイズされると
+   * 指定したサイズが戻されてしまう。リサイズ完了時に印を付けて自動リサイズの
+   * 対象から外す（`node:resized` は Transform ウィジェット＝ユーザー操作でのみ発火）。
+   */
+  private wireActivityResize(): void {
+    this.graph.on('node:resized', ({ node }: { node: Node }) => {
+      if (isActivityNodeKind(getCellKind(node))) markManuallySized(node)
+    })
   }
 
   // ---- ダブルクリックでラベル直接編集 ----

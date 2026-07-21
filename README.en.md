@@ -70,6 +70,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - Edit guard conditions by selecting a flow and using the right panel
 - **Decision and merge are separate nodes**: a decision is a diamond with a condition label, while a merge is a small empty diamond (the "合流" palette item)
 - **Swimlanes** can be resized: select one and drag the handles to change its width and height
+- **Node resizing**: action / decision / merge / initial / final / fork / join nodes show handles when selected, and can also be sized via the "幅" and "高さ" fields in the right panel (initial and final keep a fixed aspect ratio so they stay circular). Actions and decisions normally auto-size to their label; resizing one manually pins that size instead. Use "サイズを自動に戻す" in the right panel to restore the automatic behaviour
 - **Frames (containers)**: the "フレーム" palette item. A transparent frame with a header tab in the top-left corner; nodes inside remain fully interactive. Drag the border or header to move, select to resize, and edit the header via the right panel or double-click (the tab width follows the text)
 - New nodes are added at the **center of the current view** (consecutive additions are offset slightly)
 

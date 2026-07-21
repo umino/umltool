@@ -89,6 +89,24 @@ export const ACTIVITY = {
   lanePaddingY: 40
 } as const
 
+/**
+ * アクティビティ図ノードを手動リサイズするときの下限。
+ * 図形が潰れて種別を判別できなくならない程度に留める。
+ */
+export const ACTIVITY_MIN_SIZE: Record<ActivityNodeKind, { width: number; height: number }> = {
+  action: { width: 60, height: 28 },
+  decision: { width: 60, height: 40 },
+  merge: { width: 24, height: 18 },
+  initial: { width: 12, height: 12 },
+  final: { width: 16, height: 16 },
+  fork: { width: 40, height: 4 },
+  join: { width: 40, height: 4 }
+}
+
+export function isActivityNodeKind(kind: string | undefined): kind is ActivityNodeKind {
+  return kind !== undefined && kind in ACTIVITY_MIN_SIZE
+}
+
 /** アクティビティ図のフレーム（コンテナ） */
 export const FRAME = {
   tabHeight: 26,

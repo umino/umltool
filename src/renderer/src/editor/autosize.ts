@@ -89,12 +89,32 @@ function domMeasurer(fontSize: number, fontFamily: string): TextMeasurer {
 }
 
 /**
+ * 手動リサイズ済みの印を付ける。以後 autoSizeNode はこのノードに触らないので、
+ * ラベルを編集してもユーザーが決めたサイズが保たれる。
+ */
+export function markManuallySized(node: Node): void {
+  node.updateData({ manualSize: true })
+}
+
+/** 手動リサイズ済みか */
+export function isManuallySized(node: Node): boolean {
+  return (node.getData() as { manualSize?: boolean } | undefined)?.manualSize === true
+}
+
+/** 手動リサイズの印を外し、ラベル連動の自動リサイズを再び有効にする */
+export function clearManualSize(node: Node): void {
+  node.updateData({ manualSize: false })
+}
+
+/**
  * ノードをラベルに合わせてリサイズする（中心 X と上端 Y は維持）。
  * ライフラインは幅のみ変更（高さは生存線の長さなので触らない）。
+ * ユーザーが手動リサイズしたノードは、その意思を優先して対象外にする。
  */
 export function autoSizeNode(node: Node, label: string): void {
   const kind = (node.getData() as { kind?: string } | undefined)?.kind
   if (kind !== 'action' && kind !== 'decision' && kind !== 'lifeline') return
+  if (isManuallySized(node)) return
 
   const spec = AUTO_SIZE_SPECS[kind]
   const fontSize = kind === 'decision' ? 12 : 13

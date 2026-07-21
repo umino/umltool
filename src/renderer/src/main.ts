@@ -542,6 +542,49 @@ class AppController {
               ? `ok(${ls.width}x${ls.height})`
               : `ng(${ls.width}x${ls.height})`
           graph.removeCells([long])
+
+          // 手動リサイズ: 全アクティビティ種別でハンドルが出て、印を付けると
+          // ラベル編集で自動リサイズに戻されないこと
+          {
+            const { isManuallySized, markManuallySized, clearManualSize, autoSizeNode } =
+              await import('./editor/autosize')
+            const kinds: ActivityNodeKind[] = [
+              'action',
+              'decision',
+              'merge',
+              'initial',
+              'final',
+              'fork',
+              'join'
+            ]
+            // 種別ごとにリサイズハンドル（Transform ウィジェット）が出るか
+            const notResizable: string[] = []
+            for (const kind of kinds) {
+              const n = addActivityNode(graph, kind, 'x', { centerX: 1200, centerY: 100 })
+              graph.clearTransformWidgets()
+              graph.createTransformWidget(n)
+              if (!document.querySelector('.x6-widget-transform')) notResizable.push(kind)
+              graph.clearTransformWidgets()
+              graph.removeCells([n])
+            }
+            const rn = addActivityNode(graph, 'action', '短い', { centerX: 900, centerY: 300 })
+            rn.resize(240, 120)
+            markManuallySized(rn)
+            autoSizeNode(rn, '短い')
+            const kept = rn.getSize()
+            clearManualSize(rn)
+            autoSizeNode(rn, '短い')
+            const restored = rn.getSize()
+            activity['manualResize'] =
+              notResizable.length === 0 &&
+              kept.width === 240 &&
+              kept.height === 120 &&
+              !isManuallySized(rn) &&
+              restored.width === ACTIVITY.action.width
+                ? 'ok'
+                : `ng(kinds=${notResizable}, kept=${kept.width}x${kept.height}, restored=${restored.width}x${restored.height})`
+            graph.removeCells([rn])
+          }
         } catch (e) {
           activity['portAnchor'] = `error: ${(e as Error).message}`
         }
