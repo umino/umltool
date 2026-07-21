@@ -34,6 +34,16 @@ const COLOR = {
 
 export { FONT_FAMILY }
 
+/**
+ * manhattan ルータの障害物として無視するシェイプ。
+ *
+ * スイムレーン/フレームは中身を包む背景コンテナ、ノート/テキストは注釈であり、
+ * 経路を塞ぐ「もの」ではない。これらを障害物のままにすると、レーンの内側は
+ * すべて到達不可と判定されて経路探索が必ず失敗し、orth へフォールバックしつつ
+ * `Unable to execute manhattan algorithm` が毎回コンソールに出る。
+ */
+const ROUTER_TRANSPARENT_SHAPES = [SHAPE.swimlane, SHAPE.frame, SHAPE.note, SHAPE.text]
+
 /** 塗り矢印（同期） */
 const MARKER_FILLED = {
   name: 'block',
@@ -637,7 +647,7 @@ export function registerShapes(): void {
   Graph.registerEdge(
     SHAPE.flow,
     {
-      router: { name: 'manhattan', args: { padding: 16 } },
+      router: { name: 'manhattan', args: { padding: 16, excludeShapes: ROUTER_TRANSPARENT_SHAPES } },
       connector: { name: 'rounded', args: { radius: 8 } },
       attrs: {
         line: {
