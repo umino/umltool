@@ -343,6 +343,29 @@ A -> B : 通常`
               : `ng(gates=${gates.length}, inX=${inPoint?.x}, outX=${outPoint?.x}, aCx=${aCx}, horizontal=${horizontal})`
           buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
+
+        // DSL の autoactivate: 呼び出しでバーが開き、戻りで閉じる
+        {
+          buildSequenceFromText(
+            this.editor,
+            `autoactivate on
+A -> B : 呼ぶ
+B -> C : さらに呼ぶ
+C --> B : 返す
+B --> A : 返す`
+          )
+          await new Promise((r) => setTimeout(r, 100))
+          const bars = graph.getNodes().filter((n) => getCellKind(n) === 'activation')
+          // バーは B と C の 2 本。内側（右の C）は外側（B）より後に始まり短い
+          const byX = [...bars].sort((a, b) => a.getBBox().x - b.getBBox().x)
+          const bBar = byX[0]?.getBBox()
+          const cBar = byX[1]?.getBBox()
+          behavior['dslAutoActivate'] =
+            bars.length === 2 && bBar && cBar && cBar.y > bBar.y && cBar.height < bBar.height
+              ? 'ok'
+              : `ng(bars=${bars.length}, b=${JSON.stringify(bBar)}, c=${JSON.stringify(cBar)})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+        }
       } catch (e) {
         behavior['error'] = (e as Error).message
       }

@@ -94,6 +94,7 @@ const ELSE_RE = /^else\b\s*(.*)$/i
 const END_RE = /^end\s*$/i
 const ACTIVATE_RE = /^activate\s+(.+?)\s*$/i
 const DEACTIVATE_RE = /^deactivate\s+(.+?)\s*$/i
+const AUTOACTIVATE_RE = /^autoactivate\s+(on|off)\s*$/i
 // note left of A : 本文 / note over A, B : 本文（: 以降を省くと end note までの複数行）
 const NOTE_RE = /^note\s+(left|right)\s+of\s+([^:]+?)\s*(?::\s*(.*))?$/i
 const NOTE_OVER_RE = /^note\s+over\s+([^:]+?)\s*(?::\s*(.*))?$/i
@@ -134,6 +135,7 @@ function stripQuotes(name: string): string {
  *   [-> A : ラベル    （図の外から A へ）
  *   A ->] : ラベル    （A から図の外へ）
  *   activate 参加者 / deactivate 参加者 （活性化バー。deactivate 省略時は末尾で自動終了）
+ *   autoactivate on / off （以降のメッセージでバーを自動開閉。呼び出しで開き、戻りで閉じる）
  *   alt 条件 / opt / loop / break / par / seq / strict / critical … end
  *   else 条件 （alt / par 内の区切り）
  *   note left of A : 本文 / note right of A : 本文 （ライフライン付属の「テキスト」）
@@ -159,6 +161,9 @@ export function parseSequence(text: string): ParsedSequence {
   }
   const stack: Frame[] = []
   const activateStack: { participant: string; startIndex: number }[] = []
+  // autoactivate 用は明示 activate と別のスタックにして、混在しても互いに壊さない
+  const autoStack: { participant: string; startIndex: number }[] = []
+  let autoactivate = false
 
   // id で参加者を確保する。label 未指定は暗黙宣言（表示名＝id）。
   // 暗黙宣言済みの参加者に後から表示名が与えられたら上書きする。
@@ -195,6 +200,27 @@ export function parseSequence(text: string): ParsedSequence {
     // 本文が同じ行に無ければ end note までの複数行として読む
     if (body === undefined) openNote = { note, lines: [], lineNo }
     else notes.push(note)
+  }
+
+  /**
+   * autoactivate が有効なときの活性化バーの開閉。
+   * 呼び出し（実線）は宛先のバーを開き、戻り（破線）は送信側のバーを閉じる。
+   */
+  const applyAutoActivate = (): void => {
+    if (!autoactivate) return
+    const index = messages.length - 1
+    const msg = messages[index]
+    if (msg.kind === 'return') {
+      const owner = msg.from
+      if (owner === '') return
+      let k = autoStack.length - 1
+      while (k >= 0 && autoStack[k].participant !== owner) k--
+      if (k < 0) return // 開いていないものは黙って無視する（PlantUML も許容）
+      const act = autoStack.splice(k, 1)[0]
+      activations.push({ participant: owner, startIndex: act.startIndex, endIndex: index })
+      return
+    }
+    if (msg.to !== '') autoStack.push({ participant: msg.to, startIndex: index })
   }
 
   const lines = text.split(/\r?\n/)
@@ -239,6 +265,12 @@ export function parseSequence(text: string): ParsedSequence {
       const display = stripQuotes(pm[1])
       if (pm[2]) ensure(stripQuotes(pm[2]), display)
       else ensure(display)
+      return
+    }
+
+    const aam = AUTOACTIVATE_RE.exec(line)
+    if (aam) {
+      autoactivate = aam[1].toLowerCase() === 'on'
       return
     }
 
@@ -342,11 +374,13 @@ export function parseSequence(text: string): ParsedSequence {
           label,
           gate: fromOutside ? 'in' : 'out'
         })
+        applyAutoActivate()
         return
       }
       ensure(from)
       ensure(to)
       messages.push({ from, to, kind: arrowToKind(am[2], from === to), label, gate: null })
+      applyAutoActivate()
       return
     }
 
@@ -366,8 +400,8 @@ export function parseSequence(text: string): ParsedSequence {
     )
   }
 
-  // deactivate されなかった activate は末尾で自動終了する
-  for (const act of activateStack) {
+  // 閉じられなかったバー（明示 activate / autoactivate とも）は末尾で自動終了する
+  for (const act of [...activateStack, ...autoStack]) {
     activations.push({
       participant: act.participant,
       startIndex: act.startIndex,

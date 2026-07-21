@@ -254,3 +254,73 @@ deactivate A`)
     expect(r.activations[0].participant).toBe('A')
   })
 })
+
+describe('autoactivate', () => {
+  it('呼び出しでバーが開き、戻りで閉じる', () => {
+    const r = parseSequence(`autoactivate on
+A -> B : 呼ぶ
+B --> A : 返す`)
+    expect(r.activations).toHaveLength(1)
+    expect(r.activations[0]).toMatchObject({ participant: 'B', startIndex: 0, endIndex: 1 })
+  })
+
+  it('入れ子の呼び出しは内側から閉じる', () => {
+    const r = parseSequence(`autoactivate on
+A -> B : 1
+B -> C : 2
+C --> B : 3
+B --> A : 4`)
+    const byParticipant = Object.fromEntries(r.activations.map((a) => [a.participant, a]))
+    expect(byParticipant.C).toMatchObject({ startIndex: 1, endIndex: 2 })
+    expect(byParticipant.B).toMatchObject({ startIndex: 0, endIndex: 3 })
+  })
+
+  it('off 以降のメッセージではバーを作らない', () => {
+    const r = parseSequence(`autoactivate on
+A -> B : 1
+B --> A : 2
+autoactivate off
+A -> B : 3`)
+    expect(r.activations).toHaveLength(1)
+  })
+
+  it('閉じられなかったバーは末尾で終わる', () => {
+    const r = parseSequence(`autoactivate on
+A -> B : 1
+B -> C : 2`)
+    expect(r.activations).toHaveLength(2)
+    for (const a of r.activations) expect(a.endIndex).toBe(1)
+  })
+
+  it('明示 activate と混在しても互いを壊さない', () => {
+    const r = parseSequence(`autoactivate on
+activate A
+A -> B : 1
+B --> A : 2
+deactivate A`)
+    const participants = r.activations.map((a) => a.participant).sort()
+    expect(participants).toEqual(['A', 'B'])
+  })
+
+  it('ゲートの呼び出しでもバーが開く', () => {
+    const r = parseSequence(`autoactivate on
+[-> A : 外から`)
+    expect(r.activations[0]).toMatchObject({ participant: 'A', startIndex: 0 })
+  })
+
+  it('外へ出るゲートは相手がいないのでバーを作らない', () => {
+    const r = parseSequence(`autoactivate on
+A ->] : 外へ`)
+    expect(r.activations).toEqual([])
+  })
+
+  it('対応するバーが無い戻りは無視される', () => {
+    const r = parseSequence(`autoactivate on
+B --> A : 戻り`)
+    expect(r.activations).toEqual([])
+  })
+
+  it('既定では autoactivate は無効', () => {
+    expect(parseSequence('A -> B : 1\nB --> A : 2').activations).toEqual([])
+  })
+})

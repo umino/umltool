@@ -111,10 +111,14 @@ are supported too
 end note
 [-> Server : a message from outside the diagram
 Server ->] : a message to outside the diagram
+autoactivate on
+User -> Server : the call opens a bar
+Server --> User : the return closes it
 ```
 
 - **Display name and alias**: `participant "Display name" as Alias`. Referenced by the alias afterwards.
 - **Activation bars**: `activate <participant>` … `deactivate <participant>`. Omitting `deactivate` closes it automatically at the end.
+- **Automatic activation bars**: after `autoactivate on`, a call (`->` / `->>`) opens a bar on the receiver and a return (`-->`) closes the sender's bar. `autoactivate off` stops applying this to later messages (bars still open then close at the end). Mixing it with explicit `activate` / `deactivate` is safe — the two are tracked independently.
 - **Combined fragments**: `alt` / `opt` / `loop` / `break` / `par` / `seq` / `strict` / `critical` (closed with `end`, nestable).
   Dashed separators via `else` are available inside `alt` / `par` (each operand's guard can also be edited individually in the right panel after generation).
 - **Annotations** map onto the two annotation shapes:
