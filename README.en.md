@@ -47,8 +47,15 @@ then writes `diag-output.png` (activity diagram) and `diag-output-seq.png` (sequ
 | Note | The "ノート" palette item. A top-left dog-eared sticky note, freely placed anywhere (both diagram types). Editing and styling work like text |
 | Edit properties | Select an element → edit name, label, and kind in the right panel |
 | Edit labels in place | **Double-click** a node or message to edit it inline |
+| Change appearance | Select an element → set background colour, line colour, font size, font, bold, and text colour under "外観" in the right panel |
 
-Labels wrap automatically to fit their node, and node width adjusts automatically to the label (up to a limit).
+Labels wrap automatically to fit their node, and node width adjusts automatically to the label (up to a limit). Changing the font size or font re-runs that auto-sizing against the new metrics.
+
+### Appearance (colours and fonts)
+
+- Selecting an element reveals an "**外観**" (appearance) section in the right panel, showing only the properties that shape can carry (initial/final/fork nodes have a background colour only; merge has background and line colour)
+- **The colour picker combines presets with free input**: click one of the swatches to apply it immediately, or use the colour box on the left to pick any colour
+- Supported: lifeline / activation bar / fragment / action / decision / merge / initial / final / fork / join / swimlane / frame / text / note
 
 ### Sequence diagrams
 

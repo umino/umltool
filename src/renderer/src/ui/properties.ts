@@ -10,30 +10,41 @@ import {
 import { addFragmentDivider } from '../editor/sequence'
 import {
   applyFrameHeader,
+  canSetFill,
+  canSetStroke,
+  canSetTextStyle,
   getCellKind,
   getDividerGuard,
   getFragmentGuard,
   getFragmentOperator,
   getMessageKind,
   getMessageLabel,
+  getNodeFill,
   getNodeLabel,
+  getNodeStroke,
   getTextBold,
   getTextColor,
+  getTextFontFamily,
   getTextFontSize,
   setDividerGuard,
   setFragmentGuard,
   setFragmentOperator,
   setMessageKind,
   setMessageLabel,
+  setNodeFill,
   setNodeLabel,
+  setNodeStroke,
   setTextBold,
   setTextColor,
+  setTextFontFamily,
   setTextFontSize
 } from '../editor/shapes'
 import {
   ACTIVITY_KIND_LABEL,
   ACTIVITY_MIN_SIZE,
+  COLOR_PRESETS,
   DIVIDABLE_OPERATORS,
+  FONT_FAMILY_CHOICES,
   FRAGMENT,
   FRAGMENT_OPERATORS,
   MESSAGE_KIND_LABEL,
@@ -82,10 +93,19 @@ export class PropertiesPanel {
     const cell = cells[0]
     const kind = getCellKind(cell)
     this.host.appendChild(typeRow(kind, cell))
+    const handled = this.renderKind(kind, cell)
+    // 外観（背景色/線色/文字）は種別を問わず共通。持てるものだけが出る
+    const styled = cell.isNode() ? this.appendStyleSection(cell) : false
+    if (!handled && !styled) {
+      this.host.appendChild(hint('この要素には編集可能なプロパティがありません。'))
+    }
+  }
 
+  /** 種別ごとの固有プロパティ。何か出したら true */
+  private renderKind(kind: CellKind, cell: Cell): boolean {
     if (kind === 'activation') {
       this.host.appendChild(hint('活性化バー。ドラッグで上下移動・リサイズできます。'))
-      return
+      return true
     }
 
     if (kind === 'lifeline') {
@@ -95,7 +115,7 @@ export class PropertiesPanel {
           autoSizeNode(cell as Node, value)
         })
       )
-      return
+      return true
     }
 
     if (kind === 'fragment') {
@@ -149,7 +169,7 @@ export class PropertiesPanel {
       this.host.appendChild(
         hint('枠線をドラッグで移動、選択してハンドルでリサイズできます。')
       )
-      return
+      return true
     }
 
     if (kind === 'divider') {
@@ -159,7 +179,7 @@ export class PropertiesPanel {
         })
       )
       this.host.appendChild(hint('上下にドラッグで移動、Delete で削除できます。'))
-      return
+      return true
     }
 
     if (kind === 'message') {
@@ -175,7 +195,7 @@ export class PropertiesPanel {
           this.render([edge])
         })
       )
-      return
+      return true
     }
 
     if (kind === 'frame') {
@@ -188,7 +208,7 @@ export class PropertiesPanel {
       this.host.appendChild(
         hint('枠線またはヘッダをドラッグで移動、選択してハンドルでリサイズできます。')
       )
-      return
+      return true
     }
 
     if (kind === 'text' || kind === 'note') {
@@ -201,29 +221,13 @@ export class PropertiesPanel {
         })
       )
       this.host.appendChild(
-        numberInput('フォントサイズ', getTextFontSize(node), 8, 96, (value) => {
-          setTextFontSize(node, value)
-          fitTextHeight(node)
-        })
-      )
-      this.host.appendChild(
-        checkboxInput('太字', getTextBold(node), (value) => {
-          setTextBold(node, value)
-        })
-      )
-      this.host.appendChild(
-        colorInput('色', getTextColor(node), (value) => {
-          setTextColor(node, value)
-        })
-      )
-      this.host.appendChild(
         hint(
           kind === 'text'
             ? 'ライフラインに付属します。ドラッグで移動、ハンドルで横幅を変更（自動折り返し）。'
             : 'ドラッグで移動、ハンドルで横幅を変更（高さは自動で折り返し）。'
         )
       )
-      return
+      return true
     }
 
     if (kind === 'action' || kind === 'decision' || kind === 'swimlane') {
@@ -235,12 +239,12 @@ export class PropertiesPanel {
         })
       )
       if (kind !== 'swimlane') this.appendSizeSection(cell as Node)
-      return
+      return true
     }
 
     if (isActivityNodeKind(kind)) {
       this.appendSizeSection(cell as Node)
-      return
+      return true
     }
 
     if (kind === 'flow') {
@@ -250,11 +254,10 @@ export class PropertiesPanel {
           setMessageLabel(edge, value)
         })
       )
-      return
+      return true
     }
 
-    this.host.appendChild(hint('この要素には編集可能なプロパティがありません。'))
-    void this.editor
+    return false
   }
 
   /**
@@ -305,6 +308,90 @@ export class PropertiesPanel {
       )
     )
   }
+
+  /**
+   * 外観（背景色 / 線色 / 文字スタイル）。図形が持てる項目だけを出す。
+   * 何か出したら true。
+   */
+  private appendStyleSection(node: Node): boolean {
+    const fill = canSetFill(node)
+    const stroke = canSetStroke(node)
+    const text = canSetTextStyle(node)
+    if (!fill && !stroke && !text) return false
+
+    this.host.appendChild(sectionTitle('外観'))
+
+    if (fill) {
+      this.host.appendChild(
+        colorInput('背景色', getNodeFill(node), (value) => setNodeFill(node, value), '#ffffff')
+      )
+    }
+    if (stroke) {
+      this.host.appendChild(
+        colorInput('線の色', getNodeStroke(node), (value) => setNodeStroke(node, value))
+      )
+    }
+    if (text) {
+      // 文字が変わるとラベルの実寸も変わるので、サイズ追従の仕組みを呼び直す。
+      // テキスト/ノートは高さが行数追従、アクション/分岐はラベル連動の自動サイズ。
+      const refit = (): void => {
+        fitTextHeight(node)
+        autoSizeNode(node, getNodeLabel(node))
+      }
+      this.host.appendChild(
+        numberInput('フォントサイズ', getTextFontSize(node), 8, 96, (value) => {
+          setTextFontSize(node, value)
+          refit()
+        })
+      )
+      this.host.appendChild(
+        fontFamilySelect(getTextFontFamily(node), (value) => {
+          setTextFontFamily(node, value)
+          refit()
+        })
+      )
+      this.host.appendChild(
+        checkboxInput('太字', getTextBold(node), (value) => {
+          setTextBold(node, value)
+          refit()
+        })
+      )
+      this.host.appendChild(
+        colorInput('文字色', getTextColor(node), (value) => setTextColor(node, value))
+      )
+    }
+    return true
+  }
+}
+
+function sectionTitle(text: string): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'section-title'
+  el.textContent = text
+  return el
+}
+
+function fontFamilySelect(value: string, onChange: (value: string) => void): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = 'フォント'
+  const select = document.createElement('select')
+  for (const choice of FONT_FAMILY_CHOICES) {
+    const opt = document.createElement('option')
+    opt.value = choice.value
+    opt.textContent = choice.label
+    select.appendChild(opt)
+  }
+  // 未知のフォント（プロジェクト読込等）はそのまま選べるように選択肢へ足す
+  if (!FONT_FAMILY_CHOICES.some((c) => c.value === value)) {
+    const opt = document.createElement('option')
+    opt.value = value
+    opt.textContent = 'その他'
+    select.appendChild(opt)
+  }
+  select.value = value
+  select.addEventListener('change', () => onChange(select.value))
+  wrap.appendChild(select)
+  return wrap
 }
 
 /** フラグメントの子の区切り線を上から順に返す */
@@ -426,24 +513,52 @@ function checkboxInput(
   return wrap
 }
 
+/**
+ * カラー入力。自由入力（input[type=color]）とプリセットのスウォッチを併用する。
+ * プリセットを押すと自由入力側の表示も追従させる。
+ */
 function colorInput(
   caption: string,
   value: string,
-  onChange: (value: string) => void
+  onChange: (value: string) => void,
+  fallback = '#1d2330'
 ): HTMLElement {
   const wrap = document.createElement('label')
   wrap.textContent = caption
+
+  const row = document.createElement('div')
+  row.className = 'color-row'
+
   const input = document.createElement('input')
   input.type = 'color'
-  input.value = toHexColor(value)
+  input.value = toHexColor(value, fallback)
   input.addEventListener('input', () => onChange(input.value))
-  wrap.appendChild(input)
+  row.appendChild(input)
+
+  const swatches = document.createElement('div')
+  swatches.className = 'swatches'
+  for (const preset of COLOR_PRESETS) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'swatch'
+    btn.style.background = preset.value
+    btn.title = `${preset.label} (${preset.value})`
+    btn.setAttribute('aria-label', preset.label)
+    btn.addEventListener('click', () => {
+      input.value = preset.value
+      onChange(preset.value)
+    })
+    swatches.appendChild(btn)
+  }
+  row.appendChild(swatches)
+
+  wrap.appendChild(row)
   return wrap
 }
 
 /** input[type=color] は #rrggbb しか受け付けないため整形する */
-function toHexColor(value: string): string {
-  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#1d2330'
+function toHexColor(value: string, fallback = '#1d2330'): string {
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback
 }
 
 function operatorSelect(

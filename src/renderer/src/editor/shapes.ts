@@ -916,33 +916,132 @@ export function setNodeLabel(node: Node, text: string): void {
   node.attr('label/text', text)
 }
 
-// ---- 自由配置テキスト ----
+// ---- ノードの外観（背景色 / 線色 / 文字スタイル） ----
+//
+// 図形ごとに markup のセレクタ名が違うため、種別 → セレクタの対応表を持つ。
+// fill / stroke は複数セレクタに同時適用することがある（例: ノートの本体と折返し）。
+
+interface StyleTargets {
+  /** 背景色を塗るセレクタ。空なら背景色を持たない図形 */
+  fill: string[]
+  /** 線色を塗るセレクタ。空なら線を持たない図形 */
+  stroke: string[]
+  /** 文字スタイルを当てるセレクタ。null ならラベルを持たない図形 */
+  label: string | null
+}
+
+const NO_STYLE: StyleTargets = { fill: [], stroke: [], label: null }
+
+const STYLE_TARGETS: Partial<Record<CellKind, StyleTargets>> = {
+  lifeline: { fill: ['head'], stroke: ['head'], label: 'label' },
+  activation: { fill: ['body'], stroke: ['body'], label: null },
+  fragment: { fill: ['body'], stroke: ['body', 'tab'], label: 'label' },
+  action: { fill: ['body'], stroke: ['body'], label: 'label' },
+  decision: { fill: ['body'], stroke: ['body'], label: 'label' },
+  merge: { fill: ['body'], stroke: ['body'], label: null },
+  // 開始は塗り潰しの円なので「背景色」がそのまま図形の色になる
+  initial: { fill: ['body'], stroke: [], label: null },
+  // 終了は外円が枠、内円が塗り。外円の塗りが背景、内円と外円の線が線色
+  final: { fill: ['outer'], stroke: ['outer', 'inner'], label: null },
+  fork: { fill: ['body'], stroke: [], label: null },
+  join: { fill: ['body'], stroke: [], label: null },
+  swimlane: { fill: ['body'], stroke: ['body', 'header'], label: 'label' },
+  frame: { fill: ['body'], stroke: ['body', 'tab'], label: 'label' },
+  text: { fill: [], stroke: [], label: 'label' },
+  note: { fill: ['body'], stroke: ['body', 'fold'], label: 'label' }
+}
+
+export function styleTargets(node: Node): StyleTargets {
+  return STYLE_TARGETS[getCellKind(node)] ?? NO_STYLE
+}
+
+/** 背景色を変更できる図形か */
+export function canSetFill(node: Node): boolean {
+  return styleTargets(node).fill.length > 0
+}
+
+/** 線色を変更できる図形か */
+export function canSetStroke(node: Node): boolean {
+  return styleTargets(node).stroke.length > 0
+}
+
+/** 文字スタイルを変更できる図形か */
+export function canSetTextStyle(node: Node): boolean {
+  return styleTargets(node).label !== null
+}
+
+function firstAttr(node: Node, selectors: string[], name: string): string {
+  for (const selector of selectors) {
+    const v = node.attr(`${selector}/${name}`)
+    if (typeof v === 'string' && v !== '') return v
+  }
+  return ''
+}
+
+export function getNodeFill(node: Node): string {
+  return firstAttr(node, styleTargets(node).fill, 'fill')
+}
+
+export function setNodeFill(node: Node, color: string): void {
+  for (const selector of styleTargets(node).fill) node.attr(`${selector}/fill`, color)
+}
+
+export function getNodeStroke(node: Node): string {
+  return firstAttr(node, styleTargets(node).stroke, 'stroke')
+}
+
+export function setNodeStroke(node: Node, color: string): void {
+  for (const selector of styleTargets(node).stroke) node.attr(`${selector}/stroke`, color)
+}
+
+/** ラベル属性のパス。ラベルを持たない図形では null */
+function labelPath(node: Node, name: string): string | null {
+  const label = styleTargets(node).label
+  return label === null ? null : `${label}/${name}`
+}
 
 export function getTextFontSize(node: Node): number {
-  const v = Number(node.attr('label/fontSize'))
+  const path = labelPath(node, 'fontSize')
+  const v = path === null ? NaN : Number(node.attr(path))
   return Number.isFinite(v) && v > 0 ? v : TEXT.defaultFontSize
 }
 
 export function setTextFontSize(node: Node, size: number): void {
-  node.attr('label/fontSize', size)
+  const path = labelPath(node, 'fontSize')
+  if (path !== null) node.attr(path, size)
 }
 
 export function getTextBold(node: Node): boolean {
-  const v = node.attr('label/fontWeight')
+  const path = labelPath(node, 'fontWeight')
+  const v = path === null ? undefined : node.attr(path)
   return v === 'bold' || v === 700 || v === '700'
 }
 
 export function setTextBold(node: Node, bold: boolean): void {
-  node.attr('label/fontWeight', bold ? 700 : 400)
+  const path = labelPath(node, 'fontWeight')
+  if (path !== null) node.attr(path, bold ? 700 : 400)
 }
 
 export function getTextColor(node: Node): string {
-  const v = node.attr('label/fill')
-  return typeof v === 'string' ? v : TEXT.defaultColor
+  const path = labelPath(node, 'fill')
+  const v = path === null ? undefined : node.attr(path)
+  return typeof v === 'string' && v !== '' ? v : TEXT.defaultColor
 }
 
 export function setTextColor(node: Node, color: string): void {
-  node.attr('label/fill', color)
+  const path = labelPath(node, 'fill')
+  if (path !== null) node.attr(path, color)
+}
+
+export function getTextFontFamily(node: Node): string {
+  const path = labelPath(node, 'fontFamily')
+  const v = path === null ? undefined : node.attr(path)
+  return typeof v === 'string' && v !== '' ? v : FONT_FAMILY
+}
+
+export function setTextFontFamily(node: Node, family: string): void {
+  const path = labelPath(node, 'fontFamily')
+  if (path !== null) node.attr(path, family)
 }
 
 // ---- フレーム（コンテナ） ----

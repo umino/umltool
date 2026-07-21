@@ -291,6 +291,43 @@ body,
   font-size: 12px;
 }
 
+#props-body .section-title {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* カラー入力: 自由入力（左）とプリセットのスウォッチ（右・折返し）を併置 */
+#props-body .color-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+#props-body .swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#props-body .swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#props-body .swatch:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* アクティビティ図の接続ポート: ノードにホバーしたときだけ見せる */
 .x6-node .x6-port-body {
   opacity: 0;

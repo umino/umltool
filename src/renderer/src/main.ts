@@ -17,6 +17,7 @@ import { getCellKind } from './editor/shapes'
 import {
   ACTIVATION,
   ACTIVITY,
+  COLOR_PRESETS,
   FRAGMENT,
   FRAME,
   LIFELINE,
@@ -584,6 +585,84 @@ class AppController {
                 ? 'ok'
                 : `ng(kinds=${notResizable}, kept=${kept.width}x${kept.height}, restored=${restored.width}x${restored.height})`
             graph.removeCells([rn])
+          }
+
+          // 外観（背景色/線色/文字スタイル）が種別ごとに正しい対象へ当たるか
+          {
+            const s = await import('./editor/shapes')
+            const bad: string[] = []
+            const kinds: ActivityNodeKind[] = [
+              'action',
+              'decision',
+              'merge',
+              'initial',
+              'final',
+              'fork',
+              'join'
+            ]
+            for (const kind of kinds) {
+              const n = addActivityNode(graph, kind, 'x', { centerX: 1200, centerY: 400 })
+              // 背景色は全種別が持つ
+              if (!s.canSetFill(n)) bad.push(`${kind}:no-fill`)
+              s.setNodeFill(n, '#123456')
+              if (s.getNodeFill(n) !== '#123456') bad.push(`${kind}:fill`)
+              if (s.canSetStroke(n)) {
+                s.setNodeStroke(n, '#654321')
+                if (s.getNodeStroke(n) !== '#654321') bad.push(`${kind}:stroke`)
+              }
+              if (s.canSetTextStyle(n)) {
+                s.setTextColor(n, '#abcdef')
+                s.setTextFontSize(n, 21)
+                s.setTextBold(n, true)
+                s.setTextFontFamily(n, '"Yu Mincho", serif')
+                if (
+                  s.getTextColor(n) !== '#abcdef' ||
+                  s.getTextFontSize(n) !== 21 ||
+                  !s.getTextBold(n) ||
+                  s.getTextFontFamily(n) !== '"Yu Mincho", serif'
+                ) {
+                  bad.push(`${kind}:text`)
+                }
+              }
+              graph.removeCells([n])
+            }
+            // ラベルを持つ種別/持たない種別の判定が期待どおりか
+            const labelled = addActivityNode(graph, 'action', 'x', { centerX: 1200, centerY: 500 })
+            const unlabelled = addActivityNode(graph, 'merge', '', { centerX: 1200, centerY: 560 })
+            if (!s.canSetTextStyle(labelled)) bad.push('action:text-style-missing')
+            if (s.canSetTextStyle(unlabelled)) bad.push('merge:text-style-unexpected')
+            graph.removeCells([labelled, unlabelled])
+            activity['nodeStyle'] = bad.length === 0 ? 'ok' : `ng(${bad.join(',')})`
+
+            // フォントを大きくしたら自動サイズもその実寸に追従すること
+            const { autoSizeNode } = await import('./editor/autosize')
+            const fn = addActivityNode(graph, 'action', '文字送りの確認', {
+              centerX: 1200,
+              centerY: 620
+            })
+            const before = fn.getSize().width
+            s.setTextFontSize(fn, 26)
+            autoSizeNode(fn, '文字送りの確認')
+            const after = fn.getSize().width
+            activity['fontRefit'] = after > before ? `ok(${before}→${after})` : `ng(${before}→${after})`
+            graph.removeCells([fn])
+          }
+
+          // 右パネル: 選択したノードに外観欄とカラープリセットが出るか
+          {
+            const a = addActivityNode(graph, 'action', 'スタイル', { centerX: 900, centerY: 400 })
+            graph.resetSelection(a)
+            await new Promise((r) => setTimeout(r, 100))
+            const body = document.getElementById('props-body')
+            const swatches = body?.querySelectorAll('.swatch').length ?? 0
+            const colorPickers = body?.querySelectorAll('input[type="color"]').length ?? 0
+            const fonts = body?.querySelectorAll('select').length ?? 0
+            activity['stylePanel'] =
+              swatches >= COLOR_PRESETS.length * 3 && colorPickers === 3 && fonts === 1
+                ? 'ok'
+                : `ng(swatches=${swatches}, pickers=${colorPickers}, fontSelects=${fonts})`
+            graph.cleanSelection()
+            graph.removeCells([a])
           }
         } catch (e) {
           activity['portAnchor'] = `error: ${(e as Error).message}`

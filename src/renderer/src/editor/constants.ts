@@ -3,6 +3,35 @@
 /** 書き出し SVG が単体でも同じ見た目になるよう、フォントは属性で明示する */
 export const FONT_FAMILY = '"Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif'
 
+/** 右パネルのフォント選択肢。value は SVG の font-family にそのまま入る */
+export const FONT_FAMILY_CHOICES: { label: string; value: string }[] = [
+  { label: '既定（ゴシック）', value: FONT_FAMILY },
+  { label: '明朝', value: '"Yu Mincho", "MS Mincho", serif' },
+  { label: 'メイリオ', value: '"Meiryo", sans-serif' },
+  { label: '等幅', value: '"Consolas", "MS Gothic", monospace' }
+]
+
+/**
+ * カラーピッカーのプリセット。自由入力（input[type=color]）と併用する。
+ * UML の図でよく使う淡い塗りと、線・文字向けの濃い色を並べる。
+ */
+export const COLOR_PRESETS: { label: string; value: string }[] = [
+  { label: '白', value: '#ffffff' },
+  { label: '薄グレー', value: '#f2f4f8' },
+  { label: '薄ブルー', value: '#eef2fb' },
+  { label: '薄グリーン', value: '#e8f5e9' },
+  { label: '薄イエロー', value: '#fffbe6' },
+  { label: '薄レッド', value: '#fdecea' },
+  { label: '薄パープル', value: '#f3e8fd' },
+  { label: '黒', value: '#1d2330' },
+  { label: 'グレー', value: '#5b6472' },
+  { label: 'ブルー', value: '#2d6cdf' },
+  { label: 'グリーン', value: '#2f8f46' },
+  { label: 'オレンジ', value: '#b7791f' },
+  { label: 'レッド', value: '#c0392b' },
+  { label: 'パープル', value: '#7b4bc9' }
+]
+
 export const LIFELINE = {
   width: 120,
   headHeight: 40,

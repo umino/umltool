@@ -116,9 +116,18 @@ export function autoSizeNode(node: Node, label: string): void {
   if (kind !== 'action' && kind !== 'decision' && kind !== 'lifeline') return
   if (isManuallySized(node)) return
 
-  const spec = AUTO_SIZE_SPECS[kind]
-  const fontSize = kind === 'decision' ? 12 : 13
-  const size = computeAutoSize(label, spec, domMeasurer(fontSize, FONT_FAMILY))
+  const defaults = AUTO_SIZE_SPECS[kind]
+  // ユーザーがフォントを変えていれば、その実寸で測って行高も比例させる
+  const defaultFontSize = kind === 'decision' ? 12 : 13
+  const attrFontSize = Number(node.attr('label/fontSize'))
+  const fontSize = Number.isFinite(attrFontSize) && attrFontSize > 0 ? attrFontSize : defaultFontSize
+  const attrFamily = node.attr('label/fontFamily')
+  const fontFamily = typeof attrFamily === 'string' && attrFamily !== '' ? attrFamily : FONT_FAMILY
+  const spec: AutoSizeSpec = {
+    ...defaults,
+    lineHeight: Math.round(fontSize * (defaults.lineHeight / defaultFontSize))
+  }
+  const size = computeAutoSize(label, spec, domMeasurer(fontSize, fontFamily))
 
   const bbox = node.getBBox()
   const centerX = bbox.x + bbox.width / 2
