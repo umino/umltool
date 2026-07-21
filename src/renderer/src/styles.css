@@ -328,6 +328,23 @@ body,
   outline-offset: 1px;
 }
 
+/* 選択の見え方: X6 既定のオレンジ＋影をアプリのアクセント色に寄せる。
+   -box は選択された各セル、-inner は複数選択時に全体を囲む枠。 */
+.x6-widget-selection-box {
+  border: 1px dashed var(--accent);
+  box-shadow: none;
+}
+
+.x6-widget-selection-inner {
+  border: 1px solid var(--accent);
+  box-shadow: none;
+}
+
+.x6-widget-selection-rubberband {
+  background-color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
 /* アクティビティ図の接続ポート: ノードにホバーしたときだけ見せる */
 .x6-node .x6-port-body {
   opacity: 0;

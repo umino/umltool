@@ -125,7 +125,12 @@ export class GraphEditor {
         rubberband: true,
         modifiers: 'shift',
         movable: true,
-        showNodeSelectionBox: false
+        // 選択されていることが見た目で分かるよう枠を出す。ただし枠が入力を
+        // 拾うとノード側のドラッグ・ポート操作を奪ってしまうので pointerEvents
+        // は none にする。X6 は「枠が非対話なら」ノードのドラッグを選択全体へ
+        // 波及させるので、複数選択したままの移動もこの組み合わせで成立する。
+        showNodeSelectionBox: true,
+        pointerEvents: 'none'
       })
     )
     this.graph.use(new Snapline({ enabled: true, sharp: true }))

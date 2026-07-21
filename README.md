@@ -38,6 +38,8 @@ $env:UMLTOOL_DIAG='1'; npx electron-vite preview
 | ズーム | Ctrl + ホイール（カーソル位置基準）、ツールバー −/100%/＋/全体 |
 | パン | 空白部を左ドラッグ、または中ボタンドラッグ |
 | 矩形選択 | Shift + 左ドラッグ |
+| 選択に追加 / 解除 | Ctrl + クリック |
+| 複数まとめて移動 | 複数選択した状態で、いずれかをドラッグ |
 | undo / redo | Ctrl+Z / Ctrl+Y（Ctrl+Shift+Z） |
 | コピー / 切り取り / 貼り付け | Ctrl+C / Ctrl+X / Ctrl+V（貼り付けは少しずらして配置） |
 | すべて選択 | Ctrl+A |

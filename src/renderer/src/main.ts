@@ -665,6 +665,29 @@ class AppController {
             graph.removeCells([labelled, unlabelled])
             activity['nodeStyle'] = bad.length === 0 ? 'ok' : `ng(${bad.join(',')})`
 
+            // 複数選択: 選択枠が見えること＋その状態で片方を動かすと全部ついてくること
+            {
+              const m1 = addActivityNode(graph, 'action', 'M1', { centerX: 1500, centerY: 100 })
+              const m2 = addActivityNode(graph, 'action', 'M2', { centerX: 1500, centerY: 240 })
+              graph.resetSelection([m1, m2])
+              await new Promise((r) => setTimeout(r, 100))
+              const boxes = document.querySelectorAll('.x6-widget-selection-box').length
+              const inner = document.querySelectorAll(
+                '.x6-widget-selection-inner[data-selection-length="2"]'
+              ).length
+              const before2 = m2.getBBox()
+              m1.translate(30, 40, { ui: true, translateBy: m1.id })
+              const moved = m2.getBBox()
+              const dx = moved.x - before2.x
+              const dy = moved.y - before2.y
+              activity['multiSelect'] =
+                boxes === 2 && inner === 1 && dx === 30 && dy === 40
+                  ? 'ok'
+                  : `ng(boxes=${boxes}, inner=${inner}, moved=${dx},${dy})`
+              graph.cleanSelection()
+              graph.removeCells([m1, m2])
+            }
+
             // フォントを大きくしたら自動サイズもその実寸に追従すること
             const { autoSizeNode } = await import('./editor/autosize')
             const fn = addActivityNode(graph, 'action', '文字送りの確認', {

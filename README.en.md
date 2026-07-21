@@ -38,6 +38,8 @@ then writes `diag-output.png` (activity diagram) and `diag-output-seq.png` (sequ
 | Zoom | Ctrl + wheel (centered on cursor), or toolbar −/100%/＋/Fit |
 | Pan | Left-drag on empty space, or middle-button drag |
 | Rubber-band selection | Shift + left-drag |
+| Add to / remove from selection | Ctrl + click |
+| Move several elements at once | Select them, then drag any one of them |
 | Undo / redo | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) |
 | Copy / cut / paste | Ctrl+C / Ctrl+X / Ctrl+V (paste places elements slightly offset) |
 | Select all | Ctrl+A |
