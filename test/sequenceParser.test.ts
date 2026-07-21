@@ -151,3 +151,67 @@ end`)
     expect(() => parseSequence('alt x\nelse z\nA -> B : y\nend')).toThrowError(ParseError)
   })
 })
+
+describe('note 構文', () => {
+  it('note left of / right of は付属テキストになる', () => {
+    const r = parseSequence(`A -> B : 送信
+note right of B : 受け取って処理する`)
+    expect(r.notes).toHaveLength(1)
+    expect(r.notes[0]).toMatchObject({
+      kind: 'text',
+      placement: 'right',
+      participants: ['B'],
+      text: '受け取って処理する',
+      afterIndex: 0
+    })
+  })
+
+  it('note over は自由配置のノートになる', () => {
+    const r = parseSequence(`A -> B : 送信
+note over A : 補足`)
+    expect(r.notes[0]).toMatchObject({ kind: 'note', placement: 'over', participants: ['A'] })
+  })
+
+  it('note over は複数の参加者にまたがれる', () => {
+    const r = parseSequence(`A -> B : 送信
+note over A, B : 二者にまたがる`)
+    expect(r.notes[0].participants).toEqual(['A', 'B'])
+  })
+
+  it('本文を省くと end note までを複数行として読む', () => {
+    const r = parseSequence(`A -> B : 送信
+note right of B
+1 行目
+2 行目
+end note`)
+    expect(r.notes[0].text).toBe('1 行目\n2 行目')
+  })
+
+  it('複数行ノートの中はコメント記号もそのまま本文になる', () => {
+    const r = parseSequence(`A -> B : 送信
+note right of B
+# これは本文
+end note`)
+    expect(r.notes[0].text).toBe('# これは本文')
+  })
+
+  it('メッセージより前の note は afterIndex が -1', () => {
+    const r = parseSequence(`participant A
+note over A : 最初
+A -> B : 送信`)
+    expect(r.notes[0].afterIndex).toBe(-1)
+  })
+
+  it('未宣言の参加者は note で暗黙宣言される', () => {
+    const r = parseSequence('note over Z : メモ')
+    expect(r.participants.map((p) => p.id)).toContain('Z')
+  })
+
+  it('閉じられていない note は ParseError', () => {
+    expect(() => parseSequence('A -> B : x\nnote right of B\n本文')).toThrowError(ParseError)
+  })
+
+  it('note を含まないテキストでは notes は空', () => {
+    expect(parseSequence('A -> B : x').notes).toEqual([])
+  })
+})

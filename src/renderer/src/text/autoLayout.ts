@@ -1,4 +1,4 @@
-import { FRAGMENT, LIFELINE, MESSAGE, type FragmentOperator } from '../editor/constants'
+import { FRAGMENT, LIFELINE, MESSAGE, NOTE, TEXT, type FragmentOperator } from '../editor/constants'
 import type { ParsedSequence } from './sequenceParser'
 
 export interface LifelineLayout {
@@ -38,15 +38,40 @@ export interface FragmentLayout {
   dividers: DividerLayout[]
 }
 
+export interface NoteLayout {
+  kind: 'text' | 'note'
+  /** テキストの付属先ライフライン。ノート（over）では基準にした先頭の参加者 */
+  participantId: string
+  x: number
+  y: number
+  width: number
+  text: string
+}
+
 export interface SequenceLayout {
   lifelines: LifelineLayout[]
   messages: MessageLayout[]
   fragments: FragmentLayout[]
   activations: ActivationLayout[]
+  notes: NoteLayout[]
 }
 
 /** フラグメントの枠・区切りが入る位置に挿入する余白 */
 const FRAG_GAP = { open: 30, separator: 22, close: 26 } as const
+
+/** ライフライン中心から注釈までの横方向の間隔 */
+const NOTE_GAP_X = 30
+/** 注釈が占める高さの見積り（実際の高さは描画時に本文へ合わせて詰め直される） */
+const NOTE_LINE_HEIGHT = 20
+const NOTE_PAD_Y = 16
+/** 注釈の下に空ける余白 */
+const NOTE_GAP_BOTTOM = 14
+
+/** 本文の行数からおおよその高さを見積もる（レイアウトは DOM 非依存にしたいため） */
+function estimateNoteHeight(text: string): number {
+  const lines = text === '' ? 1 : text.split('\n').length
+  return Math.max(TEXT.minHeight, lines * NOTE_LINE_HEIGHT + NOTE_PAD_Y)
+}
 
 /**
  * 解析結果から各ライフライン・メッセージ・フラグメントの座標を自動計算する。
@@ -63,6 +88,12 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     for (const s of f.separators) extraBefore[s.beforeIndex] += FRAG_GAP.separator
     extraBefore[f.end + 1] += FRAG_GAP.close
   }
+  // 注釈は直前のメッセージの下に置くので、次のメッセージまでの間隔を広げて場所を作る
+  const noteHeights = parsed.notes.map((note) => estimateNoteHeight(note.text))
+  parsed.notes.forEach((note, i) => {
+    const before = note.afterIndex + 1
+    if (before <= n) extraBefore[before] += noteHeights[i] + NOTE_GAP_BOTTOM
+  })
 
   const ys: number[] = []
   let acc = 0
@@ -150,11 +181,50 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
       }
     })
 
+  // 注釈: 直前のメッセージの下端から始める。同じ位置に複数あれば下へ積む
+  const noteBottomAt = new Map<number, number>()
+  const notes: NoteLayout[] = parsed.notes.map((note, i) => {
+    const anchorBottom =
+      note.afterIndex >= 0 && note.afterIndex < n
+        ? bottomOf(note.afterIndex) + MESSAGE.stepY / 3
+        : MESSAGE.startY - MESSAGE.stepY / 2
+    const y = Math.max(anchorBottom, noteBottomAt.get(note.afterIndex) ?? -Infinity)
+    noteBottomAt.set(note.afterIndex, y + noteHeights[i] + NOTE_GAP_BOTTOM)
+
+    const centers = note.participants.map(
+      (id) => centerXOf.get(id) ?? LIFELINE.firstCenterX
+    )
+    const first = centers[0]
+    if (note.placement === 'over') {
+      // 複数参加者にまたがる場合は全員を覆う幅にする
+      const left = Math.min(...centers)
+      const right = Math.max(...centers)
+      const width = Math.max(NOTE.defaultWidth, right - left + NOTE.defaultWidth / 2)
+      return {
+        kind: note.kind,
+        participantId: note.participants[0],
+        x: (left + right) / 2 - width / 2,
+        y,
+        width,
+        text: note.text
+      }
+    }
+    const width = TEXT.defaultWidth
+    const x =
+      note.placement === 'left'
+        ? first - LIFELINE.width / 2 - NOTE_GAP_X - width
+        : first + LIFELINE.width / 2 + NOTE_GAP_X
+    return { kind: note.kind, participantId: note.participants[0], x, y, width, text: note.text }
+  })
+
   const bottomPadding = MESSAGE.stepY + 24
   let contentBottom: number = MESSAGE.startY
   if (n > 0) contentBottom = bottomOf(n - 1)
   for (const r of rects) contentBottom = Math.max(contentBottom, r.bottom)
   for (const a of activations) contentBottom = Math.max(contentBottom, a.y + a.height)
+  notes.forEach((note, i) => {
+    contentBottom = Math.max(contentBottom, note.y + noteHeights[i])
+  })
   const height = Math.max(LIFELINE.defaultHeight, contentBottom + bottomPadding - LIFELINE.top)
 
   const lifelines: LifelineLayout[] = parsed.participants.map((p, i) => ({
@@ -170,5 +240,5 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     y: ys[i]
   }))
 
-  return { lifelines, messages, fragments, activations }
+  return { lifelines, messages, fragments, activations, notes }
 }

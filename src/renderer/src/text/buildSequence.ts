@@ -1,11 +1,13 @@
 import type { Node } from '@antv/x6'
 import {
   addActivation,
+  addAttachedText,
   addFragment,
   addFragmentDivider,
   addLifeline,
   addMessage
 } from '../editor/sequence'
+import { addNoteNode } from '../editor/note'
 import type { GraphEditor } from '../editor/GraphEditor'
 import { layoutSequence } from './autoLayout'
 import { parseSequence } from './sequenceParser'
@@ -53,6 +55,22 @@ export function buildSequenceFromText(editor: GraphEditor, text: string): void {
       })
       for (const d of f.dividers) {
         addFragmentDivider(graph, node, d.y, d.guard)
+      }
+    }
+
+    // note left of / right of は付属テキスト、note over は自由配置のノート
+    for (const note of layout.notes) {
+      if (note.kind === 'note') {
+        addNoteNode(graph, note.text, { x: note.x, y: note.y, width: note.width })
+        continue
+      }
+      const lifeline = cellById.get(note.participantId)
+      if (lifeline) {
+        addAttachedText(graph, lifeline, note.text, {
+          x: note.x,
+          y: note.y,
+          width: note.width
+        })
       }
     }
   })

@@ -101,3 +101,77 @@ deactivate B`)
     expect(a.height).toBeGreaterThan(0)
   })
 })
+
+describe('note のレイアウト', () => {
+  it('left は対象ライフラインの左、right は右に置かれる', () => {
+    const l = layoutSequence(
+      parseSequence(`A -> B : x
+note left of A : 左
+note right of A : 右`)
+    )
+    const a = l.lifelines.find((x) => x.id === 'A')!
+    const left = l.notes[0]
+    const right = l.notes[1]
+    expect(left.x + left.width).toBeLessThan(a.centerX)
+    expect(right.x).toBeGreaterThan(a.centerX)
+  })
+
+  it('over は対象ライフラインの中心にまたがる', () => {
+    const l = layoutSequence(
+      parseSequence(`A -> B : x
+note over A, B : 覆う`)
+    )
+    const a = l.lifelines.find((x) => x.id === 'A')!
+    const b = l.lifelines.find((x) => x.id === 'B')!
+    const note = l.notes[0]
+    expect(note.x).toBeLessThan(a.centerX)
+    expect(note.x + note.width).toBeGreaterThan(b.centerX)
+  })
+
+  it('note の分だけ後続メッセージが下にずれる', () => {
+    const without = layoutSequence(parseSequence('A -> B : 1\nA -> B : 2'))
+    const withNote = layoutSequence(
+      parseSequence(`A -> B : 1
+note right of B : メモ
+A -> B : 2`)
+    )
+    expect(withNote.messages[0].y).toBe(without.messages[0].y)
+    expect(withNote.messages[1].y).toBeGreaterThan(without.messages[1].y)
+  })
+
+  it('本文が長いほど大きく間隔が空く', () => {
+    const short = layoutSequence(
+      parseSequence('A -> B : 1\nnote right of B : 1行\nA -> B : 2')
+    )
+    const long = layoutSequence(
+      parseSequence(`A -> B : 1
+note right of B
+1
+2
+3
+4
+end note
+A -> B : 2`)
+    )
+    expect(long.messages[1].y).toBeGreaterThan(short.messages[1].y)
+  })
+
+  it('同じ位置に複数の note があっても重ならない', () => {
+    const l = layoutSequence(
+      parseSequence(`A -> B : x
+note right of B : 1
+note right of B : 2`)
+    )
+    expect(l.notes[1].y).toBeGreaterThan(l.notes[0].y)
+  })
+
+  it('ライフラインは note を含む高さまで伸びる', () => {
+    const l = layoutSequence(
+      parseSequence(`A -> B : x
+note right of B : メモ`)
+    )
+    const note = l.notes[0]
+    const a = l.lifelines[0]
+    expect(a.top + a.height).toBeGreaterThan(note.y)
+  })
+})

@@ -41,11 +41,29 @@ export interface ParsedFragment {
   depth: number
 }
 
+/** 注釈の置き方。left/right はライフラインの脇、over はライフラインに被せる */
+export type NotePlacement = 'left' | 'right' | 'over'
+
+export interface ParsedNote {
+  /**
+   * 図形の種類。left of / right of はライフラインに付属する「テキスト」、
+   * over は自由配置の「ノート」（付箋）になる。
+   */
+  kind: 'text' | 'note'
+  placement: NotePlacement
+  /** 対象の参加者 id。over は複数指定できる */
+  participants: string[]
+  text: string
+  /** 直前のメッセージ index。先頭より前なら -1 */
+  afterIndex: number
+}
+
 export interface ParsedSequence {
   participants: ParsedParticipant[]
   messages: ParsedMessage[]
   fragments: ParsedFragment[]
   activations: ParsedActivation[]
+  notes: ParsedNote[]
 }
 
 export class ParseError extends Error {
@@ -69,6 +87,10 @@ const ELSE_RE = /^else\b\s*(.*)$/i
 const END_RE = /^end\s*$/i
 const ACTIVATE_RE = /^activate\s+(.+?)\s*$/i
 const DEACTIVATE_RE = /^deactivate\s+(.+?)\s*$/i
+// note left of A : 本文 / note over A, B : 本文（: 以降を省くと end note までの複数行）
+const NOTE_RE = /^note\s+(left|right)\s+of\s+([^:]+?)\s*(?::\s*(.*))?$/i
+const NOTE_OVER_RE = /^note\s+over\s+([^:]+?)\s*(?::\s*(.*))?$/i
+const END_NOTE_RE = /^end\s*note\s*$/i
 /** else で区切れる演算子 */
 const DIVIDABLE = new Set<string>(['alt', 'par'])
 
@@ -105,6 +127,9 @@ function stripQuotes(name: string): string {
  *   activate 参加者 / deactivate 参加者 （活性化バー。deactivate 省略時は末尾で自動終了）
  *   alt 条件 / opt / loop / break / par / seq / strict / critical … end
  *   else 条件 （alt / par 内の区切り）
+ *   note left of A : 本文 / note right of A : 本文 （ライフライン付属の「テキスト」）
+ *   note over A : 本文 / note over A, B : 本文 （自由配置の「ノート」）
+ *   本文を省くと end note までを複数行の本文として読む
  *   コメント: 行頭 ' # //
  */
 export function parseSequence(text: string): ParsedSequence {
@@ -113,6 +138,7 @@ export function parseSequence(text: string): ParsedSequence {
   const messages: ParsedMessage[] = []
   const fragments: ParsedFragment[] = []
   const activations: ParsedActivation[] = []
+  const notes: ParsedNote[] = []
 
   interface Frame {
     operator: FragmentOperator
@@ -138,12 +164,66 @@ export function parseSequence(text: string): ParsedSequence {
     }
   }
 
+  /** end note まで本文を集める複数行ノート。null なら通常行 */
+  let openNote: { note: ParsedNote; lines: string[]; lineNo: number } | null = null
+
+  const addNote = (
+    kind: ParsedNote['kind'],
+    placement: NotePlacement,
+    targets: string[],
+    body: string | undefined,
+    lineNo: number
+  ): void => {
+    if (targets.length === 0) throw new ParseError('note の対象が空です', lineNo)
+    for (const t of targets) ensure(t)
+    const note: ParsedNote = {
+      kind,
+      placement,
+      participants: targets,
+      text: (body ?? '').trim(),
+      afterIndex: messages.length - 1
+    }
+    // 本文が同じ行に無ければ end note までの複数行として読む
+    if (body === undefined) openNote = { note, lines: [], lineNo }
+    else notes.push(note)
+  }
+
   const lines = text.split(/\r?\n/)
   lines.forEach((raw, idx) => {
     const lineNo = idx + 1
     const line = raw.trim()
+
+    // 複数行ノートの内側は本文としてそのまま積む（コメント判定もしない）
+    if (openNote !== null) {
+      if (END_NOTE_RE.test(line)) {
+        const open: { note: ParsedNote; lines: string[] } = openNote
+        open.note.text = open.lines.join('\n').trim()
+        notes.push(open.note)
+        openNote = null
+        return
+      }
+      openNote.lines.push(line)
+      return
+    }
+
     if (line === '' || COMMENT_RE.test(raw)) return
     if (/^title\b/i.test(line) || /^@startuml|^@enduml/i.test(line)) return
+
+    const nm = NOTE_RE.exec(line)
+    if (nm) {
+      addNote('text', nm[1].toLowerCase() as 'left' | 'right', [stripQuotes(nm[2])], nm[3], lineNo)
+      return
+    }
+
+    const nom = NOTE_OVER_RE.exec(line)
+    if (nom) {
+      const targets = nom[1]
+        .split(',')
+        .map((t) => stripQuotes(t))
+        .filter((t) => t !== '')
+      addNote('note', 'over', targets, nom[2], lineNo)
+      return
+    }
 
     const pm = PARTICIPANT_RE.exec(line)
     if (pm) {
@@ -243,6 +323,11 @@ export function parseSequence(text: string): ParsedSequence {
     throw new ParseError(`解釈できない行です: "${line}"`, lineNo)
   })
 
+  if (openNote !== null) {
+    const open: { lineNo: number } = openNote
+    throw new ParseError('note が end note で閉じられていません', open.lineNo)
+  }
+
   if (stack.length > 0) {
     const frame = stack[stack.length - 1]
     throw new ParseError(
@@ -260,5 +345,5 @@ export function parseSequence(text: string): ParsedSequence {
     })
   }
 
-  return { participants, messages, fragments, activations }
+  return { participants, messages, fragments, activations, notes }
 }

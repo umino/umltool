@@ -13,7 +13,7 @@ import {
 import { addActivityNode, addFlow, addFrame, addSwimlane } from './editor/activity'
 import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
-import { getCellKind } from './editor/shapes'
+import { getCellKind, getNodeLabel } from './editor/shapes'
 import {
   ACTIVATION,
   ACTIVITY,
@@ -50,7 +50,9 @@ else 認証NG
   サーバー --> ブラウザ : エラーページ
 end
 deactivate サーバー
-ブラウザ --> ユーザー : ページを表示`
+ブラウザ --> ユーザー : ページを表示
+note right of ブラウザ : 描画はここで完了
+note over サーバー : 認証結果はセッションに保存`
 
 const SAMPLE_ACTIVITY = `start
 :注文を受け付ける;
@@ -266,6 +268,40 @@ class AppController {
               ? 'ok'
               : `ng(child=${isChild}, link=${!!link}, followed=${followed}, gone=${gone})`
           graph.cleanSelection()
+        }
+
+        // DSL の note: left/right of は付属テキスト、over は自由配置ノート
+        {
+          buildSequenceFromText(
+            this.editor,
+            `A -> B : 送る
+note right of B : 受け取った
+note over A, B : 二者に跨る
+note left of A
+1 行目
+2 行目
+end note`
+          )
+          const texts = graph.getNodes().filter((n) => getCellKind(n) === 'text')
+          const noteNodes = graph.getNodes().filter((n) => getCellKind(n) === 'note')
+          const lifelineA = graph.getNodes().find((n) => getNodeLabel(n) === 'A')
+          // 付属テキストはライフラインの子になり、破線コネクタで結ばれる
+          const attached = texts.every((t) => t.getParent() !== null)
+          const multiline = texts.some((t) => getNodeLabel(t).includes('\n'))
+          const links = graph.getEdges().filter((e) => getCellKind(e) === 'attachLink')
+          const leftOfA =
+            lifelineA !== undefined &&
+            texts.some((t) => t.getBBox().x + t.getBBox().width < lifelineA.getBBox().x)
+          behavior['dslNote'] =
+            texts.length === 2 &&
+            noteNodes.length === 1 &&
+            attached &&
+            multiline &&
+            links.length === 2 &&
+            leftOfA
+              ? 'ok'
+              : `ng(texts=${texts.length}, notes=${noteNodes.length}, attached=${attached}, multiline=${multiline}, links=${links.length}, leftOfA=${leftOfA})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
       } catch (e) {
         behavior['error'] = (e as Error).message

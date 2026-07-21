@@ -103,12 +103,23 @@ alt authenticated
 else rejected
   Server --> User : failure
 end
+note right of Server : text attached to the lifeline
+note over User, Server : a sticky note spanning both
+note left of User
+multi-line bodies
+are supported too
+end note
 ```
 
 - **Display name and alias**: `participant "Display name" as Alias`. Referenced by the alias afterwards.
 - **Activation bars**: `activate <participant>` … `deactivate <participant>`. Omitting `deactivate` closes it automatically at the end.
 - **Combined fragments**: `alt` / `opt` / `loop` / `break` / `par` / `seq` / `strict` / `critical` (closed with `end`, nestable).
   Dashed separators via `else` are available inside `alt` / `par` (each operand's guard can also be edited individually in the right panel after generation).
+- **Annotations** map onto the two annotation shapes:
+  - `note left of <participant>` / `note right of <participant>` → **text**, attached to that lifeline, linked by a dashed connector and following it when moved
+  - `note over <participant>` / `note over <a>, <b>` → **note**, a freely placed sticky note; listing several participants widens it to span them
+
+  Either form takes its body after `:`, or omits the `:` and reads everything up to `end note` as a multi-line body. An annotation is placed below the message preceding it, and following messages shift down to make room.
 
 ### Activity diagrams
 
