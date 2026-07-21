@@ -3,6 +3,23 @@
 /** 書き出し SVG が単体でも同じ見た目になるよう、フォントは属性で明示する */
 export const FONT_FAMILY = '"Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif'
 
+/**
+ * 重なり順。数値が大きいほど手前。
+ * ライフライン < 活性化バー < メッセージ、の順で、バーは生存線を隠しつつ
+ * 矢印には隠されない（矢印がバーの上を通る）。
+ */
+export const Z = {
+  swimlane: -1,
+  lifeline: 1,
+  activation: 2,
+  message: 3,
+  attachLink: 5,
+  frame: 10,
+  fragment: 10,
+  divider: 11,
+  annotation: 20
+} as const
+
 /** 右パネルのフォント選択肢。value は SVG の font-family にそのまま入る */
 export const FONT_FAMILY_CHOICES: { label: string; value: string }[] = [
   { label: '既定（ゴシック）', value: FONT_FAMILY },

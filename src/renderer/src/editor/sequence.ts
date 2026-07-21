@@ -8,6 +8,7 @@ import {
   MESSAGE,
   SHAPE,
   TEXT,
+  Z,
   type FragmentOperator,
   type MessageKind
 } from './constants'
@@ -38,7 +39,8 @@ export function addLifeline(graph: Graph, name: string, opts: LifelineOptions): 
     width: LIFELINE.width,
     height,
     attrs: { label: { text: name } },
-    data: { kind: 'lifeline' }
+    data: { kind: 'lifeline' },
+    zIndex: Z.lifeline
   })
   autoSizeNode(node, name)
   applyLifelineGeometry(node)
@@ -54,7 +56,8 @@ export function addActivation(graph: Graph, lifeline: Node, y: number, height: n
     y,
     width: ACTIVATION.width,
     height,
-    data: { kind: 'activation' }
+    data: { kind: 'activation' },
+    zIndex: Z.activation
   })
   lifeline.addChild(node)
   return node
@@ -90,7 +93,8 @@ export function addMessage(
     target: { cell: target.id },
     vertices,
     attrs: { line: messageLineAttrs(isSelf ? 'self' : kind) },
-    data: { kind: 'message', msgKind: isSelf ? 'self' : kind }
+    data: { kind: 'message', msgKind: isSelf ? 'self' : kind },
+    zIndex: Z.message
   })
   if (label !== '') setMessageLabel(edge, label)
   return edge
@@ -122,7 +126,8 @@ export function addGateMessage(
     target: direction === 'in' ? { cell: lifeline.id } : gate,
     vertices: [{ x: (lifelineX + opts.gateX) / 2, y: opts.y }],
     attrs: { line: messageLineAttrs(kind) },
-    data: { kind: 'message', msgKind: kind, gate: direction }
+    data: { kind: 'message', msgKind: kind, gate: direction },
+    zIndex: Z.message
   })
   if (label !== '') setMessageLabel(edge, label)
   return edge
@@ -155,7 +160,7 @@ export function addFragment(
     height: rect.height,
     attrs: { label: { text: operator } },
     data: { kind: 'fragment', operator },
-    zIndex: 10
+    zIndex: Z.fragment
   })
   setFragmentGuard(node, guard)
   return node
@@ -176,7 +181,7 @@ export function addFragmentDivider(
     width: bbox.width,
     height: FRAGMENT.dividerHeight,
     data: { kind: 'divider' },
-    zIndex: 11
+    zIndex: Z.divider
   })
   setDividerGuard(node, guard)
   applyDividerGeometry(node)
@@ -208,7 +213,7 @@ export function addAttachedText(
     height: TEXT.minHeight,
     attrs: { label: { text: content } },
     data: { kind: 'text' },
-    zIndex: 20
+    zIndex: Z.annotation
   })
   fitTextHeight(node)
   lifeline.addChild(node)
@@ -217,7 +222,7 @@ export function addAttachedText(
     source: { cell: node.id },
     target: { cell: lifeline.id },
     data: { kind: 'attachLink' },
-    zIndex: 5
+    zIndex: Z.attachLink
   })
   return node
 }

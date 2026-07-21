@@ -19,6 +19,7 @@ import {
   NOTE,
   SHAPE,
   TEXT,
+  Z,
   type CellKind,
   type FragmentOperator,
   type MessageKind,
@@ -209,7 +210,8 @@ export function registerShapes(): void {
           }
         },
         position: { distance: 0.5, offset: { x: 0, y: -6 } }
-      }
+      },
+      zIndex: Z.message
     },
     true
   )
@@ -670,7 +672,7 @@ export function registerShapes(): void {
           sourceMarker: null
         }
       },
-      zIndex: 5
+      zIndex: Z.attachLink
     },
     true
   )

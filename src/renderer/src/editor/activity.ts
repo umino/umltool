@@ -1,7 +1,7 @@
 // アクティビティ図の図形ファクトリ
 
 import type { Edge, Graph, Node } from '@antv/x6'
-import { ACTIVITY, SHAPE, type ActivityNodeKind } from './constants'
+import { ACTIVITY, SHAPE, Z, type ActivityNodeKind } from './constants'
 import { applyFrameHeader, getCellKind, setMessageLabel } from './shapes'
 import { autoSizeNode } from './autosize'
 import {
@@ -191,7 +191,7 @@ export function addFrame(graph: Graph, header: string, rect: SwimlaneRect): Node
     width: rect.width,
     height: rect.height,
     data: { kind: 'frame' },
-    zIndex: 10
+    zIndex: Z.frame
   })
   applyFrameHeader(node, header)
   return node
@@ -207,7 +207,7 @@ export function addSwimlane(graph: Graph, name: string, rect: SwimlaneRect): Nod
     height: rect.height,
     attrs: { label: { text: name } },
     data: { kind: 'swimlane' },
-    zIndex: -1
+    zIndex: Z.swimlane
   })
   return node
 }

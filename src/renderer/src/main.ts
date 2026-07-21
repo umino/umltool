@@ -344,6 +344,37 @@ A -> B : 通常`
           buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
 
+        // 重なり順: ライフライン < 活性化バー < メッセージ
+        // （バーは生存線を隠し、矢印はバーの上を通る）
+        {
+          buildSequenceFromText(
+            this.editor,
+            `participant A
+participant B
+participant C
+activate B
+A -> C : Bの上を通る
+deactivate B`
+          )
+          await new Promise((r) => setTimeout(r, 100))
+          const zOf = (kind: string): number | undefined => {
+            const cell = graph.getCells().find((c) => getCellKind(c) === kind)
+            return cell?.getZIndex()
+          }
+          const zLifeline = zOf('lifeline')
+          const zActivation = zOf('activation')
+          const zMessage = zOf('message')
+          behavior['zOrder'] =
+            zLifeline !== undefined &&
+            zActivation !== undefined &&
+            zMessage !== undefined &&
+            zLifeline < zActivation &&
+            zActivation < zMessage
+              ? 'ok'
+              : `ng(lifeline=${zLifeline}, activation=${zActivation}, message=${zMessage})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+        }
+
         // DSL の autoactivate: 呼び出しでバーが開き、戻りで閉じる
         {
           buildSequenceFromText(
