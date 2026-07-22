@@ -632,6 +632,58 @@ B --> A : 返す`
           activity['branchPorts'] = problems.length === 0 ? 'ok' : `ng(${problems.join(',')})`
         }
 
+        // 複数行テキストの行揃え: ノート/テキストだけが対象で、往復もする
+        {
+          const s = await import('./editor/shapes')
+          const n = addNoteNode(graph, '1 行目\n2 行目', { x: 1200, y: 900, width: 200 })
+          const seen: string[] = []
+          for (const align of ['left', 'right', 'center'] as const) {
+            s.setTextAlign(n, align)
+            seen.push(s.getTextAlign(n))
+          }
+          // 揃えると本文の基準位置（textAnchor）が変わる
+          s.setTextAlign(n, 'left')
+          const leftAnchor = String(n.attr('label/textAnchor'))
+          s.setTextAlign(n, 'right')
+          const rightAnchor = String(n.attr('label/textAnchor'))
+          // ラベル位置が固定のライフラインなどは対象外
+          const lifeline = graph.getNodes().find((x) => getCellKind(x) === 'lifeline')
+          const action = graph.getNodes().find((x) => getCellKind(x) === 'action')
+          activity['textAlign'] =
+            seen.join(',') === 'left,right,center' &&
+            leftAnchor === 'start' &&
+            rightAnchor === 'end' &&
+            s.canSetTextAlign(n) &&
+            (lifeline === undefined || !s.canSetTextAlign(lifeline)) &&
+            (action === undefined || !s.canSetTextAlign(action))
+              ? 'ok'
+              : `ng(seen=${seen.join(',')}, left=${leftAnchor}, right=${rightAnchor})`
+          graph.removeCells([n])
+        }
+
+        // コンテナ（レーン/フレーム）は中身を隠さないよう常に背面
+        {
+          const lane = addSwimlane(graph, '背面レーン', { x: 40, y: 40, width: 300, height: 400 })
+          const fr = addFrame(graph, '背面フレーム', { x: 60, y: 60, width: 260, height: 300 })
+          const zLane = lane.getZIndex() ?? 0
+          const zFrame = fr.getZIndex() ?? 0
+          // 図中の通常ノード（コンテナ以外）すべてより後ろにあること
+          const contentZ = graph
+            .getNodes()
+            .filter((n) => {
+              const k = getCellKind(n)
+              return k !== 'swimlane' && k !== 'frame' && k !== 'fragment'
+            })
+            .map((n) => n.getZIndex() ?? 0)
+          const edgeZ = graph.getEdges().map((e) => e.getZIndex() ?? 0)
+          const minContent = Math.min(...contentZ, ...edgeZ)
+          activity['containerBehind'] =
+            zLane < zFrame && zFrame < minContent
+              ? 'ok'
+              : `ng(lane=${zLane}, frame=${zFrame}, minContent=${minContent})`
+          graph.removeCells([lane, fr])
+        }
+
         // 分岐の図形: 既存・新規ともに切り替わり、保存で往復し、合流は菱形のまま
         {
           const { getDecisionShape } = await import('./editor/shapes')

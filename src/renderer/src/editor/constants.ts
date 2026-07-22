@@ -5,20 +5,40 @@ export const FONT_FAMILY = '"Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sa
 
 /**
  * 重なり順。数値が大きいほど手前。
- * ライフライン < 活性化バー < メッセージ、の順で、バーは生存線を隠しつつ
+ *
+ * 他のノードを包含するコンテナ（レーン / フレーム / フラグメント）は、背景色を
+ * 付けたときに中身を隠さないよう最背面に置く。通常のノードは
+ * ライフライン < 活性化バー < メッセージ の順で、バーは生存線を隠しつつ
  * 矢印には隠されない（矢印がバーの上を通る）。
+ *
+ * X6 は zIndex 未指定のセルに「現在の最大 + 1」を割り当てるため、コンテナを
+ * 負にするだけだと後から足したノードが背面に潜り込みうる。取りこぼしが無いよう、
+ * 全ての種別に明示的な値を与えること。
  */
 export const Z = {
-  swimlane: -1,
+  swimlane: -20,
+  frame: -10,
+  fragment: -10,
+  divider: -9,
   lifeline: 1,
+  /** アクティビティ図の通常ノード（アクション・分岐・開始/終了など） */
+  node: 1,
   activation: 2,
   message: 3,
   attachLink: 5,
-  frame: 10,
-  fragment: 10,
-  divider: 11,
   annotation: 20
 } as const
+
+/** 複数行テキストの水平揃え */
+export type TextAlign = 'left' | 'center' | 'right'
+
+export const DEFAULT_TEXT_ALIGN: TextAlign = 'center'
+
+export const TEXT_ALIGN_LABEL: Record<TextAlign, string> = {
+  left: '左揃え',
+  center: '中央揃え',
+  right: '右揃え'
+}
 
 /** 右パネルのフォント選択肢。value は SVG の font-family にそのまま入る */
 export const FONT_FAMILY_CHOICES: { label: string; value: string }[] = [
@@ -44,6 +64,7 @@ export const COLOR_PRESETS: { label: string; value: string }[] = [
   { label: 'グレー', value: '#5b6472' },
   { label: 'ブルー', value: '#2d6cdf' },
   { label: 'グリーン', value: '#2f8f46' },
+  { label: 'イエロー', value: '#f5c518' },
   { label: 'オレンジ', value: '#b7791f' },
   { label: 'レッド', value: '#c0392b' },
   { label: 'パープル', value: '#7b4bc9' }

@@ -21,9 +21,11 @@ import {
   NOTE,
   SHAPE,
   TEXT,
+  DEFAULT_TEXT_ALIGN,
   Z,
   type CellKind,
   type DecisionShape,
+  type TextAlign,
   type FragmentOperator,
   type MessageKind,
   type UmlCellData
@@ -688,6 +690,7 @@ export function registerShapes(): void {
         name: FLOW_ROUTER,
         args: { padding: 12, excludeShapes: ROUTER_TRANSPARENT_SHAPES }
       },
+      zIndex: Z.message,
       connector: { name: 'rounded', args: { radius: 8 } },
       attrs: {
         line: {
@@ -1083,6 +1086,45 @@ export function getTextColor(node: Node): string {
 export function setTextColor(node: Node, color: string): void {
   const path = labelPath(node, 'fill')
   if (path !== null) node.attr(path, color)
+}
+
+/**
+ * 水平揃えを変えられる図形か。
+ *
+ * 本文を複数行で書くテキスト/ノートだけを対象にする。ライフラインやレーンの
+ * ラベルはヘッダ内に置く前提の座標指定なので、揃えを動かすと位置が壊れる。
+ */
+export function canSetTextAlign(node: Node): boolean {
+  const kind = getCellKind(node)
+  return kind === 'text' || kind === 'note'
+}
+
+/** 揃えに応じた label の基準位置。padX 分だけ内側に寄せる */
+function alignAttrs(align: TextAlign, padX: number): Record<string, string | number> {
+  switch (align) {
+    case 'left':
+      return { textAnchor: 'start', refX: 0, refX2: padX }
+    case 'right':
+      return { textAnchor: 'end', refX: '100%', refX2: -padX }
+    default:
+      return { textAnchor: 'middle', refX: '50%', refX2: 0 }
+  }
+}
+
+export function getTextAlign(node: Node): TextAlign {
+  if (!canSetTextAlign(node)) return DEFAULT_TEXT_ALIGN
+  const anchor = node.attr('label/textAnchor')
+  if (anchor === 'start') return 'left'
+  if (anchor === 'end') return 'right'
+  return DEFAULT_TEXT_ALIGN
+}
+
+export function setTextAlign(node: Node, align: TextAlign): void {
+  if (!canSetTextAlign(node)) return
+  const padX = getCellKind(node) === 'note' ? NOTE.padX : TEXT.padX
+  for (const [name, value] of Object.entries(alignAttrs(align, padX))) {
+    node.attr(`label/${name}`, value)
+  }
 }
 
 export function getTextFontFamily(node: Node): string {

@@ -64,7 +64,8 @@ export function addActivityNode(
     width,
     height,
     attrs: hasLabel ? { label: { text: label } } : undefined,
-    data: { kind }
+    data: { kind },
+    zIndex: Z.node
   })
   // 呼び出し側が明示サイズを指定していない場合のみラベルに合わせる
   if (hasLabel && opts.width == null && opts.height == null) {
@@ -92,7 +93,8 @@ export function addFlow(graph: Graph, source: Node, target: Node, label = ''): E
     shape: SHAPE.flow,
     source: flowTerminal(source),
     target: flowTerminal(target),
-    data: { kind: 'flow' }
+    data: { kind: 'flow' },
+    zIndex: Z.message
   })
   if (label !== '') setMessageLabel(edge, label)
   return edge

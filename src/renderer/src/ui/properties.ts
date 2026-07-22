@@ -12,6 +12,7 @@ import {
   applyFrameHeader,
   canSetFill,
   canSetStroke,
+  canSetTextAlign,
   canSetTextStyle,
   getCellKind,
   getDividerGuard,
@@ -22,6 +23,7 @@ import {
   getNodeFill,
   getNodeLabel,
   getNodeStroke,
+  getTextAlign,
   getTextBold,
   getTextColor,
   getTextFontFamily,
@@ -34,6 +36,7 @@ import {
   setNodeFill,
   setNodeLabel,
   setNodeStroke,
+  setTextAlign,
   setTextBold,
   setTextColor,
   setTextFontFamily,
@@ -48,10 +51,12 @@ import {
   FRAGMENT,
   FRAGMENT_OPERATORS,
   MESSAGE_KIND_LABEL,
+  TEXT_ALIGN_LABEL,
   isActivityNodeKind,
   type CellKind,
   type FragmentOperator,
-  type MessageKind
+  type MessageKind,
+  type TextAlign
 } from '../editor/constants'
 
 const MESSAGE_KINDS: MessageKind[] = ['sync', 'async', 'return', 'self']
@@ -356,6 +361,11 @@ export class PropertiesPanel {
           refit()
         })
       )
+      if (canSetTextAlign(node)) {
+        this.host.appendChild(
+          textAlignSelect(getTextAlign(node), (value) => setTextAlign(node, value))
+        )
+      }
       this.host.appendChild(
         colorInput('文字色', getTextColor(node), (value) => setTextColor(node, value))
       )
@@ -369,6 +379,25 @@ function sectionTitle(text: string): HTMLElement {
   el.className = 'section-title'
   el.textContent = text
   return el
+}
+
+function textAlignSelect(
+  value: TextAlign,
+  onChange: (value: TextAlign) => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = '行揃え'
+  const select = document.createElement('select')
+  for (const align of ['left', 'center', 'right'] as const) {
+    const opt = document.createElement('option')
+    opt.value = align
+    opt.textContent = TEXT_ALIGN_LABEL[align]
+    select.appendChild(opt)
+  }
+  select.value = value
+  select.addEventListener('change', () => onChange(select.value as TextAlign))
+  wrap.appendChild(select)
+  return wrap
 }
 
 function fontFamilySelect(value: string, onChange: (value: string) => void): HTMLElement {
