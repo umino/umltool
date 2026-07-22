@@ -8,6 +8,7 @@ import {
   DECISION_OUT_SIDES,
   MERGE_IN_SIDES,
   assignBranchSides,
+  flowTargetSide,
   type BranchEnd,
   type Side
 } from './branchPorts'
@@ -100,6 +101,22 @@ export function addFlow(graph: Graph, source: Node, target: Node, label = ''): E
   return edge
 }
 
+type TerminalSide = 'source' | 'target'
+
+/** 手動で繋ぎ替えた端点かどうか（自動割り当ての対象外にする） */
+export function isTerminalManual(edge: Edge, side: TerminalSide): boolean {
+  const data = edge.getData() as { manualSource?: boolean; manualTarget?: boolean } | undefined
+  return (side === 'source' ? data?.manualSource : data?.manualTarget) === true
+}
+
+/**
+ * 端点を「手動で決めたもの」として記録する。以後この端点は自動割り当てで
+ * 動かさない（issue #17: 手動の接続先を優先する）。
+ */
+export function markTerminalManual(edge: Edge, side: TerminalSide): void {
+  edge.updateData(side === 'source' ? { manualSource: true } : { manualTarget: true })
+}
+
 /**
  * 分岐/合流に付くフローの接続辺を割り当て直す。
  *
@@ -117,6 +134,7 @@ export function normalizeBranchPorts(graph: Graph): void {
     const flows = graph
       .getConnectedEdges(node)
       .filter((edge) => getCellKind(edge) === 'flow')
+      .filter((edge) => !isTerminalManual(edge, isSource(edge, node) ? 'source' : 'target'))
 
     const branches: Edge[] = []
     const trunkSide: Side = kind === 'decision' ? 'top' : 'bottom'
@@ -139,6 +157,43 @@ export function normalizeBranchPorts(graph: Graph): void {
       if (side) setPort(edge, node, side)
     }
   }
+}
+
+/**
+ * 分岐・合流以外へ入るフローを、送信元が上にあるときだけ上辺中央に付け直す。
+ *
+ * 分岐と合流は normalizeBranchPorts が受け持つ（分岐の入口は常に上、合流は枝ごとに
+ * 振り分け）。ここで触ると両者が同じ端点を取り合って割り当てが安定しないため、
+ * 対象から外す。分岐の入口はどのみち上辺なので、見た目はこの規則と一致する。
+ *
+ * 手動で繋ぎ替えた端点は動かさない。条件を満たさなくなったら既定の
+ * 「近い辺を選ぶ」接続へ戻す。
+ */
+export function normalizeFlowTargets(graph: Graph): void {
+  for (const edge of graph.getEdges()) {
+    if (getCellKind(edge) !== 'flow') continue
+    if (isTerminalManual(edge, 'target')) continue
+
+    const sourceId = edge.getSourceCellId()
+    const targetId = edge.getTargetCellId()
+    if (sourceId == null || targetId == null) continue
+    const source = graph.getCellById(sourceId)
+    const target = graph.getCellById(targetId)
+    if (!source?.isNode() || !target?.isNode()) continue
+    const targetKind = getCellKind(target)
+    if (targetKind === 'merge' || targetKind === 'decision') continue
+
+    const side = flowTargetSide((source as Node).getBBox(), (target as Node).getBBox())
+    if (side === null) resetPort(edge, target as Node)
+    else setPort(edge, target as Node, side)
+  }
+}
+
+/** ポート指定を外し、既定の「近い辺を選ぶ」接続に戻す */
+function resetPort(edge: Edge, node: Node): void {
+  const current = edge.getTarget() as { port?: string }
+  if (current.port === undefined) return
+  edge.setTarget(flowTerminal(node))
 }
 
 function isSource(edge: Edge, node: Node): boolean {

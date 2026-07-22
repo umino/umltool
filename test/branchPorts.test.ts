@@ -3,6 +3,8 @@ import {
   DECISION_OUT_SIDES,
   MERGE_IN_SIDES,
   assignBranchSides,
+  flowTargetSide,
+  type Box,
   type BranchEnd
 } from '../src/renderer/src/editor/branchPorts'
 
@@ -93,5 +95,33 @@ describe('assignBranchSides', () => {
   it('中心と同じ位置の枝でも辺は割り当てられる', () => {
     const ends: BranchEnd[] = [{ id: 'a', x: center.x, y: center.y }]
     expect(assignBranchSides(center, ends, DECISION_OUT_SIDES).get('a')).toBeDefined()
+  })
+})
+
+describe('flowTargetSide', () => {
+  const box = (x: number, y: number, w = 100, h = 40): Box => ({ x, y, width: w, height: h })
+
+  it('送信元が完全に上にあれば上辺中央', () => {
+    expect(flowTargetSide(box(0, 0), box(0, 100))).toBe('top')
+  })
+
+  it('接している（下端＝上端）だけでも上とみなす', () => {
+    expect(flowTargetSide(box(0, 0, 100, 40), box(0, 40))).toBe('top')
+  })
+
+  it('横並びで縦に重なるなら既定に任せる', () => {
+    expect(flowTargetSide(box(0, 0), box(200, 10))).toBeNull()
+  })
+
+  it('送信元が下にあるなら既定に任せる', () => {
+    expect(flowTargetSide(box(0, 200), box(0, 0))).toBeNull()
+  })
+
+  it('少しでも縦に重なっていれば既定に任せる', () => {
+    expect(flowTargetSide(box(0, 0, 100, 40), box(0, 39))).toBeNull()
+  })
+
+  it('横方向にずれていても、上にあれば上辺中央', () => {
+    expect(flowTargetSide(box(0, 0), box(400, 300))).toBe('top')
   })
 })

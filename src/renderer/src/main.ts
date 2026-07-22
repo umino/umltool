@@ -632,6 +632,40 @@ B --> A : 返す`
           activity['branchPorts'] = problems.length === 0 ? 'ok' : `ng(${problems.join(',')})`
         }
 
+        // フローの接続先: 上にあるノードからは上辺中央、合流は例外、手動は不変
+        {
+          const a = await import('./editor/activity')
+          const portOfTarget = (e: Edge): string =>
+            String((e.getTarget() as { port?: string }).port ?? '(none)')
+          const flows = graph.getEdges().filter((e) => getCellKind(e) === 'flow')
+          const targetKind = (e: Edge): string => {
+            const id = e.getTargetCellId()
+            const cell = id == null ? null : graph.getCellById(id)
+            return cell ? getCellKind(cell) : 'unknown'
+          }
+          // 生成された図では、合流以外への流入はすべて上辺中央
+          const nonMerge = flows.filter((e) => targetKind(e) !== 'merge')
+          const allTop = nonMerge.every((e) => portOfTarget(e) === 'top')
+          // 合流へは枝ごとに振り分けられるので、全部が上ではない
+          const toMerge = flows.filter((e) => targetKind(e) === 'merge')
+          const mergeVaried = new Set(toMerge.map(portOfTarget)).size > 1
+
+          // 手動で決めた端点は、以後ノードを動かしても保たれる
+          const victim = nonMerge[0]
+          a.markTerminalManual(victim, 'target')
+          victim.setTarget({ cell: victim.getTargetCellId() as string, port: 'left' })
+          const moved = graph.getNodes().find((n) => getCellKind(n) === 'action')
+          moved?.translate(1, 1)
+          await new Promise((r) => setTimeout(r, 50))
+          const manualKept = portOfTarget(victim) === 'left'
+
+          activity['flowTargetPort'] =
+            nonMerge.length > 0 && allTop && mergeVaried && manualKept
+              ? 'ok'
+              : `ng(nonMerge=${nonMerge.length}, allTop=${allTop}, mergeVaried=${mergeVaried}, manualKept=${manualKept})`
+          buildActivityFromText(this.editor, SAMPLE_ACTIVITY)
+        }
+
         // 複数行テキストの行揃え: ノート/テキストだけが対象で、往復もする
         {
           const s = await import('./editor/shapes')

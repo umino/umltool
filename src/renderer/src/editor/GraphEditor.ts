@@ -44,7 +44,7 @@ import {
   setNodeLabel
 } from './shapes'
 import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
-import { normalizeBranchPorts } from './activity'
+import { markTerminalManual, normalizeBranchPorts, normalizeFlowTargets } from './activity'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 
@@ -226,7 +226,10 @@ export class GraphEditor {
     const graph = this.graph
     const rerun = (): void => {
       if (this.normalizing || this.mode !== 'activity') return
-      this.withNormalizing(() => normalizeBranchPorts(graph))
+      this.withNormalizing(() => {
+        normalizeBranchPorts(graph)
+        normalizeFlowTargets(graph)
+      })
     }
     graph.on('edge:added', rerun)
     graph.on('edge:removed', rerun)
@@ -236,10 +239,13 @@ export class GraphEditor {
     graph.on('node:change:size', rerun)
   }
 
-  /** 図の作り直し後などに、分岐/合流の接続辺をまとめて割り当て直す */
+  /** 図の作り直し後などに、フローの接続辺をまとめて割り当て直す */
   normalizeBranchPorts(): void {
     if (this.mode !== 'activity') return
-    this.withNormalizing(() => normalizeBranchPorts(this.graph))
+    this.withNormalizing(() => {
+      normalizeBranchPorts(this.graph)
+      normalizeFlowTargets(this.graph)
+    })
   }
 
   // ---- 分岐（デシジョン）の図形 ----
@@ -419,7 +425,10 @@ export class GraphEditor {
           for (const side of ['source', 'target'] as const) {
             const terminal = side === 'source' ? edge.getSource() : edge.getTarget()
             const t = terminal as { cell?: string; port?: string }
-            if (!t.cell || t.port) continue
+            if (!t.cell) continue
+            // ユーザーが選んだ接続先なので、以後の自動割り当てから外す
+            this.withNormalizing(() => markTerminalManual(edge, side))
+            if (t.port) continue
             const next = {
               cell: t.cell,
               anchor: { name: 'midSide' },
