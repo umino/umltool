@@ -111,6 +111,8 @@ export const FRAGMENT = {
   defaultHeight: 160,
   /** 区切り線（divider）ノードの高さ（掴みしろ） */
   dividerHeight: 14,
+  /** 区切り線からガードラベルの上端までの間隔（UML 慣例どおり線の下に置く） */
+  dividerLabelGap: 3,
   /** レイアウト時の余白 */
   padTop: 34,
   padBottom: 24,

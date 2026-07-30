@@ -308,7 +308,8 @@ export function registerShapes(): void {
           },
           label: {
             textAnchor: 'start',
-            textVerticalAnchor: 'bottom',
+            // ガードは区切り線より下（＝そのオペランドの側）に置く
+            textVerticalAnchor: 'top',
             fontSize: 11,
             fontFamily: FONT_FAMILY,
             fill: COLOR.stroke,
@@ -857,7 +858,7 @@ export function dividerGeometryAttrs(
   return {
     hit: { x: 0, y: 0, width, height },
     line: { x1: 0, y1: cy, x2: width, y2: cy },
-    label: { x: 8, y: cy - 3 }
+    label: { x: 8, y: cy + FRAGMENT.dividerLabelGap }
   }
 }
 

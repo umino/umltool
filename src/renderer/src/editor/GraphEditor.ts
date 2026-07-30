@@ -292,9 +292,14 @@ export class GraphEditor {
       if (kind === 'fragment' || kind === 'divider') {
         const bbox = node.getBBox()
         const isFragment = kind === 'fragment'
+        // 編集欄は実際のガード表示位置（フラグメントはタブの右、区切り線は線の下）に重ねる
         openInlineEditor(graph, {
-          x: bbox.x + FRAGMENT.tabWidth + 60,
-          y: bbox.y + (isFragment ? FRAGMENT.tabHeight / 2 : 0),
+          x: bbox.x + (isFragment ? FRAGMENT.tabWidth : 0) + 60,
+          y:
+            bbox.y +
+            (isFragment
+              ? FRAGMENT.tabHeight / 2
+              : FRAGMENT.dividerHeight / 2 + FRAGMENT.dividerLabelGap + 6),
           text: isFragment ? getFragmentGuard(node) : getDividerGuard(node),
           fontSize: 11,
           minWidth: 120,
