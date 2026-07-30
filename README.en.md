@@ -9,6 +9,7 @@ Supports sequence diagrams and activity diagrams. A serverless Electron desktop 
 - **One-way initial generation** from text (a PlantUML subset) — after generation, adjust everything freely in the GUI
 - Projects are saved as `.umlproj` (JSON envelope + X6 model)
 - Image export: PNG / JPEG / WebP
+- Discarding unsaved changes (New / Open / switching diagram type / quitting) prompts with **Save / Don't save / Cancel**
 
 ## Development
 

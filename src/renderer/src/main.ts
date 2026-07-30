@@ -90,10 +90,10 @@ class AppController {
     new PropertiesPanel(this.editor, document.getElementById('props-body') as HTMLElement)
 
     this.toolbar = buildToolbar(document.getElementById('toolbar') as HTMLElement, {
-      newProject: () => this.newProject(),
-      open: () => this.open(),
-      save: () => this.save(),
-      saveAs: () => this.saveAs(),
+      newProject: () => void this.newProjectInteractive(),
+      open: () => void this.open(),
+      save: () => void this.save(),
+      saveAs: () => void this.saveAs(),
       setDiagramType: (t) => void this.switchDiagramType(t),
       setDecisionShape: (s) => {
         this.editor.setDecisionShape(s)
@@ -1087,10 +1087,13 @@ B --> A : 返す`
     if (type === this.diagramType) return
     if (this.editor.graph.getCells().length > 0) {
       // window.confirm は Electron でフォーカス状態を壊す（以降テキスト入力不能に
-      // なる）ため、main のネイティブダイアログを使う
-      const ok = await window.uml.confirmDialog(
-        '図種別を切り替えると現在の図はクリアされます。よろしいですか？'
-      )
+      // なる）ため、main のネイティブダイアログを使う。
+      // 未保存の変更があるときは保存の機会も出したいので 3 択の方に寄せる。
+      const ok = this.dirty
+        ? await this.confirmDiscard('図種別を切り替える')
+        : await window.uml.confirmDialog(
+            '図種別を切り替えると現在の図はクリアされます。よろしいですか？'
+          )
       if (!ok) {
         this.toolbar.setDiagramType(this.diagramType)
         return
@@ -1411,6 +1414,27 @@ B --> A : 返す`
   }
 
   // ---- プロジェクト ----
+
+  /**
+   * 未保存の変更を捨てる操作の前に確認する。実行してよければ true。
+   * 「保存する」を選んだときは保存まで済ませ、保存がキャンセルされたら中止する。
+   */
+  private async confirmDiscard(action: string): Promise<boolean> {
+    if (!this.dirty) return true
+    const name = this.currentPath ?? '(未保存のプロジェクト)'
+    const choice = await window.uml.confirmDiscard(name, action)
+    if (choice === 'cancel') return false
+    if (choice === 'save') return await this.save()
+    return true
+  }
+
+  /** 「新規」操作（未保存なら確認してから） */
+  private async newProjectInteractive(): Promise<void> {
+    if (!(await this.confirmDiscard('新規作成する'))) return
+    this.newProject()
+  }
+
+  /** 図をクリアして未保存状態に戻す（確認はしない） */
   private newProject(): void {
     this.editor.clear()
     this.currentPath = null
@@ -1419,6 +1443,7 @@ B --> A : 返す`
   }
 
   private async open(): Promise<void> {
+    if (!(await this.confirmDiscard('開く'))) return
     const result = await window.uml.openProject()
     if (!result) return
     try {
@@ -1433,32 +1458,41 @@ B --> A : 返す`
     }
   }
 
-  private async save(): Promise<void> {
+  /** 保存できたら true（保存先ダイアログをキャンセルしたら false） */
+  private async save(): Promise<boolean> {
     const content = serializeProject(this.editor, this.diagramType)
     const path = await window.uml.saveProject(content, this.currentPath)
-    if (path) {
-      this.currentPath = path
-      this.setDirty(false)
-      this.updateStatus()
-    }
+    if (!path) return false
+    this.currentPath = path
+    this.setDirty(false)
+    this.updateStatus()
+    return true
   }
 
-  private async saveAs(): Promise<void> {
+  private async saveAs(): Promise<boolean> {
     const content = serializeProject(this.editor, this.diagramType)
     const path = await window.uml.saveProjectAs(content, `${this.defaultBaseName()}.umlproj`)
-    if (path) {
-      this.currentPath = path
-      this.setDirty(false)
-      this.updateStatus()
-    }
+    if (!path) return false
+    this.currentPath = path
+    this.setDirty(false)
+    this.updateStatus()
+    return true
   }
 
   // ---- メニュー / キー ----
   private bindMenu(): void {
-    window.uml.onMenu('menu:new', () => this.newProject())
-    window.uml.onMenu('menu:open', () => this.open())
-    window.uml.onMenu('menu:save', () => this.save())
-    window.uml.onMenu('menu:save-as', () => this.saveAs())
+    window.uml.onMenu('menu:new', () => void this.newProjectInteractive())
+    window.uml.onMenu('menu:open', () => void this.open())
+    window.uml.onMenu('menu:save', () => void this.save())
+    window.uml.onMenu('menu:save-as', () => void this.saveAs())
+    // ウィンドウを閉じる要求。main が close を保留しているので、確認が通ったら
+    // 改めて閉じてもらう（キャンセルならそのまま何もしない）
+    window.uml.onMenu('menu:close-request', () => {
+      void this.confirmDiscard('終了する').then((ok) => {
+        if (ok) window.uml.confirmClose()
+      })
+    })
+
     window.uml.onMenu('menu:export-png', () => this.exportImage('png'))
     window.uml.onMenu('menu:export-jpg', () => this.exportImage('jpg'))
     window.uml.onMenu('menu:export-webp', () => this.exportImage('webp'))

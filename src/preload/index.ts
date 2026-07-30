@@ -23,6 +23,15 @@ const api = {
   confirmDialog: (message: string): Promise<boolean> =>
     ipcRenderer.invoke('dialog:confirm', message),
 
+  // 未保存の変更を捨てる操作の前の確認（保存する / 保存しない / キャンセル）
+  confirmDiscard: (name: string, action: string): Promise<DiscardChoice> =>
+    ipcRenderer.invoke('dialog:confirmDiscard', name, action),
+
+  // 'menu:close-request' を受けて確認が済んだあと、実際にウィンドウを閉じる
+  confirmClose: (): void => {
+    ipcRenderer.send('window:close-confirmed')
+  },
+
   // フォーカス中のテキスト入力へのネイティブ編集コマンド
   // （編集メニューから、テキスト入力にフォーカスがあるときに使う）
   nativeEdit: (action: NativeEditAction): void => {
@@ -36,6 +45,9 @@ const api = {
     return () => ipcRenderer.removeListener(channel, listener)
   }
 }
+
+/** 未保存の変更を捨てる操作の前に出す確認の答え */
+export type DiscardChoice = 'save' | 'discard' | 'cancel'
 
 export type NativeEditAction =
   | 'undo'
@@ -61,6 +73,7 @@ export type MenuChannel =
   | 'menu:paste'
   | 'menu:delete'
   | 'menu:select-all'
+  | 'menu:close-request'
 
 export type UmlApi = typeof api
 

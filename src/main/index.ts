@@ -17,6 +17,8 @@ const IMAGE_FILTERS: Record<string, Electron.FileFilter[]> = {
 }
 
 let mainWindow: BrowserWindow | null = null
+/** renderer が「閉じてよい」と答えたら立てる。close の再入で二重確認しないため */
+let allowClose = false
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -33,6 +35,17 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+
+  // 未保存のまま閉じられないよう、いったん止めて renderer に確認させる。
+  // renderer が 'window:close-confirmed' を返してきたら改めて閉じる。
+  mainWindow.on('close', (e) => {
+    if (allowClose || process.env['UMLTOOL_DIAG']) return
+    const wc = mainWindow?.webContents
+    // renderer が応答できない状態なら閉じられなくなるので素通しする
+    if (!wc || wc.isDestroyed() || wc.isCrashed()) return
+    e.preventDefault()
+    wc.send('menu:close-request')
+  })
 
   // レンダラのコンソール/クラッシュを main 側へ転送（デバッグ用）
   mainWindow.webContents.on('console-message', (_e, level, message) => {
@@ -273,6 +286,28 @@ ipcMain.handle('dialog:confirm', async (_e, message: string) => {
     message
   })
   return result.response === 0
+})
+
+// 未保存の変更を捨てる操作の前に出す 3 択の確認
+const DISCARD_CHOICES = ['save', 'discard', 'cancel'] as const
+
+ipcMain.handle('dialog:confirmDiscard', async (_e, name: string, action: string) => {
+  const result = await dialog.showMessageBox(mainWindow!, {
+    type: 'warning',
+    buttons: ['保存する', '保存しない', 'キャンセル'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+    message: '変更が保存されていません',
+    detail: `${name}\n保存せずに${action}と、変更内容は失われます。`
+  })
+  return DISCARD_CHOICES[result.response] ?? 'cancel'
+})
+
+// renderer 側の確認が済んだ（＝閉じてよい）
+ipcMain.on('window:close-confirmed', () => {
+  allowClose = true
+  mainWindow?.close()
 })
 
 // ---- IPC: プロジェクト保存/読込 ----
