@@ -200,6 +200,7 @@ export class PropertiesPanel {
           this.render([edge])
         })
       )
+      this.appendMessageEndpoints(edge)
       return true
     }
 
@@ -312,6 +313,33 @@ export class PropertiesPanel {
           : 'ハンドルまたは上の数値でリサイズできます。'
       )
     )
+  }
+
+  /**
+   * メッセージの送信元/宛先セレクタ。矢印端のドラッグより確実な付け替え手段。
+   * 端点が座標のみ（外部ゲート）の側は出さない。
+   */
+  private appendMessageEndpoints(edge: Edge): void {
+    const lifelines = this.editor.graph
+      .getNodes()
+      .filter((n) => getCellKind(n) === 'lifeline')
+      .sort((a, b) => a.getBBox().x - b.getBBox().x)
+    if (lifelines.length === 0) return
+
+    for (const side of ['source', 'target'] as const) {
+      const terminal = side === 'source' ? edge.getSourceCell() : edge.getTargetCell()
+      if (!terminal) continue // 外部ゲート側は座標のみなので対象外
+      // 活性化バーに繋がっている場合は親ライフラインを現在値として表示する
+      const owner =
+        getCellKind(terminal) === 'lifeline' ? terminal : terminal.getParent()
+      if (!owner) continue
+      this.host.appendChild(
+        endpointSelect(side === 'source' ? '送信元' : '宛先', lifelines, owner.id, (id) => {
+          this.editor.retargetMessage(edge, side, id)
+          this.render([edge])
+        })
+      )
+    }
   }
 
   /**
@@ -605,6 +633,27 @@ function operatorSelect(
     select.appendChild(opt)
   }
   select.addEventListener('change', () => onChange(select.value as FragmentOperator))
+  wrap.appendChild(select)
+  return wrap
+}
+
+function endpointSelect(
+  caption: string,
+  lifelines: Node[],
+  currentId: string,
+  onChange: (id: string) => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = caption
+  const select = document.createElement('select')
+  for (const lifeline of lifelines) {
+    const opt = document.createElement('option')
+    opt.value = lifeline.id
+    opt.textContent = getNodeLabel(lifeline) || '（名称未設定）'
+    if (lifeline.id === currentId) opt.selected = true
+    select.appendChild(opt)
+  }
+  select.addEventListener('change', () => onChange(select.value))
   wrap.appendChild(select)
   return wrap
 }

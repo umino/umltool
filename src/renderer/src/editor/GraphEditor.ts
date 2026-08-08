@@ -40,6 +40,7 @@ import {
   registerShapes,
   setDividerGuard,
   setFragmentGuard,
+  setMessageKind,
   setMessageLabel,
   setNodeLabel
 } from './shapes'
@@ -522,6 +523,19 @@ export class GraphEditor {
     })
   }
 
+  /**
+   * メッセージの端点を指定ライフラインへ付け替える（プロパティパネル用）。
+   * 両端が同一になれば自己メッセージへ、自己でなくなれば通常へ正規化される。
+   */
+  retargetMessage(edge: Edge, side: 'source' | 'target', lifelineId: string): void {
+    if (getCellKind(edge) !== 'message') return
+    this.batch(() => {
+      if (side === 'source') edge.setSource({ cell: lifelineId })
+      else edge.setTarget({ cell: lifelineId })
+      this.normalizeMessage(edge)
+    })
+  }
+
   /** vertex の X を正規化する（通常: 中点固定 / 自己: 右張り出し位置固定） */
   private normalizeMessage(edge: Edge): void {
     if (this.normalizing) return
@@ -532,7 +546,12 @@ export class GraphEditor {
     const vertices = edge.getVertices()
     if (vertices.length === 0) return
 
-    if (src.id === tgt.id || getMessageKind(edge) === 'self') {
+    if (src.id === tgt.id) {
+      if (vertices.length < 2) {
+        // 端点の付け替えで自己メッセージになった直後: コの字ループへ展開する
+        this.withNormalizing(() => setMessageKind(edge, 'self'))
+        return
+      }
       const wantX = centerXOf(src) + MESSAGE.selfWidth
       const needs = vertices.some((v) => Math.abs(v.x - wantX) > 0.5)
       if (needs) {
@@ -541,6 +560,12 @@ export class GraphEditor {
         )
       }
       return
+    }
+
+    // 自己メッセージを別ノードへ付け替えた場合は通常メッセージに戻し、
+    // そのまま下の中点正規化で vertex を 1 つに畳む
+    if (getMessageKind(edge) === 'self') {
+      this.withNormalizing(() => setMessageKind(edge, 'sync'))
     }
 
     const midX = (centerXOf(src) + centerXOf(tgt)) / 2

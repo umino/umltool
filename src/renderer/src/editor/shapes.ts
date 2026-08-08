@@ -808,7 +808,7 @@ export function lifelineGeometryAttrs(
   const cx = width / 2
   return {
     life: { x1: cx, y1: LIFELINE.headHeight, x2: cx, y2: height },
-    hit: { x: cx - 8, y: LIFELINE.headHeight, width: 16, height: Math.max(0, height - LIFELINE.headHeight) },
+    hit: { x: cx - 16, y: LIFELINE.headHeight, width: 32, height: Math.max(0, height - LIFELINE.headHeight) },
     head: { x: 0, y: 0, width, height: LIFELINE.headHeight },
     label: { x: cx, y: LIFELINE.headHeight / 2 }
   }
@@ -916,11 +916,17 @@ export function setMessageKind(edge: Edge, kind: MessageKind): void {
   edge.setData(data, { overwrite: true })
   edge.attr('line', messageLineAttrs(kind) as never)
 
-  const sameTerminal =
-    edge.getSourceCellId() !== '' && edge.getSourceCellId() === edge.getTargetCellId()
+  // 別ノード間のメッセージを self へ切り替えたら、送信元への自己メッセージに付け替える
+  const srcId = edge.getSourceCellId()
+  const tgtId = edge.getTargetCellId()
+  if (kind === 'self' && srcId !== '' && tgtId !== '' && tgtId !== srcId) {
+    edge.setTarget({ cell: srcId })
+  }
+
+  const sameTerminal = srcId !== '' && srcId === edge.getTargetCellId()
   const vertices = edge.getVertices()
-  if (kind === 'self' && sameTerminal) {
-    // 自己メッセージ: 右側へ張り出すループにする
+  if (sameTerminal) {
+    // 自己メッセージ: 右側へ張り出すループにする（self 以外の種別でもループ形は保つ）
     const y = vertices[0]?.y ?? MESSAGE.startY
     const srcCell = edge.getSourceCell()
     const cx = srcCell ? srcCell.getBBox().x + srcCell.getBBox().width / 2 : 0
