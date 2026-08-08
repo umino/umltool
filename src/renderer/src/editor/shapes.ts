@@ -284,6 +284,26 @@ export function registerShapes(): void {
     true
   )
 
+  // フラグメントの背景色レイヤ。本体（枠線・タブ・ガード文）は活性化バーより
+  // 前面に置くため、塗りだけをこの子セルに分離して最背面に敷く。
+  // 操作は一切受け付けない純粋な描画用セル。
+  Graph.registerNode(
+    SHAPE.fragmentBg,
+    {
+      markup: [{ tagName: 'rect', selector: 'body' }],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          fill: 'none',
+          stroke: 'none',
+          pointerEvents: 'none'
+        }
+      }
+    },
+    true
+  )
+
   // フラグメントの区切り線（破線）。フラグメントの子として上下ドラッグで動かす
   Graph.registerNode(
     SHAPE.fragmentDivider,
@@ -1040,12 +1060,22 @@ function firstAttr(node: Node, selectors: string[], name: string): string {
   return ''
 }
 
+/** 背景色を実際に塗るノード。フラグメントは背面の背景セルへ振り向ける */
+function fillTarget(node: Node): Node {
+  if (getCellKind(node) === 'fragment') {
+    const bg = (node.getChildren() ?? []).find((c) => getCellKind(c) === 'fragmentBg')
+    if (bg && bg.isNode()) return bg
+  }
+  return node
+}
+
 export function getNodeFill(node: Node): string {
-  return firstAttr(node, styleTargets(node).fill, 'fill')
+  return firstAttr(fillTarget(node), styleTargets(node).fill, 'fill')
 }
 
 export function setNodeFill(node: Node, color: string): void {
-  for (const selector of styleTargets(node).fill) node.attr(`${selector}/fill`, color)
+  const target = fillTarget(node)
+  for (const selector of styleTargets(node).fill) target.attr(`${selector}/fill`, color)
 }
 
 export function getNodeStroke(node: Node): string {

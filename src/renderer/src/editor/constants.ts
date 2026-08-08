@@ -18,16 +18,45 @@ export const FONT_FAMILY = '"Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sa
 export const Z = {
   swimlane: -20,
   frame: -10,
-  fragment: -10,
-  divider: -9,
+  /** フラグメントの背景色レイヤ。塗りが中身を隠さないよう本体と分離して最背面に置く */
+  fragmentBg: -10,
   lifeline: 1,
   /** アクティビティ図の通常ノード（アクション・分岐・開始/終了など） */
   node: 1,
   activation: 2,
-  message: 3,
+  /** 枠線・タブ・ガード文。テキストが活性化バーに隠れないよう前面（背景は fragmentBg） */
+  fragment: 3,
+  divider: 3,
+  message: 4,
   attachLink: 5,
   annotation: 20
 } as const
+
+/**
+ * セル種別 → zIndex の対応表。保存ファイルには過去の zIndex がそのまま残るため、
+ * 読み込み時にこの表で現行の重なり順へ揃える。
+ */
+export const Z_BY_KIND: Partial<Record<CellKind, number>> = {
+  swimlane: Z.swimlane,
+  frame: Z.frame,
+  fragmentBg: Z.fragmentBg,
+  fragment: Z.fragment,
+  divider: Z.divider,
+  lifeline: Z.lifeline,
+  action: Z.node,
+  decision: Z.node,
+  merge: Z.node,
+  initial: Z.node,
+  final: Z.node,
+  fork: Z.node,
+  join: Z.node,
+  activation: Z.activation,
+  message: Z.message,
+  flow: Z.message,
+  attachLink: Z.attachLink,
+  text: Z.annotation,
+  note: Z.annotation
+}
 
 /** 複数行テキストの水平揃え */
 export type TextAlign = 'left' | 'center' | 'right'
@@ -125,6 +154,7 @@ export const SHAPE = {
   activation: 'uml-activation',
   message: 'uml-message',
   fragment: 'uml-fragment',
+  fragmentBg: 'uml-fragment-bg',
   fragmentDivider: 'uml-fragment-divider',
   centerlineAnchor: 'uml-centerline',
   action: 'uml-action',
@@ -298,6 +328,7 @@ export type CellKind =
   | 'activation'
   | 'message'
   | 'fragment'
+  | 'fragmentBg'
   | 'divider'
   | ActivityNodeKind
   | 'swimlane'

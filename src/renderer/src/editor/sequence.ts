@@ -6,6 +6,7 @@ import {
   FRAGMENT,
   LIFELINE,
   MESSAGE,
+  NOTE,
   SHAPE,
   TEXT,
   Z,
@@ -15,6 +16,7 @@ import {
 import {
   applyDividerGeometry,
   applyLifelineGeometry,
+  getCellKind,
   messageLineAttrs,
   setDividerGuard,
   setFragmentGuard,
@@ -163,7 +165,52 @@ export function addFragment(
     zIndex: Z.fragment
   })
   setFragmentGuard(node, guard)
+  ensureFragmentBg(graph, node)
   return node
+}
+
+/**
+ * フラグメントの背景セルを返す（無ければ作成する）。
+ * 旧形式（本体 body に塗りが直接付いたファイル）は塗りを背景セルへ移す。
+ */
+export function ensureFragmentBg(graph: Graph, fragment: Node): Node {
+  const existing = (fragment.getChildren() ?? []).find((c) => getCellKind(c) === 'fragmentBg')
+  if (existing && existing.isNode()) return existing
+
+  const bbox = fragment.getBBox()
+  const bg = graph.addNode({
+    shape: SHAPE.fragmentBg,
+    x: bbox.x,
+    y: bbox.y,
+    width: bbox.width,
+    height: bbox.height,
+    data: { kind: 'fragmentBg' },
+    zIndex: Z.fragmentBg
+  })
+  fragment.addChild(bg)
+
+  const bodyFill = fragment.attr('body/fill')
+  if (typeof bodyFill === 'string' && bodyFill !== '' && bodyFill !== 'none') {
+    bg.attr('body/fill', bodyFill)
+    fragment.attr('body/fill', 'none')
+  }
+  return bg
+}
+
+/** テキストとライフラインを結ぶ紐づけ線を返す */
+export function attachLinkOf(graph: Graph, text: Node): Edge | null {
+  const edges = graph.model.getConnectedEdges(text)
+  return edges.find((e) => getCellKind(e) === 'attachLink') ?? null
+}
+
+/** 紐づけ線が表示中か（透過にしていないか） */
+export function isAttachLinkVisible(link: Edge): boolean {
+  return link.attr('line/stroke') !== 'transparent'
+}
+
+/** 紐づけ線の表示/透過を切り替える。テキスト本文の色には影響しない */
+export function setAttachLinkVisible(link: Edge, visible: boolean): void {
+  link.attr('line/stroke', visible ? NOTE.stroke : 'transparent')
 }
 
 /** フラグメントに区切り線（破線）を子として追加する。y は線の中心（絶対座標） */

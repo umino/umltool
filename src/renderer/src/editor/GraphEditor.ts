@@ -22,6 +22,7 @@ import {
   NOTE,
   SHAPE,
   TEXT,
+  Z_BY_KIND,
   isActivityNodeKind,
   type DecisionShape
 } from './constants'
@@ -45,6 +46,7 @@ import {
   setNodeLabel
 } from './shapes'
 import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
+import { ensureFragmentBg } from './sequence'
 import { markTerminalManual, normalizeBranchPorts, normalizeFlowTargets } from './activity'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
@@ -131,6 +133,8 @@ export class GraphEditor {
         rubberband: true,
         modifiers: 'shift',
         movable: true,
+        // 背景色レイヤは純描画用なので選択させない（削除・移動されると壊れる）
+        filter: (cell: Cell) => getCellKind(cell) !== 'fragmentBg',
         // 選択されていることが見た目で分かるよう枠を出す。ただし枠が入力を
         // 拾うとノード側のドラッグ・ポート操作を奪ってしまうので pointerEvents
         // は none にする。X6 は「枠が非対話なら」ノードのドラッグを選択全体へ
@@ -644,10 +648,20 @@ export class GraphEditor {
 
   /** フラグメントのリサイズに区切り線の幅・位置を追従させる */
   private syncFragmentDividers(node: Node): void {
+    const pb = node.getBBox()
     for (const child of node.getChildren() ?? []) {
-      if (getCellKind(child) !== 'divider') continue
+      const kind = getCellKind(child)
+      if (kind === 'fragmentBg') {
+        // 背景色レイヤは常に本体と同じ矩形に敷き直す
+        const bg = child as Node
+        this.withNormalizing(() => {
+          bg.position(pb.x, pb.y)
+          bg.resize(pb.width, pb.height)
+        })
+        continue
+      }
+      if (kind !== 'divider') continue
       const divider = child as Node
-      const pb = node.getBBox()
       this.withNormalizing(() => {
         divider.resize(pb.width, divider.getSize().height)
         applyDividerGeometry(divider)
@@ -705,6 +719,23 @@ export class GraphEditor {
   clear(): void {
     this.graph.clearCells()
     this.graph.cleanHistory()
+  }
+
+  /**
+   * 読み込んだモデルを現行仕様へ揃える。
+   * 保存ファイルには保存時点の zIndex が残っているため種別ごとの表で再設定し、
+   * 背景セルを持たない旧形式のフラグメントにはセルを補って本体の塗りを移す。
+   */
+  normalizeLoadedCells(): void {
+    this.withNormalizing(() => {
+      for (const cell of this.graph.getCells()) {
+        const z = Z_BY_KIND[getCellKind(cell)]
+        if (z !== undefined) cell.setZIndex(z)
+      }
+      for (const node of this.graph.getNodes()) {
+        if (getCellKind(node) === 'fragment') ensureFragmentBg(this.graph, node)
+      }
+    })
   }
 
   fit(): void {

@@ -15,6 +15,8 @@ export function serializeProject(editor: GraphEditor, diagramType: DiagramType):
 export function loadProject(editor: GraphEditor, content: string): DiagramType {
   const env = parseEnvelope(content)
   editor.graph.fromJSON(env.graph as Parameters<typeof editor.graph.fromJSON>[0])
+  // 旧バージョンで保存された zIndex や背景セルの欠落を現行仕様へ揃える
+  editor.normalizeLoadedCells()
   // 図形は保存されたノード属性にも入っているが、以降に追加されるノードへ
   // 引き継ぐためエディタ側の設定も合わせる
   editor.setDecisionShape(env.settings.decisionShape)

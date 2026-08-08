@@ -7,7 +7,12 @@ import {
   isManuallySized,
   markManuallySized
 } from '../editor/autosize'
-import { addFragmentDivider } from '../editor/sequence'
+import {
+  addFragmentDivider,
+  attachLinkOf,
+  isAttachLinkVisible,
+  setAttachLinkVisible
+} from '../editor/sequence'
 import {
   applyFrameHeader,
   canSetFill,
@@ -226,6 +231,16 @@ export class PropertiesPanel {
           fitTextHeight(node)
         })
       )
+      if (kind === 'text') {
+        const link = attachLinkOf(this.editor.graph, node)
+        if (link) {
+          this.host.appendChild(
+            checkboxInput('紐づけ線を表示', isAttachLinkVisible(link), (checked) => {
+              setAttachLinkVisible(link, checked)
+            })
+          )
+        }
+      }
       this.host.appendChild(
         hint(
           kind === 'text'

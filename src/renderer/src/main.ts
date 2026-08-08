@@ -8,12 +8,15 @@ import {
   addFragmentDivider,
   addLifeline,
   addMessage,
-  nextMessageY
+  attachLinkOf,
+  isAttachLinkVisible,
+  nextMessageY,
+  setAttachLinkVisible
 } from './editor/sequence'
 import { addActivityNode, addFlow, addFrame, addSwimlane } from './editor/activity'
 import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
-import { getCellKind, getNodeLabel } from './editor/shapes'
+import { getCellKind, getNodeLabel, setNodeFill } from './editor/shapes'
 import {
   ACTIVATION,
   ACTIVITY,
@@ -412,6 +415,48 @@ deactivate B`
             zActivation < zMessage
               ? 'ok'
               : `ng(lifeline=${zLifeline}, activation=${zActivation}, message=${zMessage})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+        }
+
+        // #21: フラグメントの枠・ガード文は活性化バーより前面、背景色は背面の
+        // 専用セルに分離される（塗っても中身を隠さない）
+        {
+          await new Promise((r) => setTimeout(r, 100))
+          const frag = graph.getNodes().find((n) => getCellKind(n) === 'fragment')
+          const act = graph.getNodes().find((n) => getCellKind(n) === 'activation')
+          const ll = graph.getNodes().find((n) => getCellKind(n) === 'lifeline')
+          const bg = (frag?.getChildren() ?? []).find((c) => getCellKind(c) === 'fragmentBg')
+          const zFront =
+            frag !== undefined &&
+            act !== undefined &&
+            (frag.getZIndex() ?? 0) > (act.getZIndex() ?? 0)
+          const zBack =
+            bg !== undefined && (bg.getZIndex() ?? 0) < (ll?.getZIndex() ?? 0)
+          let fillMoved = false
+          if (frag && bg) {
+            setNodeFill(frag, '#fff3bf')
+            fillMoved =
+              bg.attr('body/fill') === '#fff3bf' && frag.attr('body/fill') !== '#fff3bf'
+          }
+          behavior['fragmentFront'] =
+            zFront && zBack && fillMoved
+              ? 'ok'
+              : `ng(front=${zFront}, back=${zBack}, fillMoved=${fillMoved})`
+        }
+
+        // #22: テキストの紐づけ線は透過（非表示）へ切り替えでき、元にも戻せる
+        {
+          const text = graph.getNodes().find((n) => getCellKind(n) === 'text')
+          const link = text ? attachLinkOf(graph, text) : null
+          let toggled = false
+          if (link) {
+            setAttachLinkVisible(link, false)
+            const hidden =
+              !isAttachLinkVisible(link) && link.attr('line/stroke') === 'transparent'
+            setAttachLinkVisible(link, true)
+            toggled = hidden && isAttachLinkVisible(link)
+          }
+          behavior['attachLinkToggle'] = toggled ? 'ok' : `ng(link=${link !== null})`
           buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
 
