@@ -46,6 +46,7 @@ and `diag-output-mindmap.png` (mind map).
 | Copy / cut / paste | Ctrl+C / Ctrl+X / Ctrl+V (paste places elements slightly offset) |
 | Select all | Ctrl+A |
 | Delete | Delete / Backspace, or the 🗑 toolbar button |
+| Shortcut list | **?** (or F1, or the toolbar's "?"). It overlays the diagram semi-transparently and closes with Esc / ? / a click. The keys shown follow the current diagram type |
 | Add elements | Click an icon in the "部品" (parts) tab in the left pane |
 | Text (attached) | The "テキスト" palette item. Attaches to the selected lifeline (linked by a dashed connector, follows it when moved; sequence diagrams). Double-click to edit; set font size, bold, and color in the right panel; drag the handle to change width (auto-wraps) |
 | Note | The "ノート" palette item. A top-left dog-eared sticky note, freely placed anywhere (both diagram types). Editing and styling work like text |
@@ -95,7 +96,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
   - **マインドマップ** (mind map): radiates left and right from the central topic. First-level children are split between the two sides so the sub-trees balance; deeper topics extend on the same side as their parent
   - **ツリー** (tree): one topic per row, indented by depth, like a file explorer tree
 - **Automatic layout only where you ask for it**: topics are placed automatically when a diagram is generated from text and when you press "整列" (arrange) or switch the presentation. Otherwise every topic can be dragged freely and stays where you put it
-- **Everything can be done from the keyboard.** The bindings are also listed under the palette tab
+- **Everything can be done from the keyboard.** Press **?** for the translucent overlay listing every binding; the mind-map keys are also always visible under the palette tab
 
 | Key | Action |
 |---|---|

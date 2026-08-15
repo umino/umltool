@@ -22,6 +22,7 @@ export interface ToolbarActions {
   zoomReset: () => void
   fit: () => void
   exportImage: (format: 'png' | 'jpg' | 'webp') => void
+  showShortcuts: () => void
 }
 
 export interface ToolbarHandle {
@@ -122,9 +123,10 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
 
   host.appendChild(group(button('🗑 削除', '選択を削除 (Delete)', actions.deleteSelection)))
 
+  // 倍率のボタンは記号だけで意味が通るのでラベルを置かない
+  // （「表示:」はマインドマップの表示スタイルで使っており、紛らわしい）
   host.appendChild(
     group(
-      label('表示:'),
       button('－', 'ズームアウト', actions.zoomOut),
       button('100%', '実寸', actions.zoomReset),
       button('＋', 'ズームイン', actions.zoomIn),
@@ -139,6 +141,7 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
       button('WebP', 'WebP で書き出し', () => actions.exportImage('webp'))
     )
   )
+  host.appendChild(group(button('?', 'ショートカット一覧 (?)', actions.showShortcuts)))
 
   const setDiagramType = (type: ToolbarDiagramType): void => {
     typeSelect.value = type

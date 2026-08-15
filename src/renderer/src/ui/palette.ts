@@ -2,6 +2,7 @@
 // フロー配置する。クリックでツールバーのボタンと同じ追加動作を行う。
 
 import type { ActivityNodeKind } from '../editor/constants'
+import { MINDMAP_SHORTCUTS, renderShortcutGroup } from './shortcuts'
 import type { ToolbarDiagramType } from './toolbar'
 
 export interface PaletteActions {
@@ -237,54 +238,16 @@ function mindmapItems(a: PaletteActions): PaletteItem[] {
 
 /**
  * マインドマップのキー一覧。キーボード主体で編集するモードなので、
- * 部品タブを開けば割り当てがすぐ分かるようにパレットの下に並べておく。
+ * ? キーの一覧を開かなくても割り当てが分かるようパレットの下にも常設する。
  */
-const MINDMAP_KEYS: { keys: string[]; label: string }[] = [
-  { keys: ['↑', '↓'], label: '兄弟トピックへ移動' },
-  { keys: ['←', '→'], label: '親 / 子トピックへ移動（枝の向きに追従）' },
-  { keys: ['Home'], label: 'ルートへ移動' },
-  { keys: ['Ctrl', '＋', '←→↑↓'], label: 'トピックを動かす（Shift 併用で大きく）' },
-  { keys: ['Tab'], label: '子トピックを追加' },
-  { keys: ['Enter'], label: '兄弟トピックを追加' },
-  { keys: ['F2'], label: '名前を編集' },
-  { keys: ['Space'], label: '折りたたみ / 展開' },
-  { keys: ['1', '〜', '6'], label: '配色を変える' },
-  { keys: ['0'], label: '配色を既定（深さの色）に戻す' },
-  { keys: ['B'], label: '太字' },
-  { keys: ['+', '-'], label: '文字サイズ' },
-  { keys: ['Delete'], label: '削除' }
-]
-
 function renderKeyHelp(): HTMLElement {
   const wrap = document.createElement('div')
   wrap.className = 'palette-keys'
-  const title = document.createElement('div')
-  title.className = 'palette-keys-title'
-  title.textContent = 'キー操作'
-  wrap.appendChild(title)
-  for (const row of MINDMAP_KEYS) {
-    const line = document.createElement('div')
-    line.className = 'palette-keys-row'
-    const keys = document.createElement('span')
-    keys.className = 'palette-keys-combo'
-    for (const k of row.keys) {
-      // 〜 と ＋（全角）はキーではなく区切り記号として素のまま出す
-      if (k === '〜' || k === '＋') {
-        const sep = document.createElement('span')
-        sep.textContent = k === '＋' ? '+' : k
-        keys.appendChild(sep)
-        continue
-      }
-      const kbd = document.createElement('kbd')
-      kbd.textContent = k
-      keys.appendChild(kbd)
-    }
-    const label = document.createElement('span')
-    label.textContent = row.label
-    line.appendChild(keys)
-    line.appendChild(label)
-    wrap.appendChild(line)
-  }
+  wrap.appendChild(renderShortcutGroup(MINDMAP_SHORTCUTS))
+  const more = document.createElement('div')
+  more.className = 'palette-keys-more'
+  more.textContent = '? キーで全ショートカットを表示'
+  wrap.appendChild(more)
   return wrap
 }
 

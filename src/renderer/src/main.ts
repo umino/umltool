@@ -61,6 +61,7 @@ import {
 import { PropertiesPanel } from './ui/properties'
 import { buildToolbar, type ToolbarHandle } from './ui/toolbar'
 import { buildPalette, type PaletteHandle } from './ui/palette'
+import { buildShortcutOverlay } from './ui/shortcutOverlay'
 import { buildSequenceFromText } from './text/buildSequence'
 import { buildActivityFromText } from './text/buildActivity'
 import { buildMindmapFromText } from './text/buildMindmap'
@@ -133,6 +134,8 @@ class AppController {
   private dirty = false
   private diagramType: DiagramType = 'sequence'
 
+  private readonly shortcuts = buildShortcutOverlay(document.getElementById('app') as HTMLElement)
+
   private readonly statusEl = document.getElementById('statusbar') as HTMLElement
   private readonly textInput = document.getElementById('text-input') as HTMLTextAreaElement
   private readonly textError = document.getElementById('text-error') as HTMLElement
@@ -162,7 +165,8 @@ class AppController {
       zoomOut: () => this.editor.zoomOut(),
       zoomReset: () => this.editor.zoomActual(),
       fit: () => this.editor.fit(),
-      exportImage: (f) => this.exportImage(f)
+      exportImage: (f) => this.exportImage(f),
+      showShortcuts: () => this.shortcuts.toggle(this.diagramType)
     })
 
     this.palette = buildPalette(document.getElementById('palette-body') as HTMLElement, {
@@ -1342,6 +1346,25 @@ B --> A : 返す`
               target.position(from.x, from.y)
             }
 
+            // ? キーでショートカット一覧が開き、何か押すと閉じる
+            {
+              graph.cleanSelection()
+              await key('?')
+              const overlay = document.querySelector('.shortcut-overlay') as HTMLElement | null
+              const opened = overlay !== null && !overlay.hidden
+              const groups = overlay?.querySelectorAll('.shortcut-group').length ?? 0
+              const rows = overlay?.querySelectorAll('.shortcut-row').length ?? 0
+              // 一覧を開いている間のキーは図に効かない（閉じるだけ）
+              const before = graph.getNodes().length
+              await key('Tab')
+              const closed = overlay !== null && overlay.hidden
+              mindmap['shortcutOverlay'] =
+                opened && groups === 3 && rows > 20 && closed &&
+                graph.getNodes().length === before
+                  ? 'ok'
+                  : `ng(opened=${opened}, groups=${groups}, rows=${rows}, closed=${closed})`
+            }
+
             // 装飾: 数字キーで配色 / B で太字 / +- で文字サイズ / 0 で既定色へ
             {
               const s = await import('./editor/shapes')
@@ -2265,6 +2288,20 @@ B --> A : 返す`
         target &&
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       if (inEditable) return
+
+      // ショートカット一覧を開いている間は、読み終えたら何を押しても閉じるだけ
+      // （うっかり図が編集されないよう、他のキー処理へは通さない）
+      if (this.shortcuts.isOpen()) {
+        if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt') return
+        e.preventDefault()
+        this.shortcuts.close()
+        return
+      }
+      if (e.key === '?' || e.key === 'F1') {
+        e.preventDefault()
+        this.shortcuts.open(this.diagramType)
+        return
+      }
 
       // マインドマップはキーボード主体で編集できるよう、専用の割り当てを持つ
       if (this.diagramType === 'mindmap' && this.handleMindmapKey(e)) return
