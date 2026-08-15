@@ -18,6 +18,7 @@ import {
   FRAME,
   LIFELINE,
   MESSAGE,
+  MINDMAP_LEVEL_STYLES,
   NOTE,
   SHAPE,
   TEXT,
@@ -753,6 +754,110 @@ export function registerShapes(): void {
     true
   )
 
+  // ---- マインドマップ: 中心トピック / トピック ----
+  // 接続はアクティビティ図と同じ 4 辺のポートから行う（マップ配置は左右、
+  // ツリー配置は親の下 → 子の左を使う）。
+  Graph.registerNode(
+    SHAPE.rootTopic,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          rx: 14,
+          fill: MINDMAP_LEVEL_STYLES[0].fill,
+          stroke: MINDMAP_LEVEL_STYLES[0].stroke,
+          strokeWidth: 1.6,
+          cursor: 'move'
+        },
+        label: {
+          ...centeredLabel,
+          fontSize: 15,
+          fontWeight: 700,
+          fill: MINDMAP_LEVEL_STYLES[0].text,
+          textWrap: { width: -28, breakWord: true }
+        }
+      },
+      ports: activityPorts
+    },
+    true
+  )
+
+  Graph.registerNode(
+    SHAPE.topic,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          rx: 10,
+          fill: MINDMAP_LEVEL_STYLES[1].fill,
+          stroke: MINDMAP_LEVEL_STYLES[1].stroke,
+          strokeWidth: 1.3,
+          cursor: 'move'
+        },
+        label: { ...centeredLabel, textWrap: { width: -24, breakWord: true } }
+      },
+      ports: activityPorts
+    },
+    true
+  )
+
+  // ---- マインドマップの枝（矢印なし。配置に応じて曲線 / L 字を切り替える） ----
+  Graph.registerEdge(
+    SHAPE.branch,
+    {
+      connector: { name: 'smooth' },
+      zIndex: Z.branch,
+      attrs: {
+        line: {
+          stroke: '#8a93a3',
+          strokeWidth: 1.8,
+          targetMarker: null,
+          sourceMarker: null
+        },
+        wrap: {
+          strokeWidth: 12
+        }
+      },
+      defaultLabel: {
+        markup: [
+          { tagName: 'rect', selector: 'bg' },
+          { tagName: 'text', selector: 'text' }
+        ],
+        attrs: {
+          text: {
+            fontSize: 11,
+            fontFamily: FONT_FAMILY,
+            fill: COLOR.lifeline,
+            textAnchor: 'middle',
+            textVerticalAnchor: 'middle',
+            pointerEvents: 'none'
+          },
+          bg: {
+            ref: 'text',
+            fill: '#fbfbfd',
+            opacity: 0.85,
+            refWidth: '100%',
+            refHeight: '100%',
+            refX: 0,
+            refY: 0
+          }
+        },
+        position: { distance: 0.5 }
+      }
+    },
+    true
+  )
+
   // ---- 中心線アンカー ----
   // 参照点（隣接 vertex または相手側端点）の Y をノードの縦範囲にクランプし、
   // ノード中心 X へ投影する。ライフラインはヘッダ下端より上には付かない。
@@ -1030,7 +1135,9 @@ const STYLE_TARGETS: Partial<Record<CellKind, StyleTargets>> = {
   swimlane: { fill: ['body'], stroke: ['body', 'header'], label: 'label' },
   frame: { fill: ['body'], stroke: ['body', 'tab'], label: 'label' },
   text: { fill: [], stroke: [], label: 'label' },
-  note: { fill: ['body'], stroke: ['body', 'fold'], label: 'label' }
+  note: { fill: ['body'], stroke: ['body', 'fold'], label: 'label' },
+  rootTopic: { fill: ['body'], stroke: ['body'], label: 'label' },
+  topic: { fill: ['body'], stroke: ['body'], label: 'label' }
 }
 
 export function styleTargets(node: Node): StyleTargets {

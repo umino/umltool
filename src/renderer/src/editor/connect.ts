@@ -15,6 +15,7 @@ const ACTIVITY_KINDS: CellKind[] = [
   'fork',
   'join'
 ]
+const MINDMAP_KINDS: CellKind[] = ['rootTopic', 'topic']
 
 export type ConnectionEndpoints =
   | { source: Node; target: Node }
@@ -24,10 +25,11 @@ export type ConnectionEndpoints =
  * 接続する 2 ノードを決める。
  * - 2 つ以上選択 → 選択順の先頭 2 つ
  * - 1 つ選択 → 中心距離が最寄りの別ノード（無ければ同一ノード＝自己メッセージ）
- * - 0 選択 → シーケンスは x 順の先頭 2 本のライフライン / アクティビティは案内
+ * - 0 選択 → シーケンスは x 順の先頭 2 本のライフライン / それ以外は案内
  */
 export function resolveConnectionEndpoints(graph: Graph, mode: EditorMode): ConnectionEndpoints {
-  const kinds = mode === 'activity' ? ACTIVITY_KINDS : SEQUENCE_KINDS
+  const kinds =
+    mode === 'activity' ? ACTIVITY_KINDS : mode === 'mindmap' ? MINDMAP_KINDS : SEQUENCE_KINDS
   const isConnectable = (n: Node): boolean => kinds.includes(getCellKind(n))
 
   const selected = graph
@@ -45,6 +47,9 @@ export function resolveConnectionEndpoints(graph: Graph, mode: EditorMode): Conn
     const nearest = nearestNode(source, all)
     if (nearest) return { source, target: nearest }
     if (mode === 'sequence') return { source, target: source } // 自己メッセージ
+    if (mode === 'mindmap') {
+      return { error: '接続先のトピックがありません。もう 1 つトピックを追加してください。' }
+    }
     return { error: '接続先のノードがありません。もう 1 つノードを追加してください。' }
   }
 
@@ -55,6 +60,10 @@ export function resolveConnectionEndpoints(graph: Graph, mode: EditorMode): Conn
     if (lifelines.length >= 2) return { source: lifelines[0], target: lifelines[1] }
     if (lifelines.length === 1) return { source: lifelines[0], target: lifelines[0] }
     return { error: 'ライフラインがありません。先に追加してください。' }
+  }
+
+  if (mode === 'mindmap') {
+    return { error: '親と子のトピックを選択してください（Shift+クリックで複数選択）。' }
   }
 
   return { error: '接続する 2 つのノードを選択してください（Shift+クリックで複数選択）。' }

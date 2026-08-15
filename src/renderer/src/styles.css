@@ -50,6 +50,11 @@ body,
   border-right: none;
 }
 
+/* 図種別ごとに出し入れするグループ（display 指定が [hidden] より強いので明示する） */
+#toolbar .group[hidden] {
+  display: none;
+}
+
 #toolbar button {
   border: 1px solid var(--border);
   background: #fff;

@@ -145,6 +145,14 @@ function createWindow(): void {
             await writeFile(outSeq, Buffer.from(seqPng.split(',')[1], 'base64'))
             console.log(`[DIAG-PNG-SEQ] ${outSeq}`)
           }
+          const mindmapPng = await mainWindow!.webContents.executeJavaScript(
+            'window.__mindmapPng ?? ""'
+          )
+          if (typeof mindmapPng === 'string' && mindmapPng.startsWith('data:image/png')) {
+            const outMm = join(process.cwd(), 'diag-output-mindmap.png')
+            await writeFile(outMm, Buffer.from(mindmapPng.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-MINDMAP] ${outMm}`)
+          }
           const svg = await mainWindow!.webContents.executeJavaScript(
             'window.__umlExportSvg ? window.__umlExportSvg() : ""'
           )

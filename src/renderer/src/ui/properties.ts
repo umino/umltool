@@ -48,6 +48,12 @@ import {
   setTextFontSize
 } from '../editor/shapes'
 import {
+  childTopics,
+  isCollapsed,
+  setCollapsed,
+  updateMindmapVisibility
+} from '../editor/mindmap'
+import {
   ACTIVITY_KIND_LABEL,
   ACTIVITY_MIN_SIZE,
   COLOR_PRESETS,
@@ -56,8 +62,11 @@ import {
   FRAGMENT,
   FRAGMENT_OPERATORS,
   MESSAGE_KIND_LABEL,
+  MINDMAP_KIND_LABEL,
+  MINDMAP_MIN_SIZE,
   TEXT_ALIGN_LABEL,
   isActivityNodeKind,
+  isMindmapNodeKind,
   type CellKind,
   type FragmentOperator,
   type MessageKind,
@@ -278,6 +287,40 @@ export class PropertiesPanel {
       return true
     }
 
+    if (isMindmapNodeKind(kind)) {
+      const node = cell as Node
+      this.host.appendChild(
+        labelInput('トピック', getNodeLabel(node), (value) => {
+          setNodeLabel(node, value)
+          autoSizeNode(node, value)
+        })
+      )
+      if (childTopics(this.editor.graph, node).length > 0) {
+        this.host.appendChild(
+          checkboxInput('子孫を折りたたむ', isCollapsed(node), (checked) => {
+            setCollapsed(node, checked)
+            updateMindmapVisibility(this.editor.graph)
+          })
+        )
+      }
+      this.appendSizeSection(node)
+      this.host.appendChild(
+        hint('ドラッグで自由に移動できます。位置を揃え直すにはツールバーの「整列」を押します。')
+      )
+      return true
+    }
+
+    if (kind === 'branch') {
+      const edge = cell as Edge
+      this.host.appendChild(
+        labelInput('枝のラベル', getMessageLabel(edge), (value) => {
+          setMessageLabel(edge, value)
+        })
+      )
+      this.host.appendChild(hint('両端の矢印ハンドルをドラッグすると親子を繋ぎ替えられます。'))
+      return true
+    }
+
     return false
   }
 
@@ -287,9 +330,13 @@ export class PropertiesPanel {
    */
   private appendSizeSection(node: Node): void {
     const kind = getCellKind(node)
-    const autoSized = kind === 'action' || kind === 'decision'
+    const autoSized = kind === 'action' || kind === 'decision' || isMindmapNodeKind(kind)
     const { width, height } = node.getSize()
-    const min = isActivityNodeKind(kind) ? ACTIVITY_MIN_SIZE[kind] : { width: 1, height: 1 }
+    const min = isActivityNodeKind(kind)
+      ? ACTIVITY_MIN_SIZE[kind]
+      : isMindmapNodeKind(kind)
+        ? MINDMAP_MIN_SIZE[kind]
+        : { width: 1, height: 1 }
 
     const resize = (w: number, h: number): void => {
       const bbox = node.getBBox()
@@ -516,6 +563,11 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
     case 'frame':
     case 'flow':
       text = ACTIVITY_KIND_LABEL[kind]
+      break
+    case 'rootTopic':
+    case 'topic':
+    case 'branch':
+      text = MINDMAP_KIND_LABEL[kind]
       break
     default:
       text = '要素'

@@ -10,6 +10,7 @@ import {
   DEFAULT_DECISION_SHAPE,
   FONT_FAMILY,
   LIFELINE,
+  MINDMAP,
   NOTE,
   TEXT,
   type DecisionShape
@@ -67,8 +68,37 @@ export const AUTO_SIZE_SPECS = {
     padY: 0,
     lineHeight: 18,
     widthFactor: 1
+  },
+  rootTopic: {
+    minWidth: MINDMAP.root.width,
+    maxWidth: 300,
+    minHeight: MINDMAP.root.height,
+    padX: 16,
+    padY: 22,
+    lineHeight: 20,
+    widthFactor: 1
+  },
+  topic: {
+    minWidth: MINDMAP.topic.width,
+    maxWidth: 260,
+    minHeight: MINDMAP.topic.height,
+    padX: 12,
+    padY: 18,
+    lineHeight: 18,
+    widthFactor: 1
   }
 } as const satisfies Record<string, AutoSizeSpec>
+
+type AutoSizeKind = keyof typeof AUTO_SIZE_SPECS
+
+/** 種別ごとの既定フォントサイズ（ユーザーが変えていればその実寸で測る） */
+const DEFAULT_FONT_SIZE: Record<AutoSizeKind, number> = {
+  action: 13,
+  decision: 12,
+  lifeline: 13,
+  rootTopic: 15,
+  topic: 13
+}
 
 export interface AutoSize {
   width: number
@@ -131,13 +161,14 @@ export function clearManualSize(node: Node): void {
  * ユーザーが手動リサイズしたノードは、その意思を優先して対象外にする。
  */
 export function autoSizeNode(node: Node, label: string): void {
-  const kind = (node.getData() as { kind?: string } | undefined)?.kind
-  if (kind !== 'action' && kind !== 'decision' && kind !== 'lifeline') return
+  const rawKind = (node.getData() as { kind?: string } | undefined)?.kind
+  if (rawKind === undefined || !(rawKind in AUTO_SIZE_SPECS)) return
+  const kind = rawKind as AutoSizeKind
   if (isManuallySized(node)) return
 
   const defaults = AUTO_SIZE_SPECS[kind]
   // ユーザーがフォントを変えていれば、その実寸で測って行高も比例させる
-  const defaultFontSize = kind === 'decision' ? 12 : 13
+  const defaultFontSize = DEFAULT_FONT_SIZE[kind]
   const attrFontSize = Number(node.attr('label/fontSize'))
   const fontSize = Number.isFinite(attrFontSize) && attrFontSize > 0 ? attrFontSize : defaultFontSize
   const attrFamily = node.attr('label/fontFamily')

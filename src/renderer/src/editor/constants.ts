@@ -20,6 +20,8 @@ export const Z = {
   frame: -10,
   /** フラグメントの背景色レイヤ。塗りが中身を隠さないよう本体と分離して最背面に置く */
   fragmentBg: -10,
+  /** マインドマップの枝。トピックの背面を通す（線がノードに隠れる） */
+  branch: -5,
   lifeline: 1,
   /** アクティビティ図の通常ノード（アクション・分岐・開始/終了など） */
   node: 1,
@@ -50,6 +52,9 @@ export const Z_BY_KIND: Partial<Record<CellKind, number>> = {
   final: Z.node,
   fork: Z.node,
   join: Z.node,
+  rootTopic: Z.node,
+  topic: Z.node,
+  branch: Z.branch,
   activation: Z.activation,
   message: Z.message,
   flow: Z.message,
@@ -168,7 +173,10 @@ export const SHAPE = {
   text: 'uml-text',
   note: 'uml-note',
   attachLink: 'uml-attach-link',
-  flow: 'uml-flow'
+  flow: 'uml-flow',
+  rootTopic: 'uml-root-topic',
+  topic: 'uml-topic',
+  branch: 'uml-branch'
 } as const
 
 // アクティビティ図のレイアウト定数
@@ -278,6 +286,67 @@ export const NOTE = {
   textColor: '#5c4a12'
 } as const
 
+// ---- マインドマップ ----
+
+export const MINDMAP = {
+  /** 中心トピック / トピックの既定サイズ */
+  root: { width: 170, height: 52 },
+  topic: { width: 140, height: 40 },
+  /** マインドマップ配置: 階層 1 段あたりの水平な隙間（ノードの端から端まで） */
+  levelGapX: 64,
+  /** マインドマップ配置: 兄弟ノード間の垂直な隙間 */
+  siblingGapY: 14,
+  /** ツリー配置: 1 段あたりのインデント量 */
+  indentX: 36,
+  /** ツリー配置: 行間の隙間 */
+  rowGapY: 10,
+  /** 生成時の基準点（ルートの中心） */
+  originX: 520,
+  originY: 360
+} as const
+
+/** マインドマップのノード種別 */
+export type MindmapNodeKind = 'rootTopic' | 'topic'
+
+/** 手動リサイズ時の下限 */
+export const MINDMAP_MIN_SIZE: Record<MindmapNodeKind, { width: number; height: number }> = {
+  rootTopic: { width: 80, height: 32 },
+  topic: { width: 56, height: 26 }
+}
+
+export function isMindmapNodeKind(kind: string | undefined): kind is MindmapNodeKind {
+  return kind !== undefined && kind in MINDMAP_MIN_SIZE
+}
+
+/**
+ * マインドマップの表示レイアウト。同じ木を 2 通りに描き分ける。
+ * map = 中心から左右へ展開 / outline = 縦インデントのツリー
+ */
+export type MindmapLayout = 'map' | 'outline'
+
+export const DEFAULT_MINDMAP_LAYOUT: MindmapLayout = 'map'
+
+export const MINDMAP_LAYOUT_LABEL: Record<MindmapLayout, string> = {
+  map: 'マインドマップ',
+  outline: 'ツリー'
+}
+
+/**
+ * 深さごとのトピック配色。ルートが 0 で、以降は深さそのまま（表の末尾で頭打ち）。
+ * ノード生成時にだけ適用し、以後は右パネルの設定を優先する。
+ */
+export const MINDMAP_LEVEL_STYLES: { fill: string; stroke: string; text: string }[] = [
+  { fill: '#2d6cdf', stroke: '#1f4ea3', text: '#ffffff' },
+  { fill: '#eef2fb', stroke: '#2d6cdf', text: '#1d2330' },
+  { fill: '#ffffff', stroke: '#5b6472', text: '#1d2330' }
+]
+
+export const MINDMAP_KIND_LABEL: Record<MindmapNodeKind | 'branch', string> = {
+  rootTopic: '中心トピック',
+  topic: 'トピック',
+  branch: '枝'
+}
+
 export type MessageKind = 'sync' | 'async' | 'return' | 'self'
 
 export const MESSAGE_KIND_LABEL: Record<MessageKind, string> = {
@@ -337,6 +406,8 @@ export type CellKind =
   | 'note'
   | 'attachLink'
   | 'flow'
+  | MindmapNodeKind
+  | 'branch'
   | 'unknown'
 
 export const ACTIVITY_KIND_LABEL: Record<
@@ -361,4 +432,6 @@ export interface UmlCellData {
   msgKind?: MessageKind
   /** kind === 'fragment' のときのみ */
   operator?: FragmentOperator
+  /** トピックのときのみ。true なら子孫を折りたたんで隠している */
+  collapsed?: boolean
 }

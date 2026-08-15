@@ -14,6 +14,18 @@ import {
   setAttachLinkVisible
 } from './editor/sequence'
 import { addActivityNode, addFlow, addFrame, addSwimlane } from './editor/activity'
+import {
+  addBranch,
+  addRootTopic,
+  addTopic,
+  childTopics,
+  isCollapsed,
+  isTopic,
+  parentTopic,
+  setCollapsed,
+  topicDepth,
+  updateMindmapVisibility
+} from './editor/mindmap'
 import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
 import { getCellKind, getNodeLabel, setNodeFill } from './editor/shapes'
@@ -25,16 +37,19 @@ import {
   FRAME,
   LIFELINE,
   MESSAGE,
+  MINDMAP,
   NOTE,
   SHAPE,
   TEXT,
-  type ActivityNodeKind
+  type ActivityNodeKind,
+  type MindmapLayout
 } from './editor/constants'
 import { PropertiesPanel } from './ui/properties'
 import { buildToolbar, type ToolbarHandle } from './ui/toolbar'
 import { buildPalette, type PaletteHandle } from './ui/palette'
 import { buildSequenceFromText } from './text/buildSequence'
 import { buildActivityFromText } from './text/buildActivity'
+import { buildMindmapFromText } from './text/buildMindmap'
 import { ParseError } from './text/sequenceParser'
 import { loadProject, serializeProject, type DiagramType } from './diagram/serialize'
 import { exportGraphToDataUrl, exportGraphToSvg, type ImageFormat } from './export/raster'
@@ -72,6 +87,25 @@ end fork
 :注文を完了する;
 stop`
 
+const SAMPLE_MINDMAP = `* Webサイト刷新
+** 企画
+*** 競合調査
+*** 要件定義
+** 設計
+*** 情報設計
+*** ビジュアル
+** 開発
+*** フロントエンド
+*** バックエンド
+** 運用
+*** 効果測定`
+
+const SAMPLE_TEXT: Record<DiagramType, string> = {
+  sequence: SAMPLE_SEQUENCE,
+  activity: SAMPLE_ACTIVITY,
+  mindmap: SAMPLE_MINDMAP
+}
+
 class AppController {
   private readonly editor: GraphEditor
   private readonly toolbar: ToolbarHandle
@@ -102,6 +136,8 @@ class AppController {
         this.editor.setDecisionShape(s)
         this.setDirty(true)
       },
+      setMindmapLayout: (l) => this.setMindmapLayout(l),
+      arrangeMindmap: () => this.arrangeMindmap(),
       deleteSelection: () => this.editor.deleteSelection(),
       zoomIn: () => this.editor.zoomIn(),
       zoomOut: () => this.editor.zoomOut(),
@@ -119,7 +155,11 @@ class AppController {
       addSwimlane: () => this.addSwimlane(),
       addFrame: () => this.addActivityFrame(),
       addText: () => this.addText(),
-      addNote: () => this.addNote()
+      addNote: () => this.addNote(),
+      addRootTopic: () => this.addRootTopic(),
+      addChildTopic: () => this.addRelatedTopic('child'),
+      addSiblingTopic: () => this.addRelatedTopic('sibling'),
+      toggleCollapse: () => this.toggleCollapse()
     })
     this.bindSideTabs()
 
@@ -1058,6 +1098,172 @@ B --> A : 返す`
         activity['error'] = (e as Error).message
       }
 
+      // マインドマップ: 生成・2 つの配置・折りたたみ・ラウンドトリップ検証
+      // （最後にアクティビティ図へ戻すので、DIAG-PNG の中身は変わらない）
+      const mindmap: Record<string, unknown> = {}
+      try {
+        const mm = await import('./editor/mindmap')
+        this.applyDiagramType('mindmap')
+        this.editor.restoreMindmapLayout('map')
+        buildMindmapFromText(this.editor, SAMPLE_MINDMAP, 'map')
+        await new Promise((r) => setTimeout(r, 100))
+
+        const topics = graph.getNodes().filter((n) => mm.isTopic(n))
+        const branches = graph.getEdges().filter((e) => getCellKind(e) === 'branch')
+        const roots = graph.getNodes().filter((n) => getCellKind(n) === 'rootTopic')
+        mindmap['built'] =
+          topics.length === 12 && branches.length === 11 && roots.length === 1
+            ? 'ok'
+            : `ng(topics=${topics.length}, branches=${branches.length}, roots=${roots.length})`
+
+        // 第 1 階層が左右に振り分けられているか
+        const root = roots[0]
+        if (root) {
+          const rootCx = root.getBBox().center.x
+          const level1 = mm.childTopics(graph, root)
+          const rightCount = level1.filter((n) => n.getBBox().center.x > rootCx).length
+          const leftCount = level1.filter((n) => n.getBBox().center.x < rootCx).length
+          mindmap['balance'] =
+            level1.length === 4 && rightCount === 2 && leftCount === 2
+              ? 'ok'
+              : `ng(level1=${level1.length}, right=${rightCount}, left=${leftCount})`
+        }
+
+        // ツリー（縦インデント）表示: 深さが増えるほど右、行は上から順
+        this.editor.setMindmapLayout('outline')
+        await new Promise((r) => setTimeout(r, 100))
+        {
+          const rows = graph
+            .getNodes()
+            .filter((n) => mm.isTopic(n))
+            .sort((a, b) => a.getBBox().y - b.getBBox().y)
+          const rootRow = rows[0]
+          const deeper = rows.filter(
+            (n) => n.getBBox().x > (rootRow?.getBBox().x ?? 0)
+          ).length
+          const overlap = rows.some(
+            (n, i) => i > 0 && n.getBBox().y < rows[i - 1].getBBox().bottom
+          )
+          mindmap['outline'] =
+            getCellKind(rootRow) === 'rootTopic' && deeper === 11 && !overlap
+              ? 'ok'
+              : `ng(first=${getCellKind(rootRow)}, deeper=${deeper}, overlap=${overlap})`
+        }
+
+        // 折りたたみ: 子孫（ノードと枝）が隠れ、展開で戻る
+        {
+          const root2 = graph.getNodes().find((n) => getCellKind(n) === 'rootTopic')
+          const target = root2 ? mm.childTopics(graph, root2)[0] : undefined
+          if (target) {
+            mm.setCollapsed(target, true)
+            mm.updateMindmapVisibility(graph)
+            const hiddenNodes = graph.getNodes().filter((n) => !n.isVisible()).length
+            const hiddenEdges = graph.getEdges().filter((e) => !e.isVisible()).length
+            mm.setCollapsed(target, false)
+            mm.updateMindmapVisibility(graph)
+            const restored = graph.getCells().every((c) => c.isVisible())
+            mindmap['collapse'] =
+              hiddenNodes === 2 && hiddenEdges === 2 && restored
+                ? 'ok'
+                : `ng(nodes=${hiddenNodes}, edges=${hiddenEdges}, restored=${restored})`
+          }
+        }
+
+        // 書き出しと保存→読込
+        this.editor.setMindmapLayout('map')
+        const url = await exportGraphToDataUrl(graph, 'png', { pixelRatio: 1 })
+        mindmap['png'] = url.startsWith('data:image/png') ? `ok(${url.length})` : 'wrong-mime'
+        ;(window as unknown as Record<string, unknown>).__mindmapPng =
+          await exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
+        const saved = serializeProject(this.editor, 'mindmap')
+        const positions = graph
+          .getNodes()
+          .filter((n) => mm.isTopic(n))
+          .map((n) => `${Math.round(n.getBBox().x)},${Math.round(n.getBBox().y)}`)
+          .join('|')
+        mindmap['roundtripType'] = loadProject(this.editor, saved)
+        const after = graph
+          .getNodes()
+          .filter((n) => mm.isTopic(n))
+          .map((n) => `${Math.round(n.getBBox().x)},${Math.round(n.getBBox().y)}`)
+          .join('|')
+        mindmap['roundtripLayout'] = this.editor.getMindmapLayout()
+        // 読み込みで勝手に整列し直していないこと（座標がそのまま）
+        mindmap['roundtripPositions'] = positions === after ? 'ok' : 'ng(moved)'
+
+        // キー操作: Tab = 子トピック / Enter = 兄弟トピック / Space = 折りたたみ
+        {
+          const { closeInlineEditor } = await import('./editor/inlineEditor')
+          const key = async (k: string): Promise<void> => {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
+            await new Promise((r) => setTimeout(r, 60))
+          }
+          const root = graph.getNodes().find((n) => getCellKind(n) === 'rootTopic')
+          const before = graph.getNodes().length
+          if (root) {
+            graph.resetSelection(root)
+            await key('Tab')
+            const child = graph.getSelectedCells()[0] as Node | undefined
+            const editorOpen = document.querySelector('div[contenteditable]') !== null
+            closeInlineEditor()
+            const childOk =
+              child !== undefined &&
+              mm.isTopic(child) &&
+              mm.parentTopic(graph, child)?.id === root.id
+
+            graph.resetSelection(child as Node)
+            await key('Enter')
+            const sibling = graph.getSelectedCells()[0] as Node | undefined
+            closeInlineEditor()
+            const siblingOk =
+              sibling !== undefined &&
+              sibling.id !== child?.id &&
+              mm.parentTopic(graph, sibling)?.id === root.id
+
+            graph.resetSelection(root)
+            await key(' ')
+            const hidden = graph.getNodes().filter((n) => !n.isVisible()).length
+            await key(' ')
+            const shown = graph.getNodes().every((n) => n.isVisible())
+
+            mindmap['keys'] =
+              graph.getNodes().length === before + 2 &&
+              childOk &&
+              siblingOk &&
+              editorOpen &&
+              hidden === before + 1 &&
+              shown
+                ? 'ok'
+                : `ng(added=${graph.getNodes().length - before}, child=${childOk}, sibling=${siblingOk}, editor=${editorOpen}, hidden=${hidden}, shown=${shown})`
+
+            // 整列: 動かしたトピックが元の位置へ戻る
+            // （キー操作で足したトピックの分だけ配置が変わるので、基準を取る前に一度整列する）
+            this.editor.arrangeMindmap()
+            const moved = mm.childTopics(graph, root)[0]
+            const home = moved.getBBox()
+            moved.translate(400, 300)
+            this.editor.arrangeMindmap()
+            const back = moved.getBBox()
+            mindmap['arrange'] =
+              Math.abs(back.x - home.x) < 1 && Math.abs(back.y - home.y) < 1
+                ? 'ok'
+                : `ng(${Math.round(back.x - home.x)},${Math.round(back.y - home.y)})`
+            graph.cleanSelection()
+          }
+        }
+      } catch (e) {
+        mindmap['error'] = (e as Error).message
+      }
+
+      // 以降の入力テストはアクティビティ図の状態を前提にしているので戻す
+      try {
+        this.applyDiagramType('activity')
+        buildActivityFromText(this.editor, SAMPLE_ACTIVITY)
+        await new Promise((r) => setTimeout(r, 100))
+      } catch (e) {
+        mindmap['restore'] = (e as Error).message
+      }
+
       // main プロセスの sendInputEvent テスト用: ノードを選択して入力欄にフォーカス
       ;(window as unknown as Record<string, unknown>).__umlFocusPropsInput = async () => {
         const ll = graph
@@ -1122,7 +1328,8 @@ B --> A : 返す`
         roundtripEdges,
         roundtripError,
         fragment,
-        activity
+        activity,
+        mindmap
       }
     }
   }
@@ -1146,7 +1353,7 @@ B --> A : 返す`
     }
     this.applyDiagramType(type)
     this.newProject()
-    this.textInput.value = type === 'activity' ? SAMPLE_ACTIVITY : SAMPLE_SEQUENCE
+    this.textInput.value = SAMPLE_TEXT[type]
     this.textError.textContent = ''
   }
 
@@ -1156,6 +1363,7 @@ B --> A : 返す`
     this.editor.setMode(type)
     this.toolbar.setDiagramType(type)
     this.toolbar.setDecisionShape(this.editor.getDecisionShape())
+    this.toolbar.setMindmapLayout(this.editor.getMindmapLayout())
     this.palette.setDiagramType(type)
   }
 
@@ -1187,6 +1395,8 @@ B --> A : 返す`
     try {
       if (this.diagramType === 'activity') {
         buildActivityFromText(this.editor, this.textInput.value)
+      } else if (this.diagramType === 'mindmap') {
+        buildMindmapFromText(this.editor, this.textInput.value, this.editor.getMindmapLayout())
       } else {
         buildSequenceFromText(this.editor, this.textInput.value)
       }
@@ -1391,6 +1601,144 @@ B --> A : 返す`
     }
   }
 
+  // ---- マインドマップ ----
+
+  /** 中心トピック（ルート）を追加する */
+  private addRootTopic(): void {
+    const graph = this.editor.graph
+    const c = this.editor.getVisibleCenter()
+    let created: Node | null = null
+    this.editor.batch(() => {
+      created = addRootTopic(graph, '中心トピック', { centerX: c.x, centerY: c.y, depth: 0 })
+    })
+    this.focusNewTopic(created)
+  }
+
+  /**
+   * 選択中のトピックを基準に、子（Tab）または兄弟（Enter）を追加する。
+   * ルートで兄弟を求められたときは相手がいないので子として足す。
+   */
+  private addRelatedTopic(relation: 'child' | 'sibling'): void {
+    const graph = this.editor.graph
+    const selected = this.selectedTopic()
+    if (!selected) {
+      this.setStatusMessage(
+        'トピックを選択してください（無ければ「中心トピック」から追加できます）。'
+      )
+      return
+    }
+    const parent =
+      relation === 'child' ? selected : (parentTopic(graph, selected) ?? selected)
+    const depth = topicDepth(graph, parent) + 1
+    const spot = this.nextTopicPlacement(parent)
+
+    let created: Node | null = null
+    this.editor.batch(() => {
+      created = addTopic(graph, '新しいトピック', {
+        centerX: spot.x,
+        centerY: spot.y,
+        depth
+      })
+      addBranch(graph, parent, created)
+      // 折りたたんだ親に足すと子が見えないので開いておく
+      if (isCollapsed(parent)) setCollapsed(parent, false)
+      updateMindmapVisibility(graph)
+    })
+    this.focusNewTopic(created)
+  }
+
+  /** 追加したトピックを選択し、そのままラベルを打てる状態にする */
+  private focusNewTopic(created: Node | null): void {
+    if (!created) return
+    this.editor.graph.resetSelection(created)
+    this.editor.ensureCellVisible(created)
+    this.editor.startLabelEdit(created)
+  }
+
+  /**
+   * 新しい子トピックの置き場所。既存の兄弟の下、親の外側（親が左へ伸びていれば左）へ置く。
+   * 全体の再配置はしない（位置を揃えたいときはツールバーの「整列」）。
+   */
+  private nextTopicPlacement(parent: Node): { x: number; y: number } {
+    const graph = this.editor.graph
+    const pb = parent.getBBox()
+    const size = MINDMAP.topic
+    const siblings = childTopics(graph, parent).filter((n) => n.isVisible())
+    const bottom =
+      siblings.length > 0 ? Math.max(...siblings.map((n) => n.getBBox().bottom)) : null
+
+    if (this.editor.getMindmapLayout() === 'outline') {
+      const top = bottom ?? pb.bottom
+      return {
+        x: pb.x + MINDMAP.indentX + size.width / 2,
+        y: top + MINDMAP.rowGapY + size.height / 2
+      }
+    }
+
+    // 親がどちら側へ伸びているかを祖父との位置関係で判断する（ルートは右）
+    const grand = parentTopic(graph, parent)
+    const dir = grand !== null && pb.center.x < grand.getBBox().center.x ? -1 : 1
+    return {
+      x: pb.center.x + dir * (pb.width / 2 + MINDMAP.levelGapX + size.width / 2),
+      y:
+        bottom === null
+          ? pb.center.y
+          : bottom + MINDMAP.siblingGapY + size.height / 2
+    }
+  }
+
+  /** 選択中のトピック（1 つも選ばれていなければ null） */
+  private selectedTopic(): Node | null {
+    for (const cell of this.editor.graph.getSelectedCells()) {
+      if (cell.isNode() && isTopic(cell)) return cell
+    }
+    return null
+  }
+
+  /** 選択中のトピックの子孫を隠す / 表示する */
+  private toggleCollapse(): void {
+    const selected = this.selectedTopic()
+    if (!selected) {
+      this.setStatusMessage('折りたたむトピックを選択してください。')
+      return
+    }
+    if (childTopics(this.editor.graph, selected).length === 0) {
+      this.setStatusMessage('このトピックには子がありません。')
+      return
+    }
+    const collapsed = !isCollapsed(selected)
+    this.editor.batch(() => {
+      setCollapsed(selected, collapsed)
+      updateMindmapVisibility(this.editor.graph)
+    })
+    this.setStatusMessage(
+      collapsed
+        ? '子孫を折りたたみました（「整列」で詰め直せます）。'
+        : '子孫を展開しました。'
+    )
+  }
+
+  private setMindmapLayout(layout: MindmapLayout): void {
+    this.editor.setMindmapLayout(layout)
+    this.setDirty(true)
+    this.setStatusMessage(
+      layout === 'outline'
+        ? 'ツリー表示に切り替えました。'
+        : 'マインドマップ表示に切り替えました。'
+    )
+  }
+
+  private arrangeMindmap(): void {
+    if (this.editor.graph.getNodes().length === 0) {
+      this.setStatusMessage('整列するトピックがありません。')
+      return
+    }
+    this.editor.arrangeMindmap()
+    this.editor.fit()
+    this.setDirty(true)
+    this.setStatusMessage('トピックを整列しました。')
+  }
+
   /**
    * 新しいノードの置き場所: 表示中の領域の中央。
    * 同じ場所に連続追加したときは少しずつずらして重なりを避ける。
@@ -1589,6 +1937,25 @@ B --> A : 返す`
         target &&
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       if (inEditable) return
+
+      // マインドマップは Tab / Enter / Space でトピックを増やせる（キー主体の入力）
+      if (this.diagramType === 'mindmap' && !e.ctrlKey && !e.altKey) {
+        if (e.key === 'Tab') {
+          e.preventDefault()
+          this.addRelatedTopic('child')
+          return
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          this.addRelatedTopic('sibling')
+          return
+        }
+        if (e.key === ' ') {
+          e.preventDefault()
+          this.toggleCollapse()
+          return
+        }
+      }
 
       const key = e.key.toLowerCase()
       if (e.ctrlKey && !e.shiftKey && key === 'z') {
