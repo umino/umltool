@@ -95,8 +95,26 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
   - **マインドマップ** (mind map): radiates left and right from the central topic. First-level children are split between the two sides so the sub-trees balance; deeper topics extend on the same side as their parent
   - **ツリー** (tree): one topic per row, indented by depth, like a file explorer tree
 - **Automatic layout only where you ask for it**: topics are placed automatically when a diagram is generated from text and when you press "整列" (arrange) or switch the presentation. Otherwise every topic can be dragged freely and stays where you put it
-- **Keyboard**: with a topic selected, **Tab** adds a child and **Enter** adds a sibling (you can type the name right away). **Space** collapses or expands its descendants
-- The same actions are available from the "子トピック" / "兄弟トピック" / "折りたたみ" palette items
+- **Everything can be done from the keyboard.** The bindings are also listed under the palette tab
+
+| Key | Action |
+|---|---|
+| ↑ / ↓ | Move to the previous / next sibling (to the previous / next row in the tree presentation). When siblings run out, it continues to the neighbour at the same depth and on the same side |
+| ← / → | Move to the parent / child. In the mind-map presentation this **follows the direction of the branch** (→ is "child" on branches that extend right, ← is "child" on branches that extend left). In the tree presentation ← is always the parent and → always a child |
+| Home | Move to the root |
+| Tab | Add a child topic |
+| Enter | Add a sibling topic |
+| F2 | Rename |
+| Space | Collapse / expand |
+| Ctrl + ↑↓←→ | Move the topic itself by 8px (40px with Shift) |
+| 1 – 6 | Recolour (blue / green / yellow / red / purple / grey) |
+| 0 | Reset the colour to the depth-based default |
+| B | Bold |
+| + / - | Change the font size (the node is re-measured to fit) |
+| Delete | Delete |
+
+- Navigation and styling act on the **selected topics**; pressing an arrow with nothing selected selects the root, and styling applies to every selected topic at once
+- After Tab / Enter you can type the name straight away. The same actions are available from the "子トピック" / "兄弟トピック" / "折りたたみ" palette items
 - **Create a branch**: drag from a topic's connection port (the circles on each side), or use the "枝" palette item (with 2 topics selected, the first becomes the parent). Dragging the endpoint handles of a selected branch re-parents it
 - **Collapsing** only hides descendants; nothing moves. Press "整列" to close the gap
 - Several roots (topics with no parent) are allowed; arranging stacks them vertically

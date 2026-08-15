@@ -193,6 +193,50 @@ body,
   white-space: nowrap;
 }
 
+/* マインドマップのキー一覧（部品パレットの下） */
+.palette-keys {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.palette-keys-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.palette-keys-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.palette-keys-combo {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 96px;
+}
+
+.palette-keys kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 10px;
+  text-align: center;
+}
+
 #text-input {
   flex: 1;
   resize: none;

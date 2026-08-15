@@ -18,9 +18,12 @@ import {
   addBranch,
   addRootTopic,
   addTopic,
+  applyTopicLevelStyle,
+  applyTopicPalette,
   childTopics,
   isCollapsed,
   isTopic,
+  mindmapNavNodes,
   parentTopic,
   setCollapsed,
   topicDepth,
@@ -28,7 +31,16 @@ import {
 } from './editor/mindmap'
 import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
-import { getCellKind, getNodeLabel, setNodeFill } from './editor/shapes'
+import {
+  getCellKind,
+  getNodeLabel,
+  getTextBold,
+  getTextFontSize,
+  setNodeFill,
+  setTextBold,
+  setTextFontSize
+} from './editor/shapes'
+import { autoSizeNode } from './editor/autosize'
 import {
   ACTIVATION,
   ACTIVITY,
@@ -38,6 +50,8 @@ import {
   LIFELINE,
   MESSAGE,
   MINDMAP,
+  MINDMAP_FONT_SIZE,
+  MINDMAP_TOPIC_PALETTE,
   NOTE,
   SHAPE,
   TEXT,
@@ -50,6 +64,7 @@ import { buildPalette, type PaletteHandle } from './ui/palette'
 import { buildSequenceFromText } from './text/buildSequence'
 import { buildActivityFromText } from './text/buildActivity'
 import { buildMindmapFromText } from './text/buildMindmap'
+import { resolveMindmapMove, type MindmapDirection } from './text/mindmapNav'
 import { ParseError } from './text/sequenceParser'
 import { loadProject, serializeProject, type DiagramType } from './diagram/serialize'
 import { exportGraphToDataUrl, exportGraphToSvg, type ImageFormat } from './export/raster'
@@ -99,6 +114,10 @@ const SAMPLE_MINDMAP = `* Webサイト刷新
 *** バックエンド
 ** 運用
 *** 効果測定`
+
+/** Ctrl+矢印でトピックを動かす量（グリッド 1 マス / Shift 併用で 5 マス） */
+const NUDGE_STEP = 8
+const NUDGE_STEP_LARGE = 40
 
 const SAMPLE_TEXT: Record<DiagramType, string> = {
   sequence: SAMPLE_SEQUENCE,
@@ -1194,8 +1213,13 @@ B --> A : 返す`
         // キー操作: Tab = 子トピック / Enter = 兄弟トピック / Space = 折りたたみ
         {
           const { closeInlineEditor } = await import('./editor/inlineEditor')
-          const key = async (k: string): Promise<void> => {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
+          const key = async (
+            k: string,
+            mods: { ctrlKey?: boolean; shiftKey?: boolean } = {}
+          ): Promise<void> => {
+            document.dispatchEvent(
+              new KeyboardEvent('keydown', { key: k, bubbles: true, ...mods })
+            )
             await new Promise((r) => setTimeout(r, 60))
           }
           const root = graph.getNodes().find((n) => getCellKind(n) === 'rootTopic')
@@ -1248,6 +1272,100 @@ B --> A : 返す`
               Math.abs(back.x - home.x) < 1 && Math.abs(back.y - home.y) < 1
                 ? 'ok'
                 : `ng(${Math.round(back.x - home.x)},${Math.round(back.y - home.y)})`
+
+            // 矢印キーの移動: ルート → 左右の子 → 親、兄弟の上下、Home でルートへ
+            const selectedId = (): string => graph.getSelectedCells()[0]?.id ?? ''
+            graph.resetSelection(root)
+            await key('ArrowRight')
+            const rightChild = selectedId()
+            await key('ArrowLeft')
+            const backToRoot = selectedId()
+            graph.resetSelection(root)
+            await key('ArrowLeft')
+            const leftChild = selectedId()
+            await key('ArrowRight')
+            const backToRoot2 = selectedId()
+            const rightOk =
+              rightChild !== root.id &&
+              mm.parentTopic(graph, graph.getCellById(rightChild) as Node)?.id === root.id &&
+              (graph.getCellById(rightChild) as Node).getBBox().center.x >
+                root.getBBox().center.x
+            const leftOk =
+              leftChild !== root.id &&
+              leftChild !== rightChild &&
+              (graph.getCellById(leftChild) as Node).getBBox().center.x <
+                root.getBBox().center.x
+
+            // 兄弟の上下移動（子が 2 つ以上ある枝で試す）
+            const branch = mm
+              .childTopics(graph, root)
+              .find((n) => mm.childTopics(graph, n).length >= 2)
+            let siblingMove = 'skipped'
+            if (branch) {
+              const kids = mm.childTopics(graph, branch)
+              const sorted = [...kids].sort((a, b) => a.getBBox().y - b.getBBox().y)
+              graph.resetSelection(sorted[0])
+              await key('ArrowDown')
+              const down = selectedId()
+              await key('ArrowUp')
+              const up = selectedId()
+              siblingMove = down === sorted[1].id && up === sorted[0].id ? 'ok' : `ng(${down})`
+            }
+
+            graph.resetSelection(mm.childTopics(graph, root)[0])
+            await key('Home')
+            const home2 = selectedId()
+
+            mindmap['navigate'] =
+              rightOk &&
+              leftOk &&
+              backToRoot === root.id &&
+              backToRoot2 === root.id &&
+              siblingMove === 'ok' &&
+              home2 === root.id
+                ? 'ok'
+                : `ng(right=${rightOk}, left=${leftOk}, back=${backToRoot === root.id}/${backToRoot2 === root.id}, sibling=${siblingMove}, home=${home2 === root.id})`
+
+            // Ctrl+矢印でトピック自体が動く（選択の移動ではない）
+            {
+              const target = mm.childTopics(graph, root)[0]
+              graph.resetSelection(target)
+              const from = target.getBBox()
+              await key('ArrowRight', { ctrlKey: true })
+              const nudged = target.getBBox()
+              await key('ArrowLeft', { ctrlKey: true, shiftKey: true })
+              const large = target.getBBox()
+              mindmap['nudge'] =
+                Math.round(nudged.x - from.x) === 8 && Math.round(large.x - nudged.x) === -40
+                  ? 'ok'
+                  : `ng(${Math.round(nudged.x - from.x)}, ${Math.round(large.x - nudged.x)})`
+              target.position(from.x, from.y)
+            }
+
+            // 装飾: 数字キーで配色 / B で太字 / +- で文字サイズ / 0 で既定色へ
+            {
+              const s = await import('./editor/shapes')
+              const target = mm.childTopics(graph, root)[0]
+              graph.resetSelection(target)
+              const baseFill = String(target.attr('body/fill'))
+              const baseSize = s.getTextFontSize(target)
+              await key('2')
+              const colored = String(target.attr('body/fill')) === MINDMAP_TOPIC_PALETTE[1].fill
+              await key('b')
+              const bold = s.getTextBold(target)
+              await key('b')
+              const unbold = !s.getTextBold(target)
+              await key('+')
+              const bigger = s.getTextFontSize(target) === baseSize + MINDMAP_FONT_SIZE.step
+              await key('-')
+              const restored = s.getTextFontSize(target) === baseSize
+              await key('0')
+              const reset = String(target.attr('body/fill')) === baseFill
+              mindmap['decorate'] =
+                colored && bold && unbold && bigger && restored && reset
+                  ? 'ok'
+                  : `ng(color=${colored}, bold=${bold}/${unbold}, size=${bigger}/${restored}, reset=${reset})`
+            }
             graph.cleanSelection()
           }
         }
@@ -1689,10 +1807,144 @@ B --> A : 返す`
 
   /** 選択中のトピック（1 つも選ばれていなければ null） */
   private selectedTopic(): Node | null {
-    for (const cell of this.editor.graph.getSelectedCells()) {
-      if (cell.isNode() && isTopic(cell)) return cell
+    return this.selectedTopics()[0] ?? null
+  }
+
+  /** 選択中のトピックすべて（装飾はまとめて当てられるようにする） */
+  private selectedTopics(): Node[] {
+    return this.editor.graph
+      .getSelectedCells()
+      .filter((c): c is Node => c.isNode() && isTopic(c))
+  }
+
+  /**
+   * 矢印キーで選択を移す。マップ表示では枝の向き（左右）に合わせて
+   * ← → の意味が入れ替わる（左の枝では ← が子）。
+   */
+  private moveTopicSelection(direction: MindmapDirection): void {
+    const graph = this.editor.graph
+    const current = this.selectedTopic()
+    if (!current) {
+      // 何も選んでいなければ入口としてルート（無ければ最初のトピック）を選ぶ
+      const nodes = mindmapNavNodes(graph)
+      const entry = nodes.find((n) => n.parentId === null) ?? nodes[0]
+      if (entry) this.selectTopicById(entry.id)
+      return
     }
-    return null
+    const nextId = resolveMindmapMove(
+      mindmapNavNodes(graph),
+      current.id,
+      direction,
+      this.editor.getMindmapLayout()
+    )
+    if (nextId === null) return
+    this.selectTopicById(nextId)
+  }
+
+  /** ルート（選択中のトピックが属する木の根）へ移動する */
+  private moveToRoot(): void {
+    const nodes = mindmapNavNodes(this.editor.graph)
+    const current = this.selectedTopic()
+    let id = current?.id ?? nodes.find((n) => n.parentId === null)?.id
+    if (id === undefined) return
+    for (let i = 0; i < nodes.length; i++) {
+      const parentId = nodes.find((n) => n.id === id)?.parentId
+      if (parentId === null || parentId === undefined) break
+      id = parentId
+    }
+    this.selectTopicById(id)
+  }
+
+  private selectTopicById(id: string): void {
+    const node = this.editor.graph.getCellById(id)
+    if (!node || !node.isNode()) return
+    this.editor.graph.resetSelection(node)
+    this.editor.ensureCellVisible(node)
+  }
+
+  /** 選択中のトピックすべてに装飾を当てる（何も選ばれていなければ案内を出す） */
+  private decorateTopics(apply: (node: Node) => void, message: string): void {
+    const topics = this.selectedTopics()
+    if (topics.length === 0) {
+      this.setStatusMessage('装飾するトピックを選択してください。')
+      return
+    }
+    this.editor.batch(() => {
+      for (const node of topics) apply(node)
+    })
+    this.setDirty(true)
+    this.setStatusMessage(message)
+  }
+
+  /** 文字サイズを増減し、ラベルに合わせてノードを測り直す */
+  private changeTopicFontSize(delta: number): void {
+    this.decorateTopics((node) => {
+      const size = Math.min(
+        MINDMAP_FONT_SIZE.max,
+        Math.max(MINDMAP_FONT_SIZE.min, getTextFontSize(node) + delta)
+      )
+      setTextFontSize(node, size)
+      autoSizeNode(node, getNodeLabel(node))
+    }, delta > 0 ? '文字を大きくしました。' : '文字を小さくしました。')
+  }
+
+  /** 太字を切り替える（複数選択時は先頭の状態に合わせる） */
+  private toggleTopicBold(): void {
+    const first = this.selectedTopic()
+    if (!first) {
+      this.setStatusMessage('装飾するトピックを選択してください。')
+      return
+    }
+    const bold = !getTextBold(first)
+    this.decorateTopics((node) => {
+      setTextBold(node, bold)
+      autoSizeNode(node, getNodeLabel(node))
+    }, bold ? '太字にしました。' : '太字を解除しました。')
+  }
+
+  /**
+   * 数字キーの配色。1〜6 はパレット、0 は深さに応じた既定色に戻す。
+   */
+  private applyTopicColor(index: number): void {
+    if (index === 0) {
+      const graph = this.editor.graph
+      this.decorateTopics(
+        (node) => applyTopicLevelStyle(node, topicDepth(graph, node)),
+        '配色を既定に戻しました。'
+      )
+      return
+    }
+    const style = MINDMAP_TOPIC_PALETTE[index - 1]
+    if (!style) return
+    this.decorateTopics(
+      (node) => applyTopicPalette(node, index - 1),
+      `配色を「${style.label}」にしました。`
+    )
+  }
+
+  /** 選択中のトピックを Ctrl+矢印でずらす（マウスを使わない配置調整） */
+  private nudgeTopics(direction: MindmapDirection, step: number): void {
+    const topics = this.selectedTopics()
+    if (topics.length === 0) {
+      this.setStatusMessage('動かすトピックを選択してください。')
+      return
+    }
+    const dx = direction === 'left' ? -step : direction === 'right' ? step : 0
+    const dy = direction === 'up' ? -step : direction === 'down' ? step : 0
+    this.editor.batch(() => {
+      for (const node of topics) node.translate(dx, dy)
+    })
+    this.editor.ensureCellVisible(topics[0])
+  }
+
+  /** 選択中のトピックの名前をその場で編集する（F2） */
+  private editSelectedTopic(): void {
+    const target = this.selectedTopic()
+    if (!target) {
+      this.setStatusMessage('編集するトピックを選択してください。')
+      return
+    }
+    this.editor.startLabelEdit(target)
   }
 
   /** 選択中のトピックの子孫を隠す / 表示する */
@@ -1930,6 +2182,82 @@ B --> A : 返す`
     if (cells.length > 0) this.setStatusMessage(`${cells.length} 個の要素を貼り付けました`)
   }
 
+  /**
+   * マインドマップ専用のキー割り当て。処理したら true（既定のキー処理は行わない）。
+   *
+   * 移動（矢印）・追加（Tab/Enter）・折りたたみ（Space）・装飾（数字 / B / +-）を
+   * 修飾キー無しで打てるようにしている。図の中に文字入力欄は無いので、単独の
+   * 英数字キーを割り当てても入力とぶつからない。
+   */
+  private handleMindmapKey(e: KeyboardEvent): boolean {
+    const ARROWS: Record<string, MindmapDirection> = {
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      ArrowLeft: 'left',
+      ArrowRight: 'right'
+    }
+    const direction = ARROWS[e.key]
+
+    // Ctrl + 矢印はトピック自体の移動。マウスを使わずに配置を直せるようにする
+    // （Ctrl+C/V などの共通ショートカットは触らずに素通しする）
+    if (e.ctrlKey || e.altKey) {
+      if (direction === undefined || e.altKey) return false
+      e.preventDefault()
+      this.nudgeTopics(direction, e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP)
+      return true
+    }
+
+    if (direction) {
+      e.preventDefault()
+      this.moveTopicSelection(direction)
+      return true
+    }
+    switch (e.key) {
+      case 'Tab':
+        e.preventDefault()
+        this.addRelatedTopic('child')
+        return true
+      case 'Enter':
+        e.preventDefault()
+        this.addRelatedTopic('sibling')
+        return true
+      case 'F2':
+        e.preventDefault()
+        this.editSelectedTopic()
+        return true
+      case ' ':
+        e.preventDefault()
+        this.toggleCollapse()
+        return true
+      case 'Home':
+        e.preventDefault()
+        this.moveToRoot()
+        return true
+      case 'b':
+      case 'B':
+        e.preventDefault()
+        this.toggleTopicBold()
+        return true
+      case '+':
+      case '=':
+        e.preventDefault()
+        this.changeTopicFontSize(MINDMAP_FONT_SIZE.step)
+        return true
+      case '-':
+        e.preventDefault()
+        this.changeTopicFontSize(-MINDMAP_FONT_SIZE.step)
+        return true
+      default:
+        break
+    }
+    if (/^[0-9]$/.test(e.key) && Number(e.key) <= MINDMAP_TOPIC_PALETTE.length) {
+      e.preventDefault()
+      this.applyTopicColor(Number(e.key))
+      return true
+    }
+    return false
+  }
+
   private bindKeys(): void {
     document.addEventListener('keydown', (e) => {
       const target = e.target as HTMLElement
@@ -1938,24 +2266,8 @@ B --> A : 返す`
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       if (inEditable) return
 
-      // マインドマップは Tab / Enter / Space でトピックを増やせる（キー主体の入力）
-      if (this.diagramType === 'mindmap' && !e.ctrlKey && !e.altKey) {
-        if (e.key === 'Tab') {
-          e.preventDefault()
-          this.addRelatedTopic('child')
-          return
-        }
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          this.addRelatedTopic('sibling')
-          return
-        }
-        if (e.key === ' ') {
-          e.preventDefault()
-          this.toggleCollapse()
-          return
-        }
-      }
+      // マインドマップはキーボード主体で編集できるよう、専用の割り当てを持つ
+      if (this.diagramType === 'mindmap' && this.handleMindmapKey(e)) return
 
       const key = e.key.toLowerCase()
       if (e.ctrlKey && !e.shiftKey && key === 'z') {

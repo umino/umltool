@@ -9,6 +9,7 @@ import type { Edge, Graph, Node } from '@antv/x6'
 import {
   MINDMAP,
   MINDMAP_LEVEL_STYLES,
+  MINDMAP_TOPIC_PALETTE,
   SHAPE,
   Z,
   isMindmapNodeKind,
@@ -24,6 +25,7 @@ import {
   type MindmapOrigin,
   type MindmapSide
 } from '../text/mindmapLayout'
+import type { NavNode } from '../text/mindmapNav'
 
 export interface TopicOptions {
   centerX: number
@@ -169,6 +171,46 @@ export function mindmapTree(graph: Graph): MindmapTree {
   }
 
   return { inputs, nodes, parentOf, childrenOf, branchOf }
+}
+
+/**
+ * キーボード移動用に、表示中のトピックを座標・深さ・左右付きで並べる。
+ * 左右は「親より左にあるか」で毎回決める（ユーザーが動かした結果を尊重する）。
+ */
+export function mindmapNavNodes(graph: Graph): NavNode[] {
+  const tree = mindmapTree(graph)
+  const out: NavNode[] = []
+
+  const walk = (id: string, depth: number, parentId: string | null): void => {
+    const node = tree.nodes.get(id)
+    if (!node || !node.isVisible()) return
+    const bbox = node.getBBox()
+    const parentBox = parentId === null ? null : (tree.nodes.get(parentId)?.getBBox() ?? null)
+    const side: MindmapSide =
+      parentBox === null ? 'root' : bbox.center.x < parentBox.center.x ? 'left' : 'right'
+    out.push({
+      id,
+      parentId,
+      side,
+      depth,
+      centerX: bbox.center.x,
+      centerY: bbox.center.y
+    })
+    for (const childId of tree.childrenOf.get(id) ?? []) walk(childId, depth + 1, id)
+  }
+  for (const input of tree.inputs) {
+    if (input.parentId === null) walk(input.id, 0, null)
+  }
+  return out
+}
+
+/** 配色パレット（キー 1〜6）を当てる */
+export function applyTopicPalette(node: Node, index: number): void {
+  const style = MINDMAP_TOPIC_PALETTE[index]
+  if (!style) return
+  node.attr('body/fill', style.fill)
+  node.attr('body/stroke', style.stroke)
+  node.attr('label/fill', style.text)
 }
 
 /** 直接の子トピック（枝を追加した順） */

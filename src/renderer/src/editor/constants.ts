@@ -341,6 +341,27 @@ export const MINDMAP_LEVEL_STYLES: { fill: string; stroke: string; text: string 
   { fill: '#ffffff', stroke: '#5b6472', text: '#1d2330' }
 ]
 
+/**
+ * キー 1〜6 で当てる配色。マインドマップは分類の色分けを多用するので、
+ * 右パネルを開かずに押した番号で塗り・線・文字をまとめて切り替えられるようにする。
+ */
+export const MINDMAP_TOPIC_PALETTE: {
+  label: string
+  fill: string
+  stroke: string
+  text: string
+}[] = [
+  { label: 'ブルー', fill: '#eef2fb', stroke: '#2d6cdf', text: '#1d2330' },
+  { label: 'グリーン', fill: '#e8f5e9', stroke: '#2f8f46', text: '#1d2330' },
+  { label: 'イエロー', fill: '#fffbe6', stroke: '#d9b441', text: '#1d2330' },
+  { label: 'レッド', fill: '#fdecea', stroke: '#c0392b', text: '#1d2330' },
+  { label: 'パープル', fill: '#f3e8fd', stroke: '#7b4bc9', text: '#1d2330' },
+  { label: 'グレー', fill: '#f2f4f8', stroke: '#5b6472', text: '#1d2330' }
+]
+
+/** キーで増減できる文字サイズの範囲 */
+export const MINDMAP_FONT_SIZE = { min: 9, max: 48, step: 1 } as const
+
 export const MINDMAP_KIND_LABEL: Record<MindmapNodeKind | 'branch', string> = {
   rootTopic: '中心トピック',
   topic: 'トピック',
