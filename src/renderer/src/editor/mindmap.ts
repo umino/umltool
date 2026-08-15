@@ -17,7 +17,7 @@ import {
   type MindmapNodeKind,
   type UmlCellData
 } from './constants'
-import { getCellKind } from './shapes'
+import { TREE_ROUTER, getCellKind } from './shapes'
 import { autoSizeNode } from './autosize'
 import {
   layoutMindmap,
@@ -276,10 +276,22 @@ export function updateMindmapVisibility(graph: Graph): void {
 export function applyBranchStyle(edge: Edge, layout: MindmapLayout, side: MindmapSide): void {
   if (layout === 'outline') {
     // 親の下端から落として子の左端へ入れる（エクスプローラ風の L 字）。
-    // アンカーを左へずらすと orth が回り込む経路を選んでしまうため、辺の中央を使う。
-    edge.setSource({ cell: edge.getSourceCellId() as string, port: 'bottom' })
-    edge.setTarget({ cell: edge.getTargetCellId() as string, port: 'left' })
-    edge.setRouter('orth')
+    //
+    // 縦線は「親の左端から indentX の半分だけ右」に落とす。下端の中央から落とすと
+    // 子の左端より右になり、横線が子の裏へ潜って線が見えなくなる。左下隅からの
+    // 固定オフセットにしておけば、ラベル変更で親の幅が変わってもずれない。
+    // 経路は TREE_ROUTER が曲がり角 1 点に固定するので、子をどこへ動かしても L 字を保つ。
+    edge.setSource({
+      cell: edge.getSourceCellId() as string,
+      anchor: { name: 'bottomLeft', args: { dx: MINDMAP.indentX / 2 } },
+      connectionPoint: { name: 'anchor' }
+    })
+    edge.setTarget({
+      cell: edge.getTargetCellId() as string,
+      anchor: { name: 'left' },
+      connectionPoint: { name: 'anchor' }
+    })
+    edge.setRouter(TREE_ROUTER)
     edge.setConnector('rounded', { radius: 6 })
     return
   }

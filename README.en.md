@@ -94,7 +94,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - Switch to "マインドマップ" in the toolbar's diagram-type selector
 - **Two presentations**, chosen with "表示:" in the toolbar. Both redraw the same tree; the content never changes
   - **マインドマップ** (mind map): radiates left and right from the central topic. First-level children are split between the two sides so the sub-trees balance; deeper topics extend on the same side as their parent
-  - **ツリー** (tree): one topic per row, indented by depth, like a file explorer tree
+  - **ツリー** (tree): one topic per row, indented by depth, like a file explorer tree. A branch always drops straight down from its parent, turns a right angle, and enters the child's left edge — the L stays intact even after topics are moved by hand
 - **Automatic layout only where you ask for it**: topics are placed automatically when a diagram is generated from text and when you press "整列" (arrange) or switch the presentation. Otherwise every topic can be dragged freely and stays where you put it
 - **Everything can be done from the keyboard.** Press **?** for the translucent overlay listing every binding; the mind-map keys are also always visible under the palette tab
 

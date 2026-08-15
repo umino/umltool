@@ -1,5 +1,5 @@
 import './styles.css'
-import type { Edge, Node } from '@antv/x6'
+import type { Edge, EdgeView, Node } from '@antv/x6'
 import { GraphEditor } from './editor/GraphEditor'
 import {
   addActivation,
@@ -1171,6 +1171,54 @@ B --> A : 返す`
             getCellKind(rootRow) === 'rootTopic' && deeper === 11 && !overlap
               ? 'ok'
               : `ng(first=${getCellKind(rootRow)}, deeper=${deeper}, overlap=${overlap})`
+        }
+
+        // 枝の形: 親の下端 → 直角 → 子の左端。子をどこへ動かしても崩れないこと
+        {
+          const parent = graph.getNodes().find((n) => getCellKind(n) === 'rootTopic')
+          const child = parent ? mm.childTopics(graph, parent)[0] : undefined
+          const edge = child
+            ? graph.getEdges().find((e) => e.getTargetCellId() === child.id)
+            : undefined
+          const shapeOf = (): string => {
+            if (!parent || !child || !edge) return 'no-edge'
+            const view = graph.findViewByCell(edge) as EdgeView | null
+            if (!view) return 'no-view'
+            const pb = parent.getBBox()
+            const cb = child.getBBox()
+            const points = view.routePoints
+            const corner = points[0]
+            const near = (a: number, b: number): boolean => Math.abs(a - b) < 1.5
+            if (points.length !== 1) return `bends=${points.length}`
+            // 縦線は親の左端から indentX の半分だけ右（＝子の左端より外側）に落ちる
+            const gutterX = pb.x + MINDMAP.indentX / 2
+            if (!near(view.sourceAnchor.x, gutterX) || !near(view.sourceAnchor.y, pb.bottom)) {
+              return `source=${Math.round(view.sourceAnchor.x)},${Math.round(view.sourceAnchor.y)}`
+            }
+            if (!near(view.targetAnchor.x, cb.x) || !near(view.targetAnchor.y, cb.center.y)) {
+              return `target=${Math.round(view.targetAnchor.x)},${Math.round(view.targetAnchor.y)}`
+            }
+            // 曲がり角は「縦線の真下・子と同じ高さ」の 1 点
+            return near(corner.x, gutterX) && near(corner.y, cb.center.y)
+              ? 'ok'
+              : `corner=${Math.round(corner.x)},${Math.round(corner.y)}`
+          }
+          const arranged = shapeOf()
+          // 整列後は縦線が子の左端より外側にあり、横線が子の裏に潜らない
+          const gutterOutside =
+            parent !== undefined &&
+            child !== undefined &&
+            parent.getBBox().x + MINDMAP.indentX / 2 < child.getBBox().x
+          // 子を親の左上へ動かしても L 字のまま
+          child?.translate(-320, -220)
+          await new Promise((r) => setTimeout(r, 60))
+          const movedUp = shapeOf()
+          child?.translate(320, 220)
+          await new Promise((r) => setTimeout(r, 60))
+          mindmap['treeBranch'] =
+            arranged === 'ok' && movedUp === 'ok' && gutterOutside
+              ? 'ok'
+              : `ng(arranged=${arranged}, moved=${movedUp}, gutter=${gutterOutside})`
         }
 
         // 折りたたみ: 子孫（ノードと枝）が隠れ、展開で戻る

@@ -7,7 +7,7 @@
 //   - 中央 vertex を上下ドラッグするとメッセージ全体が連続的に上下移動する
 
 import { Graph, Point, routerPresets } from '@antv/x6'
-import type { Cell, Edge, Node } from '@antv/x6'
+import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
 import {
   ACTIVATION,
   ACTIVITY,
@@ -81,6 +81,29 @@ function registerFlowRouter(): void {
   )
 }
 
+/** マインドマップのツリー表示で使うルータ名 */
+export const TREE_ROUTER = 'uml-mm-tree'
+
+/**
+ * ツリー表示の枝の経路。親の下端から真下へ降り、直角に曲がって子の左端へ入る。
+ *
+ * orth / manhattan は相手の位置関係で経路を選び直すため、子を上や左へ動かすと
+ * 回り込む形になってしまう。曲がり角（親の x, 子の y）を 1 点だけ返して、
+ * どこに動かしても L 字を保つ。
+ */
+function registerTreeRouter(): void {
+  Graph.registerRouter(
+    TREE_ROUTER,
+    function (this: EdgeView) {
+      const source = this.sourceAnchor
+      const target = this.targetAnchor
+      if (!source || !target) return []
+      return [{ x: source.x, y: target.y }]
+    },
+    true
+  )
+}
+
 /** 塗り矢印（同期） */
 const MARKER_FILLED = {
   name: 'block',
@@ -107,6 +130,7 @@ export function registerShapes(): void {
   registered = true
 
   registerFlowRouter()
+  registerTreeRouter()
 
   // ---- ライフライン: ヘッダ矩形 + 破線の生存線 + 接続用ヒット領域 ----
   // X6 v3 に calc() 構文は無いため、サイズ依存の座標は lifelineGeometryAttrs で
