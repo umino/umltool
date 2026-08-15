@@ -2,6 +2,7 @@
 // フロー配置する。クリックでツールバーのボタンと同じ追加動作を行う。
 
 import type { ActivityNodeKind } from '../editor/constants'
+import { MINDMAP_SHORTCUTS, renderShortcutGroup } from './shortcuts'
 import type { ToolbarDiagramType } from './toolbar'
 
 export interface PaletteActions {
@@ -14,6 +15,10 @@ export interface PaletteActions {
   addSwimlane: () => void
   addFrame: () => void
   addText: () => void
+  addRootTopic: () => void
+  addChildTopic: () => void
+  addSiblingTopic: () => void
+  toggleCollapse: () => void
 }
 
 /** ライフラインに付属するテキストタイル（シーケンス図） */
@@ -183,17 +188,85 @@ function activityItems(a: PaletteActions): PaletteItem[] {
   ]
 }
 
+function mindmapItems(a: PaletteActions): PaletteItem[] {
+  return [
+    {
+      label: '中心トピック',
+      title: '中心トピック（ルート）を追加',
+      icon: `<rect x="4" y="6" width="36" height="18" rx="7" fill="${C.blue}" stroke="#1f4ea3" stroke-width="1.4"/>`,
+      onClick: a.addRootTopic
+    },
+    {
+      label: '子トピック',
+      title: '選択中のトピックの子を追加（Tab）',
+      icon:
+        `<rect x="2" y="10" width="16" height="11" rx="4" fill="${C.blueFill}" stroke="${C.blue}" stroke-width="1.3"/>` +
+        `<path d="M 18 15 C 24 15 24 15 28 15" fill="none" stroke="${C.gray}" stroke-width="1.4"/>` +
+        `<rect x="28" y="9" width="14" height="12" rx="4" fill="#ffffff" stroke="${C.gray}" stroke-width="1.3"/>`,
+      onClick: a.addChildTopic
+    },
+    {
+      label: '兄弟トピック',
+      title: '選択中のトピックと同じ階層に追加（Enter）',
+      icon:
+        `<rect x="24" y="2" width="18" height="11" rx="4" fill="${C.blueFill}" stroke="${C.blue}" stroke-width="1.3"/>` +
+        `<rect x="24" y="17" width="18" height="11" rx="4" fill="#ffffff" stroke="${C.gray}" stroke-width="1.3"/>` +
+        `<path d="M 6 15 C 14 15 16 7.5 24 7.5 M 6 15 C 14 15 16 22.5 24 22.5" fill="none" stroke="${C.gray}" stroke-width="1.2"/>`,
+      onClick: a.addSiblingTopic
+    },
+    {
+      label: '枝',
+      title: '選択中の 2 トピックを親子で繋ぐ（1 つ選択なら最寄りへ）',
+      icon:
+        `<path d="M 6 24 C 16 24 18 8 32 8" fill="none" stroke="${C.gray}" stroke-width="1.8"/>` +
+        `<circle cx="6" cy="24" r="3" fill="${C.gray}"/>` +
+        `<circle cx="32" cy="8" r="3" fill="${C.gray}"/>`,
+      onClick: a.addConnection
+    },
+    {
+      label: '折りたたみ',
+      title: '選択中のトピックの子孫を隠す / 表示する（Space）',
+      icon:
+        `<rect x="4" y="9" width="18" height="12" rx="4" fill="${C.blueFill}" stroke="${C.blue}" stroke-width="1.3"/>` +
+        `<circle cx="31" cy="15" r="6" fill="#ffffff" stroke="${C.gray}" stroke-width="1.3"/>` +
+        `<path d="M 28 15 H 34" stroke="${C.gray}" stroke-width="1.6"/>`,
+      onClick: a.toggleCollapse
+    },
+    noteItem(a)
+  ]
+}
+
+/**
+ * マインドマップのキー一覧。キーボード主体で編集するモードなので、
+ * ? キーの一覧を開かなくても割り当てが分かるようパレットの下にも常設する。
+ */
+function renderKeyHelp(): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'palette-keys'
+  wrap.appendChild(renderShortcutGroup(MINDMAP_SHORTCUTS))
+  const more = document.createElement('div')
+  more.className = 'palette-keys-more'
+  more.textContent = '? キーで全ショートカットを表示'
+  wrap.appendChild(more)
+  return wrap
+}
+
 /** パレットを構築する */
 export function buildPalette(host: HTMLElement, actions: PaletteActions): PaletteHandle {
   const seqGrid = renderGrid(sequenceItems(actions))
   const actGrid = renderGrid(activityItems(actions))
+  const mindPane = document.createElement('div')
+  mindPane.appendChild(renderGrid(mindmapItems(actions)))
+  mindPane.appendChild(renderKeyHelp())
   host.innerHTML = ''
   host.appendChild(seqGrid)
   host.appendChild(actGrid)
+  host.appendChild(mindPane)
 
   const setDiagramType = (type: ToolbarDiagramType): void => {
     seqGrid.style.display = type === 'sequence' ? '' : 'none'
     actGrid.style.display = type === 'activity' ? '' : 'none'
+    mindPane.style.display = type === 'mindmap' ? '' : 'none'
   }
   setDiagramType('sequence')
 

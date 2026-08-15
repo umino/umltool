@@ -1,6 +1,11 @@
-import { DECISION_SHAPE_LABEL, type DecisionShape } from '../editor/constants'
+import {
+  DECISION_SHAPE_LABEL,
+  MINDMAP_LAYOUT_LABEL,
+  type DecisionShape,
+  type MindmapLayout
+} from '../editor/constants'
 
-export type ToolbarDiagramType = 'sequence' | 'activity'
+export type ToolbarDiagramType = 'sequence' | 'activity' | 'mindmap'
 
 export interface ToolbarActions {
   newProject: () => void
@@ -9,12 +14,15 @@ export interface ToolbarActions {
   saveAs: () => void
   setDiagramType: (type: ToolbarDiagramType) => void
   setDecisionShape: (shape: DecisionShape) => void
+  setMindmapLayout: (layout: MindmapLayout) => void
+  arrangeMindmap: () => void
   deleteSelection: () => void
   zoomIn: () => void
   zoomOut: () => void
   zoomReset: () => void
   fit: () => void
   exportImage: (format: 'png' | 'jpg' | 'webp') => void
+  showShortcuts: () => void
 }
 
 export interface ToolbarHandle {
@@ -22,6 +30,8 @@ export interface ToolbarHandle {
   setDiagramType: (type: ToolbarDiagramType) => void
   /** セレクトの表示値を分岐図形に合わせる */
   setDecisionShape: (shape: DecisionShape) => void
+  /** セレクトの表示値をマインドマップの表示スタイルに合わせる */
+  setMindmapLayout: (layout: MindmapLayout) => void
 }
 
 function button(label: string, title: string, onClick: () => void): HTMLButtonElement {
@@ -63,7 +73,8 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
   const typeSelect = document.createElement('select')
   for (const [value, text] of [
     ['sequence', 'シーケンス図'],
-    ['activity', 'アクティビティ図']
+    ['activity', 'アクティビティ図'],
+    ['mindmap', 'マインドマップ']
   ] as const) {
     const opt = document.createElement('option')
     opt.value = value
@@ -91,11 +102,31 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
   const shapeGroup = group(label('分岐:'), shapeSelect)
   host.appendChild(shapeGroup)
 
+  // マインドマップの表示スタイルと整列。マインドマップのときだけ出す。
+  const layoutSelect = document.createElement('select')
+  for (const value of ['map', 'outline'] as const) {
+    const opt = document.createElement('option')
+    opt.value = value
+    opt.textContent = MINDMAP_LAYOUT_LABEL[value]
+    layoutSelect.appendChild(opt)
+  }
+  layoutSelect.title = '同じ内容を、放射状のマインドマップか縦のツリーで表示します'
+  layoutSelect.addEventListener('change', () =>
+    actions.setMindmapLayout(layoutSelect.value as MindmapLayout)
+  )
+  const mindmapGroup = group(
+    label('表示:'),
+    layoutSelect,
+    button('整列', 'トピックを自動配置し直す', actions.arrangeMindmap)
+  )
+  host.appendChild(mindmapGroup)
+
   host.appendChild(group(button('🗑 削除', '選択を削除 (Delete)', actions.deleteSelection)))
 
+  // 倍率のボタンは記号だけで意味が通るのでラベルを置かない
+  // （「表示:」はマインドマップの表示スタイルで使っており、紛らわしい）
   host.appendChild(
     group(
-      label('表示:'),
       button('－', 'ズームアウト', actions.zoomOut),
       button('100%', '実寸', actions.zoomReset),
       button('＋', 'ズームイン', actions.zoomIn),
@@ -110,16 +141,22 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
       button('WebP', 'WebP で書き出し', () => actions.exportImage('webp'))
     )
   )
+  host.appendChild(group(button('?', 'ショートカット一覧 (?)', actions.showShortcuts)))
 
   const setDiagramType = (type: ToolbarDiagramType): void => {
     typeSelect.value = type
     shapeGroup.hidden = type !== 'activity'
+    mindmapGroup.hidden = type !== 'mindmap'
   }
   const setDecisionShape = (shape: DecisionShape): void => {
     shapeSelect.value = shape
   }
+  const setMindmapLayout = (layout: MindmapLayout): void => {
+    layoutSelect.value = layout
+  }
   setDiagramType('sequence')
   setDecisionShape('diamond')
+  setMindmapLayout('map')
 
-  return { setDiagramType, setDecisionShape }
+  return { setDiagramType, setDecisionShape, setMindmapLayout }
 }

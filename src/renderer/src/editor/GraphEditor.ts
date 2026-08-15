@@ -19,12 +19,16 @@ import {
   FRAME,
   LIFELINE,
   MESSAGE,
+  MINDMAP_MIN_SIZE,
   NOTE,
   SHAPE,
   TEXT,
   Z_BY_KIND,
   isActivityNodeKind,
-  type DecisionShape
+  isMindmapNodeKind,
+  type DecisionShape,
+  type MindmapLayout,
+  DEFAULT_MINDMAP_LAYOUT
 } from './constants'
 import {
   applyDecisionShape,
@@ -48,13 +52,14 @@ import {
 import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
 import { ensureFragmentBg } from './sequence'
 import { markTerminalManual, normalizeBranchPorts, normalizeFlowTargets } from './activity'
+import { applyBranchStyle, arrangeMindmap } from './mindmap'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 
 const ZOOM_MIN = 0.2
 const ZOOM_MAX = 8
 
-export type EditorMode = 'sequence' | 'activity'
+export type EditorMode = 'sequence' | 'activity' | 'mindmap'
 
 /** ドラッグ接続の端点になれるセル種別 */
 const CONNECTABLE_KINDS = new Set([
@@ -66,7 +71,9 @@ const CONNECTABLE_KINDS = new Set([
   'initial',
   'final',
   'fork',
-  'join'
+  'join',
+  'rootTopic',
+  'topic'
 ])
 
 export class GraphEditor {
@@ -75,6 +82,7 @@ export class GraphEditor {
   private normalizing = false
   private mode: EditorMode = 'sequence'
   private decisionShape: DecisionShape = DEFAULT_DECISION_SHAPE
+  private mindmapLayout: MindmapLayout = DEFAULT_MINDMAP_LAYOUT
 
   constructor(container: HTMLElement) {
     registerShapes()
@@ -104,13 +112,18 @@ export class GraphEditor {
         highlight: true,
         anchor: SHAPE.centerlineAnchor,
         connectionPoint: 'anchor',
-        createEdge: () =>
-          this.mode === 'activity'
-            ? graphRef!.createEdge({ shape: SHAPE.flow, data: { kind: 'flow' } })
-            : graphRef!.createEdge({
-                shape: SHAPE.message,
-                data: { kind: 'message', msgKind: 'sync' }
-              }),
+        createEdge: () => {
+          if (this.mode === 'activity') {
+            return graphRef!.createEdge({ shape: SHAPE.flow, data: { kind: 'flow' } })
+          }
+          if (this.mode === 'mindmap') {
+            return graphRef!.createEdge({ shape: SHAPE.branch, data: { kind: 'branch' } })
+          }
+          return graphRef!.createEdge({
+            shape: SHAPE.message,
+            data: { kind: 'message', msgKind: 'sync' }
+          })
+        },
         validateConnection: ({ sourceCell, targetCell }) => {
           const ok = (c: Cell | null | undefined): boolean =>
             CONNECTABLE_KINDS.has(getCellKind(c))
@@ -158,12 +171,14 @@ export class GraphEditor {
               kind === 'frame' ||
               kind === 'text' ||
               kind === 'note' ||
-              isActivityNodeKind(kind)
+              isActivityNodeKind(kind) ||
+              isMindmapNodeKind(kind)
             )
           },
           minWidth: (node: Node) => {
             const kind = getCellKind(node)
             if (isActivityNodeKind(kind)) return ACTIVITY_MIN_SIZE[kind].width
+            if (isMindmapNodeKind(kind)) return MINDMAP_MIN_SIZE[kind].width
             if (kind === 'activation') return 6
             if (kind === 'swimlane') return 120
             if (kind === 'fragment') return FRAGMENT.minWidth
@@ -175,6 +190,7 @@ export class GraphEditor {
           minHeight: (node: Node) => {
             const kind = getCellKind(node)
             if (isActivityNodeKind(kind)) return ACTIVITY_MIN_SIZE[kind].height
+            if (isMindmapNodeKind(kind)) return MINDMAP_MIN_SIZE[kind].height
             if (kind === 'activation') return 24
             if (kind === 'swimlane') return 80
             if (kind === 'fragment') return FRAGMENT.minHeight
@@ -291,93 +307,13 @@ export class GraphEditor {
   private wireInlineEditing(): void {
     const graph = this.graph
 
-    graph.on('node:dblclick', ({ node }: { node: Node }) => {
-      const kind = getCellKind(node)
-      // フラグメント/区切り線はガード（条件）を編集する
-      if (kind === 'fragment' || kind === 'divider') {
-        const bbox = node.getBBox()
-        const isFragment = kind === 'fragment'
-        // 編集欄は実際のガード表示位置（フラグメントはタブの右、区切り線は線の下）に重ねる
-        openInlineEditor(graph, {
-          x: bbox.x + (isFragment ? FRAGMENT.tabWidth : 0) + 60,
-          y:
-            bbox.y +
-            (isFragment
-              ? FRAGMENT.tabHeight / 2
-              : FRAGMENT.dividerHeight / 2 + FRAGMENT.dividerLabelGap + 6),
-          text: isFragment ? getFragmentGuard(node) : getDividerGuard(node),
-          fontSize: 11,
-          minWidth: 120,
-          onCommit: (text) =>
-            isFragment ? setFragmentGuard(node, text) : setDividerGuard(node, text)
-        })
-        return
-      }
-      // フレームはヘッダタブ位置で編集し、確定時にタブ幅を追従させる
-      if (kind === 'frame') {
-        const bbox = node.getBBox()
-        openInlineEditor(graph, {
-          x: bbox.x + 70,
-          y: bbox.y + FRAME.tabHeight / 2,
-          text: getNodeLabel(node),
-          fontSize: 12,
-          minWidth: 120,
-          onCommit: (text) => applyFrameHeader(node, text)
-        })
-        return
-      }
-      // テキスト/ノートは内容を編集し、確定時に高さを追従させる
-      if (kind === 'text' || kind === 'note') {
-        const bbox = node.getBBox()
-        const fallback = kind === 'note' ? NOTE.defaultFontSize : TEXT.defaultFontSize
-        const fontSize = Number(node.attr('label/fontSize')) || fallback
-        openInlineEditor(graph, {
-          x: bbox.x + bbox.width / 2,
-          y: bbox.y + bbox.height / 2,
-          text: getNodeLabel(node),
-          fontSize,
-          minWidth: Math.min(bbox.width, 200),
-          onCommit: (text) => {
-            setNodeLabel(node, text)
-            this.withNormalizing(() => fitTextHeight(node))
-          }
-        })
-        return
-      }
-      if (
-        kind !== 'lifeline' &&
-        kind !== 'action' &&
-        kind !== 'decision' &&
-        kind !== 'swimlane'
-      ) {
-        return
-      }
-      const bbox = node.getBBox()
-      // ラベルの位置: ライフライン/レーンはヘッダ中央、他はノード中央
-      const y =
-        kind === 'lifeline'
-          ? bbox.y + LIFELINE.headHeight / 2
-          : kind === 'swimlane'
-            ? bbox.y + 15
-            : bbox.y + bbox.height / 2
-      openInlineEditor(graph, {
-        x: bbox.x + bbox.width / 2,
-        y,
-        text: getNodeLabel(node),
-        fontSize: kind === 'decision' ? 12 : 13,
-        minWidth: Math.min(bbox.width, 200),
-        onCommit: (text) => {
-          setNodeLabel(node, text)
-          autoSizeNode(node, text)
-        }
-      })
-    })
+    graph.on('node:dblclick', ({ node }: { node: Node }) => this.startLabelEdit(node))
 
     graph.on(
       'edge:dblclick',
       ({ edge, e }: { edge: Edge; e: { clientX: number; clientY: number } }) => {
         const kind = getCellKind(edge)
-        if (kind !== 'message' && kind !== 'flow') return
+        if (kind !== 'message' && kind !== 'flow' && kind !== 'branch') return
         const p = graph.clientToLocal(e.clientX, e.clientY)
         openInlineEditor(graph, {
           x: p.x,
@@ -391,6 +327,94 @@ export class GraphEditor {
 
     // 図の作り直しや読込時は編集を破棄する
     graph.on('cell:removed', () => closeInlineEditor())
+  }
+
+  /**
+   * ノードのラベルをその場で編集する（ダブルクリックと、追加直後の入力に使う）。
+   * 種別ごとに編集欄を重ねる位置と初期値が違う。
+   */
+  startLabelEdit(node: Node): void {
+    const graph = this.graph
+    const kind = getCellKind(node)
+    // フラグメント/区切り線はガード（条件）を編集する
+    if (kind === 'fragment' || kind === 'divider') {
+      const bbox = node.getBBox()
+      const isFragment = kind === 'fragment'
+      // 編集欄は実際のガード表示位置（フラグメントはタブの右、区切り線は線の下）に重ねる
+      openInlineEditor(graph, {
+        x: bbox.x + (isFragment ? FRAGMENT.tabWidth : 0) + 60,
+        y:
+          bbox.y +
+          (isFragment
+            ? FRAGMENT.tabHeight / 2
+            : FRAGMENT.dividerHeight / 2 + FRAGMENT.dividerLabelGap + 6),
+        text: isFragment ? getFragmentGuard(node) : getDividerGuard(node),
+        fontSize: 11,
+        minWidth: 120,
+        onCommit: (text) =>
+          isFragment ? setFragmentGuard(node, text) : setDividerGuard(node, text)
+      })
+      return
+    }
+    // フレームはヘッダタブ位置で編集し、確定時にタブ幅を追従させる
+    if (kind === 'frame') {
+      const bbox = node.getBBox()
+      openInlineEditor(graph, {
+        x: bbox.x + 70,
+        y: bbox.y + FRAME.tabHeight / 2,
+        text: getNodeLabel(node),
+        fontSize: 12,
+        minWidth: 120,
+        onCommit: (text) => applyFrameHeader(node, text)
+      })
+      return
+    }
+    // テキスト/ノートは内容を編集し、確定時に高さを追従させる
+    if (kind === 'text' || kind === 'note') {
+      const bbox = node.getBBox()
+      const fallback = kind === 'note' ? NOTE.defaultFontSize : TEXT.defaultFontSize
+      const fontSize = Number(node.attr('label/fontSize')) || fallback
+      openInlineEditor(graph, {
+        x: bbox.x + bbox.width / 2,
+        y: bbox.y + bbox.height / 2,
+        text: getNodeLabel(node),
+        fontSize,
+        minWidth: Math.min(bbox.width, 200),
+        onCommit: (text) => {
+          setNodeLabel(node, text)
+          this.withNormalizing(() => fitTextHeight(node))
+        }
+      })
+      return
+    }
+    if (
+      kind !== 'lifeline' &&
+      kind !== 'action' &&
+      kind !== 'decision' &&
+      kind !== 'swimlane' &&
+      !isMindmapNodeKind(kind)
+    ) {
+      return
+    }
+    const bbox = node.getBBox()
+    // ラベルの位置: ライフライン/レーンはヘッダ中央、他はノード中央
+    const y =
+      kind === 'lifeline'
+        ? bbox.y + LIFELINE.headHeight / 2
+        : kind === 'swimlane'
+          ? bbox.y + 15
+          : bbox.y + bbox.height / 2
+    openInlineEditor(graph, {
+      x: bbox.x + bbox.width / 2,
+      y,
+      text: getNodeLabel(node),
+      fontSize: kind === 'decision' ? 12 : kind === 'rootTopic' ? 15 : 13,
+      minWidth: Math.min(bbox.width, 200),
+      onCommit: (text) => {
+        setNodeLabel(node, text)
+        autoSizeNode(node, text)
+      }
+    })
   }
 
   // ---- シーケンス図の編集挙動 ----
@@ -414,6 +438,9 @@ export class GraphEditor {
           { name: 'source-arrowhead' },
           { name: 'target-arrowhead' }
         ])
+      } else if (kind === 'branch') {
+        // 枝は親子の付け替えだけできれば十分（形は整列が決める）
+        edge.addTools([{ name: 'source-arrowhead' }, { name: 'target-arrowhead' }])
       }
     })
     graph.on('edge:unselected', ({ edge }: { edge: Edge }) => {
@@ -431,6 +458,18 @@ export class GraphEditor {
       'edge:connected',
       ({ edge, e }: { edge: Edge; e: { clientX: number; clientY: number } }) => {
         const kind = getCellKind(edge)
+        if (kind === 'branch') {
+          // 親から見た子の側で枝の形を決める（整列するまでの暫定）
+          const source = edge.getSourceCell()
+          const target = edge.getTargetCell()
+          if (source?.isNode() && target?.isNode()) {
+            const side =
+              target.getBBox().center.x < source.getBBox().center.x ? 'left' : 'right'
+            this.withNormalizing(() => applyBranchStyle(edge, this.mindmapLayout, side))
+          }
+          graph.select(edge)
+          return
+        }
         if (kind === 'flow') {
           for (const side of ['source', 'target'] as const) {
             const terminal = side === 'source' ? edge.getSource() : edge.getTarget()
@@ -710,6 +749,35 @@ export class GraphEditor {
 
   getMode(): EditorMode {
     return this.mode
+  }
+
+  // ---- マインドマップ ----
+
+  getMindmapLayout(): MindmapLayout {
+    return this.mindmapLayout
+  }
+
+  /** 表示スタイル（マップ / ツリー）を切り替え、その配置に並べ直す */
+  setMindmapLayout(layout: MindmapLayout): void {
+    this.mindmapLayout = layout
+    this.arrangeMindmap()
+  }
+
+  /**
+   * 表示スタイルを記録するだけで並べ直さない（読み込み時用）。
+   * 保存ファイルの座標はユーザーが動かした結果なので、開いた瞬間に整列させない。
+   */
+  restoreMindmapLayout(layout: MindmapLayout): void {
+    this.mindmapLayout = layout
+  }
+
+  /**
+   * トピックを自動配置する。生成時と「整列」操作でだけ呼ぶ（それ以外では
+   * ユーザーが動かした位置を保つ）。
+   */
+  arrangeMindmap(origin?: { x: number; y: number }): void {
+    this.batch(() => arrangeMindmap(this.graph, this.mindmapLayout, origin))
+    this.refreshScrollArea()
   }
 
   batch(fn: () => void): void {

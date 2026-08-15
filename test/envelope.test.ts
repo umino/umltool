@@ -21,6 +21,11 @@ describe('project envelope', () => {
     expect(env.diagramType).toBe('activity')
   })
 
+  it('mindmap 図種別を保持する', () => {
+    const env = parseEnvelope(wrapEnvelope({ cells: [] }, 'mindmap'))
+    expect(env.diagramType).toBe('mindmap')
+  })
+
   it('不正な JSON でエラー', () => {
     expect(() => parseEnvelope('{not json')).toThrow(/JSON/)
   })
@@ -65,6 +70,22 @@ describe('プロジェクト設定（settings）', () => {
       graph: { cells: [] }
     })
     expect(parseEnvelope(legacy).settings.decisionShape).toBe('diamond')
+  })
+
+  it('マインドマップの表示スタイルが往復する', () => {
+    const text = wrapEnvelope({ cells: [] }, 'mindmap', { mindmapLayout: 'outline' })
+    expect(parseEnvelope(text).settings.mindmapLayout).toBe('outline')
+  })
+
+  it('表示スタイルが無い旧ファイルは map になる', () => {
+    const legacy = JSON.stringify({
+      format: 'umltool-project',
+      version: 2,
+      diagramType: 'mindmap',
+      settings: { decisionShape: 'diamond' },
+      graph: { cells: [] }
+    })
+    expect(parseEnvelope(legacy).settings.mindmapLayout).toBe('map')
   })
 
   it('未知の分岐図形は既定値に倒す', () => {

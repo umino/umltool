@@ -3,7 +3,7 @@
 [日本語](README.md) | English
 
 A WYSIWYG UML diagramming tool where you can freely place and wire elements, Visio-style.
-Supports sequence diagrams and activity diagrams. A serverless Electron desktop app.
+Supports sequence diagrams, activity diagrams, and mind maps. A serverless Electron desktop app.
 
 - Engine: [AntV X6](https://github.com/antvis/X6) v3 + Electron + TypeScript (electron-vite)
 - **One-way initial generation** from text (a PlantUML subset) — after generation, adjust everything freely in the GUI
@@ -29,7 +29,8 @@ $env:UMLTOOL_DIAG='1'; npx electron-vite preview
 ```
 
 Verifies diagram generation, export in all three formats, save⇄load round-trips, and editing behavior,
-then writes `diag-output.png` (activity diagram) and `diag-output-seq.png` (sequence diagram).
+then writes `diag-output.png` (activity diagram), `diag-output-seq.png` (sequence diagram),
+and `diag-output-mindmap.png` (mind map).
 
 ## Usage
 
@@ -45,6 +46,7 @@ then writes `diag-output.png` (activity diagram) and `diag-output-seq.png` (sequ
 | Copy / cut / paste | Ctrl+C / Ctrl+X / Ctrl+V (paste places elements slightly offset) |
 | Select all | Ctrl+A |
 | Delete | Delete / Backspace, or the 🗑 toolbar button |
+| Shortcut list | **?** (or F1, or the toolbar's "?"). It overlays the diagram semi-transparently and closes with Esc / ? / a click. The keys shown follow the current diagram type |
 | Add elements | Click an icon in the "部品" (parts) tab in the left pane |
 | Text (attached) | The "テキスト" palette item. Attaches to the selected lifeline (linked by a dashed connector, follows it when moved; sequence diagrams). Double-click to edit; set font size, bold, and color in the right panel; drag the handle to change width (auto-wraps) |
 | Note | The "ノート" palette item. A top-left dog-eared sticky note, freely placed anywhere (both diagram types). Editing and styling work like text |
@@ -58,7 +60,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 
 - Selecting an element reveals an "**外観**" (appearance) section in the right panel, showing only the properties that shape can carry (initial/final/fork nodes have a background colour only; merge has background and line colour)
 - **The colour picker combines presets with free input**: click one of the swatches to apply it immediately, or use the colour box on the left to pick any colour
-- Supported: lifeline / activation bar / fragment / action / decision / merge / initial / final / fork / join / swimlane / frame / text / note
+- Supported: lifeline / activation bar / fragment / action / decision / merge / initial / final / fork / join / swimlane / frame / text / note / central topic / topic
 
 ### Sequence diagrams
 
@@ -86,6 +88,38 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - **Node resizing**: action / decision / merge / initial / final / fork / join nodes show handles when selected, and can also be sized via the "幅" and "高さ" fields in the right panel (initial and final keep a fixed aspect ratio so they stay circular). Actions and decisions normally auto-size to their label; resizing one manually pins that size instead. Use "サイズを自動に戻す" in the right panel to restore the automatic behaviour
 - **Frames (containers)**: the "フレーム" palette item. A transparent frame with a header tab in the top-left corner; nodes inside remain fully interactive. Drag the border or header to move, select to resize, and edit the header via the right panel or double-click (the tab width follows the text)
 - New nodes are added at the **center of the current view** (consecutive additions are offset slightly)
+
+### Mind maps
+
+- Switch to "マインドマップ" in the toolbar's diagram-type selector
+- **Two presentations**, chosen with "表示:" in the toolbar. Both redraw the same tree; the content never changes
+  - **マインドマップ** (mind map): radiates left and right from the central topic. First-level children are split between the two sides so the sub-trees balance; deeper topics extend on the same side as their parent
+  - **ツリー** (tree): one topic per row, indented by depth, like a file explorer tree. A branch always drops straight down from its parent, turns a right angle, and enters the child's left edge — the L stays intact even after topics are moved by hand
+- **Automatic layout only where you ask for it**: topics are placed automatically when a diagram is generated from text and when you press "整列" (arrange) or switch the presentation. Otherwise every topic can be dragged freely and stays where you put it
+- **Everything can be done from the keyboard.** Press **?** for the translucent overlay listing every binding; the mind-map keys are also always visible under the palette tab
+
+| Key | Action |
+|---|---|
+| ↑ / ↓ | Move to the previous / next sibling (to the previous / next row in the tree presentation). When siblings run out, it continues to the neighbour at the same depth and on the same side |
+| ← / → | Move to the parent / child. In the mind-map presentation this **follows the direction of the branch** (→ is "child" on branches that extend right, ← is "child" on branches that extend left). In the tree presentation ← is always the parent and → always a child |
+| Home | Move to the root |
+| Tab | Add a child topic |
+| Enter | Add a sibling topic |
+| F2 | Rename |
+| Space | Collapse / expand |
+| Ctrl + ↑↓←→ | Move the topic itself by 8px (40px with Shift) |
+| 1 – 6 | Recolour (blue / green / yellow / red / purple / grey) |
+| 0 | Reset the colour to the depth-based default |
+| B | Bold |
+| + / - | Change the font size (the node is re-measured to fit) |
+| Delete | Delete |
+
+- Navigation and styling act on the **selected topics**; pressing an arrow with nothing selected selects the root, and styling applies to every selected topic at once
+- After Tab / Enter you can type the name straight away. The same actions are available from the "子トピック" / "兄弟トピック" / "折りたたみ" palette items
+- **Create a branch**: drag from a topic's connection port (the circles on each side), or use the "枝" palette item (with 2 topics selected, the first becomes the parent). Dragging the endpoint handles of a selected branch re-parents it
+- **Collapsing** only hides descendants; nothing moves. Press "整列" to close the gap
+- Several roots (topics with no parent) are allowed; arranging stacks them vertically
+- Topic colours follow their depth, but can be changed at any time in the right panel's 外観 section — arranging never overwrites them
 
 ## Text generation (PlantUML subset)
 
@@ -152,6 +186,31 @@ stop
 
 Comments start with `'`, `#`, or `//`. `@startuml` / `@enduml` / `title` are ignored.
 
+### Mind maps
+
+Two notations are accepted: **PlantUML mindmap style**, where the number of leading `*`
+gives the depth, and plain **indentation**. Mixing the two in one text is an error.
+
+```
+* Website relaunch
+** Planning
+*** Competitor research
+** Development
+```
+
+```
+Website relaunch
+  Planning
+    Competitor research
+  Development
+```
+
+- `*`, `+`, and `-` all work as markers, but they only carry **depth** (PlantUML's `-` for "put this on the left" is ignored, since the tool balances the two sides itself)
+- One indentation level is as wide as the first indented line (a tab counts as 4 columns). Lines that are not a multiple of it are an error
+- `\n` inside a label becomes a line break; decorations such as `*[#color]` are skipped
+- Skipping more than one level of depth is an error. Several lines at depth 0 produce several roots
+- Comments start with `'` or `//`. `@startmindmap` / `@endmindmap` / `title` are ignored
+
 ## The `.umlproj` file format
 
 ```json
@@ -159,9 +218,13 @@ Comments start with `'`, `#`, or `//`. `@startuml` / `@enduml` / `title` are ign
   "format": "umltool-project",
   "version": 2,
   "diagramType": "sequence",
+  "settings": { "decisionShape": "diamond", "mindmapLayout": "map" },
   "graph": { "cells": [] }
 }
 ```
+
+`diagramType` is one of `sequence` / `activity` / `mindmap`. `settings` holds whole-diagram
+options; anything missing from an older file falls back to its default.
 
 Version 1 files (the XML format of the old maxGraph implementation) cannot be loaded (an explicit error is shown).
 

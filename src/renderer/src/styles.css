@@ -25,6 +25,8 @@ body,
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  /* ショートカット一覧のオーバーレイを重ねる基準 */
+  position: relative;
 }
 
 #toolbar {
@@ -48,6 +50,11 @@ body,
 
 #toolbar .group:last-child {
   border-right: none;
+}
+
+/* 図種別ごとに出し入れするグループ（display 指定が [hidden] より強いので明示する） */
+#toolbar .group[hidden] {
+  display: none;
 }
 
 #toolbar button {
@@ -186,6 +193,125 @@ body,
   font-size: 11px;
   color: var(--text);
   white-space: nowrap;
+}
+
+/* ショートカット一覧（部品パレットの下 / ? キーのオーバーレイで共用） */
+.shortcut-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.shortcut-combo {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 108px;
+}
+
+.shortcut-sep {
+  color: var(--muted);
+}
+
+.shortcut-label {
+  color: var(--muted);
+}
+
+.shortcut-row kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* パレット下の常設ヘルプ */
+.palette-keys {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.palette-keys-more {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+/* ? キーで開く一覧。図を透かして見せたいので背景は半透明にする */
+.shortcut-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(29, 35, 48, 0.28);
+  backdrop-filter: blur(1.5px);
+}
+
+.shortcut-overlay[hidden] {
+  display: none;
+}
+
+.shortcut-panel {
+  /* 幅を決めておかないと中身に合わせて縮み、グループが 1 列に潰れる */
+  width: min(940px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 18px 22px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+}
+
+.shortcut-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.shortcut-heading {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.shortcut-subtitle {
+  color: var(--muted);
+}
+
+.shortcut-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px 32px;
+  align-items: start;
+}
+
+.shortcut-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  text-align: right;
 }
 
 #text-input {
