@@ -120,7 +120,11 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 
 - Navigation and styling act on the **selected topics**; pressing an arrow with nothing selected selects the root, and styling applies to every selected topic at once
 - After Tab / Enter you can type the name straight away. The same actions are available from the "子トピック" / "兄弟トピック" / "折りたたみ" palette items
-- **Create a branch**: drag from a topic's connection port (the circles on each side), or use the "枝" palette item (with 2 topics selected, the first becomes the parent). Dragging the endpoint handles of a selected branch re-parents it
+- **Create a branch** (a branch *is* the parent/child relation — use it to attach a topic you created off to the side):
+  - **Drag** from a topic's connection port (the circles on each side) onto another topic. **The topic you drag from becomes the parent**, the one you drop on becomes the child
+  - **The "枝でつなぐ" palette item**: select the parent first, then the child, and press it. With a single topic selected, the nearest topic that has no parent yet becomes its child
+  - Connections that would break the tree are refused (giving a second parent to a topic, or connecting in a direction that would form a loop). To change a parent, cut and paste instead (Ctrl+X → Ctrl+V)
+  - An existing branch can also be re-attached by selecting it and dragging its endpoint handles
 - **Re-parenting (cut & paste)**: press Ctrl+X, select the new parent, press Ctrl+V — the whole sub-tree moves under it. A cut only detaches the branch, so nothing disappears if you never paste (dashed, faded topics are the ones being cut; Esc puts them back). Pasting into the topic itself or into its own descendants is refused
   - To **insert a topic between a topic and its parent**: Ctrl+X on the topic, select the parent, Tab for a new topic, Ctrl+V
   - Ctrl+C duplicates a sub-tree instead of moving it (colours and collapsed state included)

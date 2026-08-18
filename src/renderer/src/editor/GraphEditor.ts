@@ -52,7 +52,7 @@ import {
 import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
 import { ensureFragmentBg } from './sequence'
 import { markTerminalManual, normalizeBranchPorts, normalizeFlowTargets } from './activity'
-import { applyBranchStyle, arrangeMindmap } from './mindmap'
+import { applyBranchStyle, arrangeMindmap, checkBranch } from './mindmap'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 
@@ -124,10 +124,16 @@ export class GraphEditor {
             data: { kind: 'message', msgKind: 'sync' }
           })
         },
-        validateConnection: ({ sourceCell, targetCell }) => {
+        validateConnection: ({ edge, sourceCell, targetCell }) => {
           const ok = (c: Cell | null | undefined): boolean =>
             CONNECTABLE_KINDS.has(getCellKind(c))
-          return ok(sourceCell) && ok(targetCell)
+          if (!ok(sourceCell) || !ok(targetCell)) return false
+          // 枝は「親 → 子」の木なので、二重の親や輪になる繋ぎ方は受け付けない
+          if (this.mode === 'mindmap') {
+            if (!sourceCell?.isNode() || !targetCell?.isNode()) return false
+            return checkBranch(graphRef!, sourceCell, targetCell, edge?.id).ok
+          }
+          return true
         }
       }
     })

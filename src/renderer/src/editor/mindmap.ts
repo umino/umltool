@@ -460,3 +460,30 @@ export function markSubtreeCut(graph: Graph, root: Node, cut: boolean): void {
     edge.attr('line/opacity', cut ? 0.55 : null)
   }
 }
+
+/**
+ * parent → child の枝を張ってよいか。理由付きで返す。
+ *
+ * 「既に親がいる子」を二重に繋ぐと 2 本目は木に反映されず（最初の 1 本だけを
+ * 親とみなす）、消えない線だけが残るので断る。輪になる組み合わせも同じく断る。
+ * ignoreEdgeId には既存の枝を繋ぎ替えるときにその枝の id を渡す。
+ */
+export function checkBranch(
+  graph: Graph,
+  parent: Node,
+  child: Node,
+  ignoreEdgeId?: string
+): ReparentCheck {
+  if (parent.id === child.id) {
+    return { ok: false, reason: '同じトピック同士は繋げません。' }
+  }
+  const tree = mindmapTree(graph)
+  const current = tree.branchOf.get(child.id)
+  if (current !== undefined && current.id !== ignoreEdgeId) {
+    return {
+      ok: false,
+      reason: 'そのトピックには既に親がいます。付け替えは Ctrl+X → 新しい親を選んで Ctrl+V。'
+    }
+  }
+  return canReparent(tree.childrenOf, child.id, parent.id)
+}

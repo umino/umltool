@@ -215,8 +215,11 @@ function mindmapItems(a: PaletteActions): PaletteItem[] {
       onClick: a.addSiblingTopic
     },
     {
-      label: '枝',
-      title: '選択中の 2 トピックを親子で繋ぐ（1 つ選択なら最寄りへ）',
+      label: '枝でつなぐ',
+      title:
+        '離れたトピック同士を親子にする。' +
+        '「親にするトピック → 子にするトピック」の順に選んでから押します' +
+        '（1 つだけ選んだときは、近くにある親のいないトピックが子になります）',
       icon:
         `<path d="M 6 24 C 16 24 18 8 32 8" fill="none" stroke="${C.gray}" stroke-width="1.8"/>` +
         `<circle cx="6" cy="24" r="3" fill="${C.gray}"/>` +

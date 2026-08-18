@@ -22,6 +22,7 @@ import {
   applyTopicPalette,
   attachAsChild,
   canMoveTopic,
+  checkBranch,
   childTopics,
   cloneSubtree,
   detachFromParent,
@@ -1513,6 +1514,49 @@ B --> A : 返す`
                 mindmap['cutPaste'] = 'skipped'
               }
             }
+
+            // パレットの「枝でつなぐ」: 選択順に親 → 子の枝が 1 本だけ張られる
+            {
+              const btn = [
+                ...document.querySelectorAll('#palette-body .palette-item')
+              ].find(
+                (b) => b.querySelector('.palette-label')?.textContent === '枝でつなぐ'
+              ) as HTMLButtonElement | undefined
+              const click = async (): Promise<void> => {
+                btn?.click()
+                await new Promise((r) => setTimeout(r, 60))
+              }
+              const parent = mm.childTopics(graph, root)[0]
+              const loose = mm.addTopic(graph, '浮いたトピック', {
+                centerX: parent.getBBox().center.x,
+                centerY: parent.getBBox().center.y + 240
+              })
+              const edges = graph.getEdges().length
+
+              graph.resetSelection([parent, loose])
+              await click()
+              const linked = mm.parentTopic(graph, loose)?.id === parent.id
+              // 枝以外（メッセージ等）が混ざっていないこと
+              const branchOnly =
+                graph.getEdges().length === edges + 1 &&
+                graph.getEdges().every((e) => getCellKind(e) === 'branch')
+
+              // 既に親がいる子へ二重に張らない
+              graph.resetSelection([root, loose])
+              await click()
+              const noDouble = graph.getEdges().length === edges + 1
+
+              // 輪になる向き（子孫 → 祖先）も断る
+              graph.resetSelection([loose, root])
+              await click()
+              const noCycle = graph.getEdges().length === edges + 1
+
+              mindmap['branchTile'] =
+                btn !== undefined && linked && branchOnly && noDouble && noCycle
+                  ? 'ok'
+                  : `ng(btn=${btn !== undefined}, linked=${linked}, branchOnly=${branchOnly}, double=${noDouble}, cycle=${noCycle})`
+              graph.removeCells([loose])
+            }
             graph.cleanSelection()
           }
         }
@@ -1741,18 +1785,41 @@ B --> A : 返す`
     }
   }
 
-  // ---- メッセージ / フロー追加（選択ベース） ----
+  // ---- メッセージ / フロー / 枝の追加（選択ベース） ----
   private addConnection(): void {
     const graph = this.editor.graph
-    const resolved = resolveConnectionEndpoints(graph, this.editor.getMode())
+    const mode = this.editor.getMode()
+    const resolved = resolveConnectionEndpoints(graph, mode)
     if ('error' in resolved) {
       this.setStatusMessage(resolved.error)
       return
     }
     const { source, target } = resolved
+
+    // マインドマップは「親 → 子」の枝。木を壊す繋ぎ方は理由を出して断る
+    if (mode === 'mindmap') {
+      const check = checkBranch(graph, source, target)
+      if (!check.ok) {
+        this.setStatusMessage(check.reason)
+        return
+      }
+      let branch: Edge | null = null
+      this.editor.batch(() => {
+        branch = attachAsChild(graph, source, target, this.editor.getMindmapLayout())
+      })
+      if (branch) {
+        graph.resetSelection(branch)
+        this.editor.ensureCellVisible(branch)
+      }
+      this.setStatusMessage(
+        `「${getNodeLabel(source)}」の子として「${getNodeLabel(target)}」を繋ぎました。`
+      )
+      return
+    }
+
     let created: ReturnType<typeof addMessage> | null = null
     this.editor.batch(() => {
-      if (this.editor.getMode() === 'activity') {
+      if (mode === 'activity') {
         created = addFlow(graph, source, target)
       } else {
         created = addMessage(graph, source, target, 'sync', '', { y: nextMessageY(graph) })
