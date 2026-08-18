@@ -107,6 +107,10 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 | Enter | Add a sibling topic |
 | F2 | Rename |
 | Space | Collapse / expand |
+| Ctrl + X | Cut the topic **together with its descendants** (detaches the branch to its parent; the nodes stay on the canvas) |
+| Ctrl + C | Copy the topic **together with its descendants** |
+| Ctrl + V | Paste what was cut or copied **as a child of the selected topic** |
+| Esc | Cancel the cut / copy (a cut is re-attached to its former parent) |
 | Ctrl + ↑↓←→ | Move the topic itself by 8px (40px with Shift) |
 | 1 – 6 | Recolour (blue / green / yellow / red / purple / grey) |
 | 0 | Reset the colour to the depth-based default |
@@ -117,6 +121,9 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - Navigation and styling act on the **selected topics**; pressing an arrow with nothing selected selects the root, and styling applies to every selected topic at once
 - After Tab / Enter you can type the name straight away. The same actions are available from the "子トピック" / "兄弟トピック" / "折りたたみ" palette items
 - **Create a branch**: drag from a topic's connection port (the circles on each side), or use the "枝" palette item (with 2 topics selected, the first becomes the parent). Dragging the endpoint handles of a selected branch re-parents it
+- **Re-parenting (cut & paste)**: press Ctrl+X, select the new parent, press Ctrl+V — the whole sub-tree moves under it. A cut only detaches the branch, so nothing disappears if you never paste (dashed, faded topics are the ones being cut; Esc puts them back). Pasting into the topic itself or into its own descendants is refused
+  - To **insert a topic between a topic and its parent**: Ctrl+X on the topic, select the parent, Tab for a new topic, Ctrl+V
+  - Ctrl+C duplicates a sub-tree instead of moving it (colours and collapsed state included)
 - **Collapsing** only hides descendants; nothing moves. Press "整列" to close the gap
 - Several roots (topics with no parent) are allowed; arranging stacks them vertically
 - Topic colours follow their depth, but can be changed at any time in the right panel's 外観 section — arranging never overwrites them

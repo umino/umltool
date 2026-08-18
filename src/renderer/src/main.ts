@@ -20,10 +20,16 @@ import {
   addTopic,
   applyTopicLevelStyle,
   applyTopicPalette,
+  attachAsChild,
+  canMoveTopic,
   childTopics,
+  cloneSubtree,
+  detachFromParent,
   isCollapsed,
   isTopic,
+  markSubtreeCut,
   mindmapNavNodes,
+  moveSubtree,
   parentTopic,
   setCollapsed,
   topicDepth,
@@ -126,6 +132,14 @@ const SAMPLE_TEXT: Record<DiagramType, string> = {
   mindmap: SAMPLE_MINDMAP
 }
 
+/**
+ * 切り取り / コピー中のサブツリー。
+ * 切り取りは元の親を覚えておき、Esc で繋ぎ直せるようにする。
+ */
+type MindmapClip =
+  | { mode: 'cut'; rootId: string; formerParentId: string | null }
+  | { mode: 'copy'; rootId: string }
+
 class AppController {
   private readonly editor: GraphEditor
   private readonly toolbar: ToolbarHandle
@@ -133,6 +147,8 @@ class AppController {
   private currentPath: string | null = null
   private dirty = false
   private diagramType: DiagramType = 'sequence'
+  /** マインドマップの付け替え用クリップボード（図をまたいでは持ち越さない） */
+  private mindmapClip: MindmapClip | null = null
 
   private readonly shortcuts = buildShortcutOverlay(document.getElementById('app') as HTMLElement)
 
@@ -1437,6 +1453,66 @@ B --> A : 返す`
                   ? 'ok'
                   : `ng(color=${colored}, bold=${bold}/${unbold}, size=${bigger}/${restored}, reset=${reset})`
             }
+
+            // サブツリーの切り取り / 貼り付け（トピックの付け替え）
+            {
+              const kids = mm.childTopics(graph, root)
+              const src = kids.find((n) => mm.childTopics(graph, n).length >= 1)
+              const dst = kids.find((n) => src !== undefined && n.id !== src.id)
+              if (src && dst) {
+                const subtree = mm.subtreeTopics(graph, src).length
+                const total = graph.getNodes().length
+
+                graph.resetSelection(src)
+                await key('x', { ctrlKey: true })
+                const detached = mm.parentTopic(graph, src) === null
+                const marked = src.attr('body/strokeDasharray') !== undefined
+                const kept = mm.subtreeTopics(graph, src).length === subtree
+
+                // 自分の子孫の下へは貼れない（木が輪になる）
+                graph.resetSelection(mm.subtreeTopics(graph, src)[1])
+                await key('v', { ctrlKey: true })
+                const refused = mm.parentTopic(graph, src) === null
+
+                graph.resetSelection(dst)
+                await key('v', { ctrlKey: true })
+                const moved = mm.parentTopic(graph, src)?.id === dst.id
+                const unmarked = src.attr('body/strokeDasharray') === undefined
+                const sameCount = graph.getNodes().length === total
+
+                // コピーはルートの下に複製が増える（元は動かない）
+                graph.resetSelection(src)
+                await key('c', { ctrlKey: true })
+                graph.resetSelection(root)
+                await key('v', { ctrlKey: true })
+                const copyRoot = graph.getSelectedCells()[0] as Node | undefined
+                const copyOk =
+                  graph.getNodes().length === total + subtree &&
+                  copyRoot !== undefined &&
+                  copyRoot.id !== src.id &&
+                  mm.parentTopic(graph, copyRoot)?.id === root.id &&
+                  mm.parentTopic(graph, src)?.id === dst.id
+
+                // Esc で切り取りを取り消すと元の親へ戻る
+                graph.resetSelection(src)
+                await key('x', { ctrlKey: true })
+                await key('Escape')
+                const undone =
+                  mm.parentTopic(graph, src)?.id === dst.id &&
+                  src.attr('body/strokeDasharray') === undefined
+
+                mindmap['cutPaste'] =
+                  detached && marked && kept && refused && moved && unmarked && sameCount &&
+                  copyOk && undone
+                    ? 'ok'
+                    : `ng(detach=${detached}, mark=${marked}, kept=${kept}, refuse=${refused}, move=${moved}, unmark=${unmarked}, count=${sameCount}, copy=${copyOk}, esc=${undone})`
+
+                // 複製は後続のテストに混ざらないよう片付ける
+                if (copyRoot) graph.removeCells(mm.subtreeTopics(graph, copyRoot))
+              } else {
+                mindmap['cutPaste'] = 'skipped'
+              }
+            }
             graph.cleanSelection()
           }
         }
@@ -1548,6 +1624,8 @@ B --> A : 返す`
 
   /** エディタ・ツールバー・パレット・内部状態の図種別を揃える（クリアはしない） */
   private applyDiagramType(type: DiagramType): void {
+    // 図が入れ替わると控えていたトピックの id は無効になる
+    this.mindmapClip = null
     this.diagramType = type
     this.editor.setMode(type)
     this.toolbar.setDiagramType(type)
@@ -1580,6 +1658,7 @@ B --> A : 返す`
 
   // ---- テキスト → 図 ----
   private generate(): void {
+    this.mindmapClip = null
     this.textError.textContent = ''
     try {
       if (this.diagramType === 'activity') {
@@ -1876,6 +1955,118 @@ B --> A : 返す`
     }
   }
 
+  // ---- サブツリーの切り取り / 貼り付け（トピックの付け替え） ----
+  //
+  // 親子は枝なので、付け替えは「枝を外して張り直す」だけで済む。切り取りは
+  // ノードを消さずに枝だけ外すので、貼り付けを忘れても図からトピックは消えない
+  // （枝を持たない = 独立したルートとして残る）。Esc で元の親へ戻せる。
+
+  /** Ctrl+X: 選択トピックとその子孫を親から切り離して貼り付け待ちにする */
+  private cutTopicSubtree(): boolean {
+    const graph = this.editor.graph
+    const root = this.selectedTopic()
+    if (!root) {
+      // ノートなど、トピック以外を選んでいるなら共通のクリップボードに任せる
+      if (!this.editor.isSelectionEmpty()) return false
+      this.setStatusMessage('切り取るトピックを選択してください。')
+      return true
+    }
+    this.cancelTopicCut()
+    let formerParentId: string | null = null
+    this.editor.batch(() => {
+      formerParentId = detachFromParent(graph, root)
+      markSubtreeCut(graph, root, true)
+      updateMindmapVisibility(graph)
+    })
+    this.mindmapClip = { mode: 'cut', rootId: root.id, formerParentId }
+    this.setStatusMessage(
+      '切り取りました。貼り付け先のトピックを選んで Ctrl+V（Esc で元へ戻す）。'
+    )
+    return true
+  }
+
+  /** Ctrl+C: 選択トピックとその子孫を複製元として覚える */
+  private copyTopicSubtree(): boolean {
+    const root = this.selectedTopic()
+    if (!root) return false // トピック以外は共通のクリップボードに任せる
+    this.cancelTopicCut()
+    this.mindmapClip = { mode: 'copy', rootId: root.id }
+    this.setStatusMessage('コピーしました。貼り付け先のトピックを選んで Ctrl+V。')
+    return true
+  }
+
+  /** Ctrl+V: 覚えているサブツリーを、選択トピックの子として繋ぐ */
+  private pasteTopicSubtree(): boolean {
+    const clip = this.mindmapClip
+    if (!clip) return false // マインドマップの切り取りが無ければ共通の貼り付けへ
+    const graph = this.editor.graph
+    const source = graph.getCellById(clip.rootId)
+    if (!source?.isNode() || !isTopic(source)) {
+      this.mindmapClip = null
+      this.setStatusMessage('切り取ったトピックが見つかりません。')
+      return true
+    }
+    const target = this.selectedTopic()
+    if (!target) {
+      this.setStatusMessage('貼り付け先のトピックを選択してください。')
+      return true
+    }
+    // 移動は木が輪になり得るので確認する（複製は別のノードになるので起こらない）
+    if (clip.mode === 'cut') {
+      const check = canMoveTopic(graph, source, target)
+      if (!check.ok) {
+        this.setStatusMessage(check.reason)
+        return true
+      }
+    }
+
+    const spot = this.nextTopicPlacement(target)
+    let pasted: Node | null = null
+    this.editor.batch(() => {
+      if (clip.mode === 'cut') markSubtreeCut(graph, source, false)
+      const moving = clip.mode === 'copy' ? cloneSubtree(graph, source) : source
+      const center = moving.getBBox().center
+      moveSubtree(graph, moving, spot.x - center.x, spot.y - center.y)
+      attachAsChild(graph, target, moving, this.editor.getMindmapLayout())
+      pasted = moving
+    })
+    this.mindmapClip = null
+    if (pasted) {
+      graph.resetSelection(pasted)
+      this.editor.ensureCellVisible(pasted)
+    }
+    this.setStatusMessage(
+      clip.mode === 'cut' ? 'トピックを移しました。' : 'トピックを複製しました。'
+    )
+    return true
+  }
+
+  /** Esc: 控えている切り取り / コピーを取り消す。控えが無ければ false */
+  private cancelTopicCut(): boolean {
+    const clip = this.mindmapClip
+    this.mindmapClip = null
+    if (!clip) return false
+    if (clip.mode === 'copy') {
+      this.setStatusMessage('コピーを取り消しました。')
+      return true
+    }
+    this.setStatusMessage('切り取りを取り消しました。')
+
+    const graph = this.editor.graph
+    const root = graph.getCellById(clip.rootId)
+    if (!root?.isNode() || !isTopic(root)) return true
+    this.editor.batch(() => {
+      markSubtreeCut(graph, root, false)
+      const parentId = clip.formerParentId
+      const parent = parentId === null ? null : graph.getCellById(parentId)
+      // 切り取ったあとに別の親へ繋がれていたら、そのままにする
+      if (parent?.isNode() && isTopic(parent) && parentTopic(graph, root) === null) {
+        attachAsChild(graph, parent, root, this.editor.getMindmapLayout())
+      }
+    })
+    return true
+  }
+
   /** 選択中のトピック（1 つも選ばれていなければ null） */
   private selectedTopic(): Node | null {
     return this.selectedTopics()[0] ?? null
@@ -2152,6 +2343,7 @@ B --> A : 返す`
 
   /** 図をクリアして未保存状態に戻す（確認はしない） */
   private newProject(): void {
+    this.mindmapClip = null
     this.editor.clear()
     this.currentPath = null
     this.setDirty(false)
@@ -2269,12 +2461,38 @@ B --> A : 返す`
     }
     const direction = ARROWS[e.key]
 
+    // Ctrl+X / C / V はサブツリー（トピック＋子孫）の切り取り・複製・貼り付け。
+    // 対象がトピックでなければ false を返し、共通のクリップボードへ回す。
+    if (e.ctrlKey && !e.altKey && !e.shiftKey) {
+      const key = e.key.toLowerCase()
+      const handler =
+        key === 'x'
+          ? (): boolean => this.cutTopicSubtree()
+          : key === 'c'
+            ? (): boolean => this.copyTopicSubtree()
+            : key === 'v'
+              ? (): boolean => this.pasteTopicSubtree()
+              : null
+      if (handler) {
+        if (!handler()) return false
+        e.preventDefault()
+        return true
+      }
+    }
+
     // Ctrl + 矢印はトピック自体の移動。マウスを使わずに配置を直せるようにする
-    // （Ctrl+C/V などの共通ショートカットは触らずに素通しする）
+    // （Ctrl+Z などの共通ショートカットは触らずに素通しする）
     if (e.ctrlKey || e.altKey) {
       if (direction === undefined || e.altKey) return false
       e.preventDefault()
       this.nudgeTopics(direction, e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP)
+      return true
+    }
+
+    // Esc は切り取り / コピーの取り消し（何も控えていなければ他の処理へ通す）
+    if (e.key === 'Escape') {
+      if (!this.cancelTopicCut()) return false
+      e.preventDefault()
       return true
     }
 

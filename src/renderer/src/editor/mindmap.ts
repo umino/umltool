@@ -25,6 +25,7 @@ import {
   type MindmapOrigin,
   type MindmapSide
 } from '../text/mindmapLayout'
+import { subtreeIds, canReparent, type ReparentCheck } from '../text/mindmapTree'
 import type { NavNode } from '../text/mindmapNav'
 
 export interface TopicOptions {
@@ -349,5 +350,113 @@ export function arrangeMindmap(
     }
     edge.show()
     applyBranchStyle(edge, layout, placementOf.get(childId)?.side ?? 'right')
+  }
+}
+
+// ---- サブツリーの切り取り / 貼り付け ----
+//
+// 親子は枝なので、木の付け替えは「枝を外して張り直す」だけで済む。
+// 切り取りはノードを消さずに枝だけ外すので、貼り付けを忘れても図から
+// トピックが消えることはない（枝を持たない = 独立したルートとして残る）。
+
+/** 枝の見た目に使う左右。親より左にあれば左側の枝とみなす */
+function branchSide(parent: Node, child: Node): MindmapSide {
+  return child.getBBox().center.x < parent.getBBox().center.x ? 'left' : 'right'
+}
+
+/** node とその子孫のトピックを親 → 子の順で返す */
+export function subtreeTopics(graph: Graph, root: Node): Node[] {
+  const tree = mindmapTree(graph)
+  return subtreeIds(tree.childrenOf, root.id)
+    .map((id) => tree.nodes.get(id))
+    .filter((n): n is Node => n !== undefined)
+}
+
+/** サブツリーの内側にある枝（親も子もサブツリーに含まれる枝） */
+export function subtreeBranches(graph: Graph, root: Node): Edge[] {
+  const tree = mindmapTree(graph)
+  const ids = new Set(subtreeIds(tree.childrenOf, root.id))
+  const out: Edge[] = []
+  for (const [childId, edge] of tree.branchOf) {
+    if (ids.has(childId) && childId !== root.id) out.push(edge)
+  }
+  return out
+}
+
+/** moving を target の子にできるか（自分自身・自分の子孫は不可） */
+export function canMoveTopic(graph: Graph, moving: Node, target: Node): ReparentCheck {
+  return canReparent(mindmapTree(graph).childrenOf, moving.id, target.id)
+}
+
+/**
+ * 親との枝を外して独立させる。外す前の親 id を返す（元々ルートなら null）。
+ * ノード自体は消さないので、貼り付けなくても図には残る。
+ */
+export function detachFromParent(graph: Graph, node: Node): string | null {
+  const tree = mindmapTree(graph)
+  const parentId = tree.parentOf.get(node.id)
+  const edge = tree.branchOf.get(node.id)
+  if (edge) graph.removeCell(edge)
+  return parentId ?? null
+}
+
+/** child を parent の子として繋ぐ。折りたたんだ親は開く */
+export function attachAsChild(
+  graph: Graph,
+  parent: Node,
+  child: Node,
+  layout: MindmapLayout
+): Edge {
+  const edge = addBranch(graph, parent, child)
+  applyBranchStyle(edge, layout, branchSide(parent, child))
+  if (isCollapsed(parent)) setCollapsed(parent, false)
+  updateMindmapVisibility(graph)
+  return edge
+}
+
+/** サブツリー全体を平行移動する（内側の相対位置は保つ） */
+export function moveSubtree(graph: Graph, root: Node, dx: number, dy: number): void {
+  if (dx === 0 && dy === 0) return
+  for (const node of subtreeTopics(graph, root)) {
+    const p = node.getPosition()
+    node.position(p.x + dx, p.y + dy)
+  }
+}
+
+/**
+ * サブツリーを複製する。複製したルートを返す。
+ * 見た目・折りたたみ状態はそのまま引き継ぎ、id だけ新しくなる。
+ */
+export function cloneSubtree(graph: Graph, root: Node): Node {
+  const tree = mindmapTree(graph)
+  const ids = subtreeIds(tree.childrenOf, root.id)
+  const copyOf = new Map<string, Node>()
+  for (const id of ids) {
+    const source = tree.nodes.get(id)
+    if (!source) continue
+    const copy = source.clone()
+    graph.addNode(copy)
+    copyOf.set(id, copy)
+  }
+  for (const id of ids) {
+    const parentId = tree.parentOf.get(id)
+    if (parentId === undefined || !copyOf.has(parentId) || id === root.id) continue
+    const parent = copyOf.get(parentId)
+    const child = copyOf.get(id)
+    if (parent && child) addBranch(graph, parent, child)
+  }
+  return copyOf.get(root.id) as Node
+}
+
+/** 切り取り中であることを示す見た目（破線・薄め）を付け外しする */
+export function markSubtreeCut(graph: Graph, root: Node, cut: boolean): void {
+  for (const node of subtreeTopics(graph, root)) {
+    node.attr('body/strokeDasharray', cut ? '6 4' : null)
+    node.attr('body/opacity', cut ? 0.55 : null)
+    node.attr('label/opacity', cut ? 0.55 : null)
+  }
+  for (const edge of subtreeBranches(graph, root)) {
+    edge.attr('line/strokeDasharray', cut ? '6 4' : null)
+    edge.attr('line/opacity', cut ? 0.55 : null)
   }
 }
