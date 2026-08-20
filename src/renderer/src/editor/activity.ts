@@ -117,6 +117,42 @@ export function markTerminalManual(edge: Edge, side: TerminalSide): void {
   edge.updateData(side === 'source' ? { manualSource: true } : { manualTarget: true })
 }
 
+/** 手動の印を外し、自動割り当ての対象に戻す */
+export function clearTerminalManual(edge: Edge, side: TerminalSide): void {
+  edge.updateData(side === 'source' ? { manualSource: false } : { manualTarget: false })
+}
+
+/** 端点をどの辺に固定しているか。自動割り当てに任せているなら 'auto' */
+export function flowTerminalSide(edge: Edge, side: TerminalSide): Side | 'auto' {
+  if (!isTerminalManual(edge, side)) return 'auto'
+  const terminal = side === 'source' ? edge.getSource() : edge.getTarget()
+  const port = (terminal as { port?: string }).port
+  return SIDES.find((s) => s === port) ?? 'auto'
+}
+
+/**
+ * 端点を付ける辺を決める（右パネルから使う）。'auto' なら手動の印を外して
+ * 既定の接続に戻し、以後は自動割り当てに任せる。
+ */
+export function setFlowTerminalSide(
+  edge: Edge,
+  node: Node,
+  side: TerminalSide,
+  value: Side | 'auto'
+): void {
+  if (value === 'auto') {
+    clearTerminalManual(edge, side)
+    const terminal = flowTerminal(node)
+    if (side === 'source') edge.setSource(terminal)
+    else edge.setTarget(terminal)
+    return
+  }
+  const terminal = { cell: node.id, port: value }
+  if (side === 'source') edge.setSource(terminal)
+  else edge.setTarget(terminal)
+  markTerminalManual(edge, side)
+}
+
 /**
  * 分岐/合流に付くフローの接続辺を割り当て直す。
  *
@@ -131,10 +167,19 @@ export function normalizeBranchPorts(graph: Graph): void {
 
     const bbox = node.getBBox()
     const center = { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 }
-    const flows = graph
+    const connected = graph
       .getConnectedEdges(node)
       .filter((edge) => getCellKind(edge) === 'flow')
-      .filter((edge) => !isTerminalManual(edge, isSource(edge, node) ? 'source' : 'target'))
+    const flows = connected.filter(
+      (edge) => !isTerminalManual(edge, isSource(edge, node) ? 'source' : 'target')
+    )
+    // 手動で決めた枝は自動割り当ての対象外だが、辺は塞いでいる（issue #25）
+    const occupied: Side[] = []
+    for (const edge of connected) {
+      if (flows.includes(edge)) continue
+      const side = portSideOf(edge, node)
+      if (side !== null) occupied.push(side)
+    }
 
     const branches: Edge[] = []
     const trunkSide: Side = kind === 'decision' ? 'top' : 'bottom'
@@ -151,7 +196,7 @@ export function normalizeBranchPorts(graph: Graph): void {
       if (other) ends.push({ id: edge.id, x: other.x, y: other.y })
     }
     const allowed = kind === 'decision' ? DECISION_OUT_SIDES : MERGE_IN_SIDES
-    const sides = assignBranchSides(center, ends, allowed)
+    const sides = assignBranchSides(center, ends, allowed, occupied)
     for (const edge of branches) {
       const side = sides.get(edge.id)
       if (side) setPort(edge, node, side)
@@ -205,6 +250,23 @@ function isTarget(edge: Edge, node: Node): boolean {
 }
 
 /** エッジの node 側の端を、その辺のポートに繋ぎ直す（既に同じなら何もしない） */
+const SIDES: Side[] = ['top', 'right', 'bottom', 'left']
+
+/** その端点が使っているポート（辺）。ポート指定が無ければ null */
+function portSideOf(edge: Edge, node: Node): Side | null {
+  const terminal = isSource(edge, node) ? edge.getSource() : edge.getTarget()
+  const port = (terminal as { port?: string }).port
+  return SIDES.find((s) => s === port) ?? null
+}
+
+/**
+ * フローの端点を、指定した辺のポートへ付け直す（ユーザー操作から使う）。
+ * 自動割り当てから外したい場合は markTerminalManual と併せて呼ぶ。
+ */
+export function setFlowPort(edge: Edge, node: Node, side: Side): void {
+  setPort(edge, node, side)
+}
+
 function setPort(edge: Edge, node: Node, side: Side): void {
   const atSource = isSource(edge, node)
   const current = atSource ? edge.getSource() : edge.getTarget()

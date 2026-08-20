@@ -461,9 +461,15 @@ body,
   box-shadow: none;
 }
 
+/* -inner は選択全体を囲む矩形。X6 は「まとめてドラッグする掴み代」として
+   pointer-events: auto をインラインで当てるが、そうすると枠の内側にある
+   未選択のノード（例: 4 隅のうち 3 つを選んだときの 4 つ目）がクリックできない。
+   複数選択の移動は選択済みノードを掴めば効く（X6 が位置変化を選択全体へ波及させる）
+   ので、この枠は見た目だけにする。 */
 .x6-widget-selection-inner {
   border: 1px solid var(--accent);
   box-shadow: none;
+  pointer-events: none !important;
 }
 
 .x6-widget-selection-rubberband {

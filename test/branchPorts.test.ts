@@ -3,7 +3,9 @@ import {
   DECISION_OUT_SIDES,
   MERGE_IN_SIDES,
   assignBranchSides,
+  droppedSide,
   flowTargetSide,
+  nearestSide,
   type Box,
   type BranchEnd
 } from '../src/renderer/src/editor/branchPorts'
@@ -123,5 +125,81 @@ describe('flowTargetSide', () => {
 
   it('横方向にずれていても、上にあれば上辺中央', () => {
     expect(flowTargetSide(box(0, 0), box(400, 300))).toBe('top')
+  })
+})
+
+describe('nearestSide', () => {
+  // 分岐ノードくらいの大きさ（中心 100,100）
+  const box: Box = { x: 50, y: 70, width: 100, height: 60 }
+
+  it('右寄りに落とせば右', () => {
+    expect(nearestSide(box, { x: 148, y: 100 })).toBe('right')
+  })
+
+  it('左寄りに落とせば左', () => {
+    expect(nearestSide(box, { x: 52, y: 100 })).toBe('left')
+  })
+
+  it('下寄りに落とせば下', () => {
+    expect(nearestSide(box, { x: 100, y: 128 })).toBe('bottom')
+  })
+
+  it('上寄りに落とせば上', () => {
+    expect(nearestSide(box, { x: 100, y: 72 })).toBe('top')
+  })
+
+  it('縦横比で正規化するので、平たいノードでも上下を狙える', () => {
+    // 40x30 の合流ノード。中心から右へ 15px・下へ 14px は、比では下の方が大きい
+    const merge: Box = { x: 0, y: 0, width: 40, height: 30 }
+    expect(nearestSide(merge, { x: 35, y: 29 })).toBe('bottom')
+    expect(nearestSide(merge, { x: 39, y: 20 })).toBe('right')
+  })
+
+  it('外側に落としてもその方向の辺になる', () => {
+    expect(nearestSide(box, { x: 300, y: 105 })).toBe('right')
+    expect(nearestSide(box, { x: 100, y: -200 })).toBe('top')
+  })
+})
+
+describe('assignBranchSides（手動の辺を塞ぐ）', () => {
+  it('手動の枝が使っている辺は自動割り当てで避ける', () => {
+    // 真下の枝は本来 bottom だが、bottom が手動で塞がっていれば別の辺へ逃げる
+    const ends: BranchEnd[] = [{ id: 'a', x: 100, y: 300 }]
+    expect(assignBranchSides(center, ends, DECISION_OUT_SIDES, ['bottom']).get('a')).not.toBe(
+      'bottom'
+    )
+  })
+
+  it('塞がっていなければ従来どおり', () => {
+    const ends: BranchEnd[] = [{ id: 'a', x: 100, y: 300 }]
+    expect(assignBranchSides(center, ends, DECISION_OUT_SIDES, []).get('a')).toBe('bottom')
+  })
+
+  it('空きが尽きたら手動の辺へ重ねる（3 本以上のときは従来どおり被る）', () => {
+    const ends: BranchEnd[] = [
+      { id: 'a', x: 100, y: 300 },
+      { id: 'b', x: 300, y: 100 },
+      { id: 'c', x: -100, y: 100 }
+    ]
+    const map = assignBranchSides(center, ends, MERGE_IN_SIDES, ['top', 'right', 'left'])
+    expect(map.size).toBe(3)
+  })
+})
+
+describe('droppedSide', () => {
+  const box: Box = { x: 50, y: 70, width: 100, height: 60 }
+
+  it('外側寄りに落とせばその辺', () => {
+    expect(droppedSide(box, { x: 148, y: 100 })).toBe('right')
+    expect(droppedSide(box, { x: 100, y: 128 })).toBe('bottom')
+  })
+
+  it('中央付近は辺を狙っていないとみなして null', () => {
+    expect(droppedSide(box, { x: 100, y: 100 })).toBeNull()
+    expect(droppedSide(box, { x: 110, y: 105 })).toBeNull()
+  })
+
+  it('しきい値を下げれば中央寄りでも辺を返す', () => {
+    expect(droppedSide(box, { x: 110, y: 100 }, 0.1)).toBe('right')
   })
 })

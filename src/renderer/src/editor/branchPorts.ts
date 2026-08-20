@@ -29,6 +29,38 @@ export function flowTargetSide(source: Box, target: Box): Side | null {
   return source.y + source.height <= target.y ? 'top' : null
 }
 
+/**
+ * 点がノードのどの辺に一番近いか。
+ *
+ * ノードの中心から見た相対位置を「半幅・半高で割った比」で比べる。縦横比に
+ * 依らず「上下左右のどこを狙ったか」が素直に決まるので、小さな分岐・合流でも
+ * 離した位置の辺に付けられる（issue #25）。
+ */
+export function nearestSide(box: Box, point: { x: number; y: number }): Side {
+  const dx = (point.x - (box.x + box.width / 2)) / Math.max(1, box.width / 2)
+  const dy = (point.y - (box.y + box.height / 2)) / Math.max(1, box.height / 2)
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'right' : 'left'
+  return dy >= 0 ? 'bottom' : 'top'
+}
+
+/**
+ * 落とした位置から接続する辺を決める。ノードの中央付近（どの辺も狙っていない）
+ * なら null を返し、既定の「相手に近い辺」に任せる。
+ *
+ * threshold は中心からの距離の比（0〜1）。0.5 ならノードの外側半分を狙ったとき
+ * だけ辺の指定とみなす。
+ */
+export function droppedSide(
+  box: Box,
+  point: { x: number; y: number },
+  threshold = 0.5
+): Side | null {
+  const dx = (point.x - (box.x + box.width / 2)) / Math.max(1, box.width / 2)
+  const dy = (point.y - (box.y + box.height / 2)) / Math.max(1, box.height / 2)
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return null
+  return nearestSide(box, point)
+}
+
 /** 分岐/合流ノードから見た枝 1 本 */
 export interface BranchEnd {
   /** エッジ ID。同点時の決定的なタイブレークに使う */
@@ -69,11 +101,16 @@ function affinity(center: { x: number; y: number }, end: BranchEnd, side: Side):
  *
  * allowed の本数を超えた枝は、空きが無いので最も素直な辺へ重ねる（issue #10 の
  * 「3 つ以上あるときは被っても良い」に相当）。
+ *
+ * occupied には「ユーザーが手で決めた枝が既に使っている辺」を渡す。自動割り当ての
+ * 対象外でも場所は塞いでいるので、空き扱いにすると手動の枝へ重なってしまう
+ * （issue #25）。
  */
 export function assignBranchSides(
   center: { x: number; y: number },
   ends: BranchEnd[],
-  allowed: Side[]
+  allowed: Side[],
+  occupied: Side[] = []
 ): Map<string, Side> {
   const result = new Map<string, Side>()
   if (ends.length === 0 || allowed.length === 0) return result
@@ -94,7 +131,7 @@ export function assignBranchSides(
     return a.end.id < b.end.id ? -1 : a.end.id > b.end.id ? 1 : 0
   })
 
-  const usedSides = new Set<Side>()
+  const usedSides = new Set<Side>(occupied)
   for (const pair of pairs) {
     if (result.has(pair.end.id) || usedSides.has(pair.side)) continue
     result.set(pair.end.id, pair.side)

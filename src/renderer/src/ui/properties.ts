@@ -1,5 +1,6 @@
 import type { Cell, Edge, Node } from '@antv/x6'
 import type { GraphEditor } from '../editor/GraphEditor'
+import type { Side } from '../editor/branchPorts'
 import {
   autoSizeNode,
   clearManualSize,
@@ -284,6 +285,7 @@ export class PropertiesPanel {
           setMessageLabel(edge, value)
         })
       )
+      this.appendFlowSideSection(edge)
       return true
     }
 
@@ -405,6 +407,36 @@ export class PropertiesPanel {
   }
 
   /**
+   * フローがノードのどの辺に付くかの指定。
+   *
+   * 端点のドラッグでも辺を選べるが、分岐・合流は小さくポートが密集していて
+   * 狙いにくい。ここで確実に指定でき、「自動」で元の割り当てにも戻せる。
+   */
+  private appendFlowSideSection(edge: Edge): void {
+    const hasNode = (side: 'source' | 'target'): boolean =>
+      (side === 'source' ? edge.getSourceCell() : edge.getTargetCell())?.isNode() === true
+    if (!hasNode('source') && !hasNode('target')) return
+
+    this.host.appendChild(sectionTitle('接続する辺'))
+    for (const side of ['source', 'target'] as const) {
+      if (!hasNode(side)) continue
+      this.host.appendChild(
+        flowSideSelect(
+          side === 'source' ? '出口（元のノード）' : '入口（先のノード）',
+          this.editor.getFlowSide(edge, side),
+          (value) => {
+            this.editor.setFlowSide(edge, side, value)
+            this.render([edge])
+          }
+        )
+      )
+    }
+    this.host.appendChild(
+      hint('「自動」は相手の位置に合わせて自動で選びます。指定した辺は他の矢印も避けます。')
+    )
+  }
+
+  /**
    * 外観（背景色 / 線色 / 文字スタイル）。図形が持てる項目だけを出す。
    * 何か出したら true。
    */
@@ -519,6 +551,35 @@ function childDividers(fragment: Node): Node[] {
     .filter((c) => getCellKind(c) === 'divider')
     .map((c) => c as Node)
     .sort((a, b) => a.getBBox().y - b.getBBox().y)
+}
+
+const FLOW_SIDE_LABEL: Record<Side | 'auto', string> = {
+  auto: '自動',
+  top: '上',
+  right: '右',
+  bottom: '下',
+  left: '左'
+}
+
+/** フローの端点を付ける辺のセレクト */
+function flowSideSelect(
+  caption: string,
+  value: Side | 'auto',
+  onChange: (value: Side | 'auto') => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = caption
+  const select = document.createElement('select')
+  for (const side of ['auto', 'top', 'right', 'bottom', 'left'] as const) {
+    const opt = document.createElement('option')
+    opt.value = side
+    opt.textContent = FLOW_SIDE_LABEL[side]
+    select.appendChild(opt)
+  }
+  select.value = value
+  select.addEventListener('change', () => onChange(select.value as Side | 'auto'))
+  wrap.appendChild(select)
+  return wrap
 }
 
 function hint(text: string): HTMLElement {

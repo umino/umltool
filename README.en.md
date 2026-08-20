@@ -41,7 +41,7 @@ and `diag-output-mindmap.png` (mind map).
 | Pan | Left-drag on empty space, or middle-button drag |
 | Rubber-band selection | Shift + left-drag |
 | Add to / remove from selection | Ctrl + click |
-| Move several elements at once | Select them, then drag any one of them |
+| Move several elements at once | Select them, then drag any one of them (the box drawn around the selection does not swallow clicks, so unselected nodes inside it can still be picked) |
 | Undo / redo | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) |
 | Copy / cut / paste | Ctrl+C / Ctrl+X / Ctrl+V (paste places elements slightly offset) |
 | Select all | Ctrl+A |
@@ -84,8 +84,10 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - **Decision shape**: pick **菱形** (diamond) or **6 角形** (a wide PlantUML-style hexagon) from "分岐:" in the toolbar. It is a whole-diagram setting: it applies to every existing decision and to ones added afterwards, and it is saved in the project file. Merges stay diamonds so the two remain distinguishable. Switching may disturb the layout
 - **Branches do not overlap**: branches leave a decision through its bottom, right and left sides and enter a merge through its top, right and left sides, each on its own side. The assignment follows the position of the node at the other end and is redone when nodes move. Sides are only reused once a node has four or more branches
 - **Arrows land on the top edge**: a flow whose source sits entirely above its target enters that target at the **centre of its top edge**, so the diagram reads top to bottom. Decisions and merges keep the branch assignment above instead. **Dragging an endpoint to reconnect it pins that endpoint** — it is left alone by the automatic assignment from then on, for any node
-- **Swimlanes** can be resized: select one and drag the handles to change its width and height
-- **Node resizing**: action / decision / merge / initial / final / fork / join nodes show handles when selected, and can also be sized via the "幅" and "高さ" fields in the right panel (initial and final keep a fixed aspect ratio so they stay circular). Actions and decisions normally auto-size to their label; resizing one manually pins that size instead. Use "サイズを自動に戻す" in the right panel to restore the automatic behaviour
+- **Pick the side explicitly**: selecting a flow shows a "**接続する辺**" (connection side) section in the right panel, with 自動 (auto) / 上 (top) / 右 (right) / 下 (bottom) / 左 (left) for each end. Even on decisions and merges, whose ports sit close together, the side can be set exactly, and 自動 restores the automatic assignment at any time
+- **Aiming also works while dragging**: you do not have to hit the small port circle — the endpoint lands on the **side nearest to where you released** (as long as you release on the outer half of the node; releasing near the middle keeps the automatic choice). A side you picked by hand is not only left alone by the automatic assignment — **other branches avoid it too**, so nothing overlaps it
+- **Swimlanes** can be resized: select one and drag the handles to change its width and height. Because a lane can span the whole canvas, **only its header band and its border can be grabbed**; clicks pass through the inside of the lane, so nodes on top of it can be selected and rubber-banded as usual
+- **Node resizing**: action / decision / merge / initial / final / fork / join nodes show handles when selected, and can also be sized via the "幅" and "高さ" fields in the right panel (initial and final keep a fixed aspect ratio so they stay circular). **Resizing keeps the node's centre in place** — the opposite side grows by the same amount, so nodes stay aligned with the ones above and below and flows do not end up slanted. Actions and decisions normally auto-size to their label; resizing one manually pins that size instead. Use "サイズを自動に戻す" in the right panel to restore the automatic behaviour
 - **Frames (containers)**: the "フレーム" palette item. A transparent frame with a header tab in the top-left corner; nodes inside remain fully interactive. Drag the border or header to move, select to resize, and edit the header via the right panel or double-click (the tab width follows the text)
 - New nodes are added at the **center of the current view** (consecutive additions are offset slightly)
 

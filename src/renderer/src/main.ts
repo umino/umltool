@@ -1131,6 +1131,264 @@ B --> A : 返す`
             graph.cleanSelection()
             graph.removeCells([a])
           }
+
+          // 画面内の座標を作るための基準（elementFromPoint はビューポート内だけ有効）
+          const viewCenter = ((): { x: number; y: number } => {
+            const rect = graph.container.getBoundingClientRect()
+            return graph.clientToLocal(rect.left + rect.width / 2, rect.top + rect.height / 2)
+          })()
+          const clientOf = (p: { x: number; y: number }): { x: number; y: number } =>
+            graph.localToClient(p.x, p.y)
+          const hitCellId = (p: { x: number; y: number }): string | null => {
+            const c = clientOf(p)
+            const el = document.elementFromPoint(c.x, c.y)
+            const owner = el?.closest('[data-cell-id]')
+            return owner?.getAttribute('data-cell-id') ?? null
+          }
+
+          // 選択枠の内側にある未選択ノードもクリックできること（issue #28）
+          {
+            const spots = [
+              { x: viewCenter.x - 140, y: viewCenter.y - 90 },
+              { x: viewCenter.x + 140, y: viewCenter.y - 90 },
+              { x: viewCenter.x - 140, y: viewCenter.y + 90 },
+              { x: viewCenter.x + 140, y: viewCenter.y + 90 }
+            ]
+            const corners = spots.map((p, i) =>
+              addActivityNode(graph, 'action', `C${i}`, { centerX: p.x, centerY: p.y })
+            )
+            graph.resetSelection(corners.slice(0, 3))
+            await new Promise((r) => setTimeout(r, 120))
+            const inner = document.querySelectorAll(
+              '.x6-widget-selection-inner[data-selection-length="3"]'
+            ).length
+            const last = corners[3]
+            const hit = hitCellId(last.getBBox().center)
+            activity['selectionClickThrough'] =
+              inner === 1 && hit === last.id ? 'ok' : `ng(inner=${inner}, hit=${hit})`
+            graph.cleanSelection()
+            graph.removeCells(corners)
+          }
+
+          // スイムレーンは中身では掴めず、ヘッダ帯でだけ動かせること（issue #27）
+          {
+            const lane = addSwimlane(graph, 'レーン', {
+              x: viewCenter.x - 200,
+              y: viewCenter.y - 120,
+              width: 400,
+              height: 240
+            })
+            const inside = addActivityNode(graph, 'action', '中のノード', {
+              centerX: viewCenter.x,
+              centerY: viewCenter.y + 40
+            })
+            await new Promise((r) => setTimeout(r, 120))
+            const box = lane.getBBox()
+            const header = hitCellId({ x: box.center.x, y: box.y + ACTIVITY.laneHeaderHeight / 2 })
+            const empty = hitCellId({ x: box.x + 40, y: box.y + 160 })
+            const overNode = hitCellId(inside.getBBox().center)
+            activity['swimlaneGrip'] =
+              header === lane.id && empty !== lane.id && overNode === inside.id
+                ? 'ok'
+                : `ng(header=${header === lane.id}, body=${empty}, node=${overNode === inside.id})`
+            graph.removeCells([lane, inside])
+          }
+
+          // ハンドルでリサイズしても中心が動かないこと（issue #26）
+          {
+            const n = addActivityNode(graph, 'action', 'リサイズ', {
+              centerX: viewCenter.x,
+              centerY: viewCenter.y
+            })
+            // リサイズハンドルは node:click で出るので、描画を待って実際にクリックする
+            await new Promise((r) => setTimeout(r, 150))
+            {
+              const c = clientOf(n.getBBox().center)
+              const el = document.elementFromPoint(c.x, c.y)
+              for (const type of ['mousedown', 'mouseup', 'click']) {
+                el?.dispatchEvent(
+                  new MouseEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: c.x,
+                    clientY: c.y,
+                    button: 0
+                  })
+                )
+              }
+            }
+            await new Promise((r) => setTimeout(r, 150))
+            const handle = document.querySelector(
+              '.x6-widget-transform-resize[data-position="right"]'
+            ) as HTMLElement | null
+            const before = n.getBBox()
+            if (handle) {
+              const h = handle.getBoundingClientRect()
+              const from = { x: h.left + h.width / 2, y: h.top + h.height / 2 }
+              const fire = (type: string, target: EventTarget, dx: number): void => {
+                target.dispatchEvent(
+                  new MouseEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: from.x + dx,
+                    clientY: from.y,
+                    button: 0,
+                    buttons: 1
+                  })
+                )
+              }
+              fire('mousedown', handle, 0)
+              fire('mousemove', document, 64)
+              fire('mouseup', document, 64)
+              await new Promise((r) => setTimeout(r, 120))
+            }
+            const after = n.getBBox()
+            const grew = after.width > before.width
+            const kept =
+              Math.abs(after.center.x - before.center.x) < 1 &&
+              Math.abs(after.center.y - before.center.y) < 1
+            activity['resizeKeepsCenter'] =
+              handle && grew && kept
+                ? `ok(${before.width}→${after.width})`
+                : `ng(handle=${handle !== null}, grew=${grew}, dx=${Math.round(after.center.x - before.center.x)}, widgets=${document.querySelectorAll('.x6-widget-transform').length}, sel=${graph.getSelectedCells().length})`
+            graph.cleanSelection()
+            graph.removeCells([n])
+          }
+
+          // 落とした位置の辺にフローが付き、その辺は自動割り当てが避けること（issue #25）
+          {
+            const dec = addActivityNode(graph, 'decision', '条件?', {
+              centerX: viewCenter.x,
+              centerY: viewCenter.y
+            })
+            const from = addActivityNode(graph, 'action', '手前', {
+              centerX: viewCenter.x,
+              centerY: viewCenter.y + 220
+            })
+            const leftTarget = addActivityNode(graph, 'action', '左へ', {
+              centerX: viewCenter.x - 320,
+              centerY: viewCenter.y
+            })
+            const incoming = addFlow(graph, from, dec)
+            const box = dec.getBBox()
+            // 分岐の左端付近で離した、と同じ状態を作る
+            graph.trigger('edge:connected', {
+              edge: incoming,
+              e: { clientX: 0, clientY: 0 },
+              type: 'target',
+              currentPoint: { x: box.x + 3, y: box.center.y }
+            })
+            const droppedPort = (incoming.getTarget() as { port?: string }).port
+            // 左は手で決めた枝が塞いでいるので、自動の枝は別の辺へ回る
+            const outgoing = addFlow(graph, dec, leftTarget)
+            this.editor.normalizeBranchPorts()
+            const autoPort = (outgoing.getSource() as { port?: string }).port
+            activity['flowDropSide'] =
+              droppedPort === 'left' && autoPort !== 'left' && autoPort !== undefined
+                ? `ok(auto=${autoPort})`
+                : `ng(dropped=${droppedPort}, auto=${autoPort})`
+            graph.removeCells([dec, from, leftTarget, incoming, outgoing])
+          }
+          // 合流の入口を右パネルから左へ付け替えられること（issue #25）
+          {
+            const top = addActivityNode(graph, 'merge', '', {
+              centerX: viewCenter.x,
+              centerY: viewCenter.y - 150
+            })
+            const bottom = addActivityNode(graph, 'merge', '', {
+              centerX: viewCenter.x,
+              centerY: viewCenter.y + 150
+            })
+            const init = addActivityNode(graph, 'initial', '', {
+              centerX: viewCenter.x,
+              centerY: viewCenter.y - 250
+            })
+            const fromInit = addFlow(graph, init, top)
+            const back = addFlow(graph, bottom, top)
+            this.editor.normalizeBranchPorts()
+            await new Promise((r) => setTimeout(r, 150))
+            // 真下から戻る矢印は、自動だと右に付く（上は開始からの矢印が使う）
+            const before = (back.getTarget() as { port?: string }).port
+            graph.resetSelection(back)
+            await new Promise((r) => setTimeout(r, 150))
+
+            const pick = (caption: string): HTMLSelectElement | null => {
+              const labels = [...document.querySelectorAll('#props-body label')]
+              const hit = labels.find((l) => (l.textContent ?? '').startsWith(caption))
+              return (hit?.querySelector('select') as HTMLSelectElement | null) ?? null
+            }
+            const choose = async (
+              select: HTMLSelectElement | null,
+              value: string
+            ): Promise<void> => {
+              if (!select) return
+              select.value = value
+              select.dispatchEvent(new Event('change', { bubbles: true }))
+              await new Promise((r) => setTimeout(r, 150))
+            }
+            await choose(pick('入口'), 'left')
+            const afterLeft = (back.getTarget() as { port?: string }).port
+            // 手で決めた辺は、以後の自動割り当てでも動かない
+            top.translate(0, -8)
+            this.editor.normalizeBranchPorts()
+            const keptLeft = (back.getTarget() as { port?: string }).port
+            const initPort = (fromInit.getTarget() as { port?: string }).port
+            // 「自動」に戻すと元の割り当てへ戻る
+            await choose(pick('入口'), 'auto')
+            const backToAuto = (back.getTarget() as { port?: string }).port
+
+            activity['flowSidePanel'] =
+              before === 'right' &&
+              afterLeft === 'left' &&
+              keptLeft === 'left' &&
+              initPort === 'top' &&
+              backToAuto === 'right'
+                ? 'ok'
+                : `ng(before=${before}, left=${afterLeft}, kept=${keptLeft}, init=${initPort}, auto=${backToAuto})`
+
+            // 端点ハンドルを合流の左へドラッグしても左に付くこと（issue #25）
+            {
+              graph.resetSelection(back)
+              await new Promise((r) => setTimeout(r, 150))
+              const tool = document.querySelector(
+                '.x6-edge-tool-target-arrowhead'
+              ) as SVGElement | null
+              const rect = tool?.getBoundingClientRect()
+              const box = top.getBBox()
+              const drop = graph.localToClient(box.x + 3, box.center.y)
+              if (tool && rect) {
+                const fire = (t: string, target: EventTarget, x: number, y: number): void => {
+                  target.dispatchEvent(
+                    new MouseEvent(t, {
+                      bubbles: true,
+                      cancelable: true,
+                      clientX: x,
+                      clientY: y,
+                      button: 0,
+                      buttons: 1
+                    })
+                  )
+                }
+                fire('mousedown', tool, rect.left + rect.width / 2, rect.top + rect.height / 2)
+                fire('mousemove', document, drop.x, drop.y)
+                fire('mouseup', document, drop.x, drop.y)
+                await new Promise((r) => setTimeout(r, 200))
+              }
+              const dragged = (back.getTarget() as { port?: string }).port
+              const manual = (back.getData() as { manualTarget?: boolean } | undefined)
+                ?.manualTarget
+              // 付け替えた辺は、そのあとノードを動かしても動かない
+              top.translate(0, -8)
+              this.editor.normalizeBranchPorts()
+              const stillLeft = (back.getTarget() as { port?: string }).port
+              activity['flowSideDrag'] =
+                tool !== null && dragged === 'left' && manual === true && stillLeft === 'left'
+                  ? 'ok'
+                  : `ng(tool=${tool !== null}, port=${dragged}, manual=${manual}, kept=${stillLeft})`
+            }
+            graph.cleanSelection()
+            graph.removeCells([top, bottom, init])
+          }
         } catch (e) {
           activity['portAnchor'] = `error: ${(e as Error).message}`
         }

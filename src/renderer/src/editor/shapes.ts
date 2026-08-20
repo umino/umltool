@@ -542,11 +542,16 @@ export function registerShapes(): void {
     true
   )
 
+  // ---- スイムレーン ----
+  // 画面いっぱいに広がることがあるので、中身は透過でクリックを通し、
+  // ヘッダ帯と枠線（透明の太い当たり）でだけ掴めるようにする（フレームと同じ流儀）。
+  // レーンの上で普通にノードを選んだり範囲選択したりできて、うっかり動かない。
   Graph.registerNode(
     SHAPE.swimlane,
     {
       markup: [
         { tagName: 'rect', selector: 'body' },
+        { tagName: 'rect', selector: 'hit' },
         { tagName: 'rect', selector: 'header' },
         { tagName: 'text', selector: 'label' }
       ],
@@ -556,7 +561,17 @@ export function registerShapes(): void {
           refHeight: '100%',
           fill: '#fafbfe',
           stroke: '#c3c9d4',
-          strokeWidth: 1
+          strokeWidth: 1,
+          pointerEvents: 'none'
+        },
+        hit: {
+          refWidth: '100%',
+          refHeight: '100%',
+          fill: 'none',
+          stroke: 'transparent',
+          strokeWidth: 10,
+          pointerEvents: 'stroke',
+          cursor: 'move'
         },
         header: {
           refWidth: '100%',

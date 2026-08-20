@@ -51,7 +51,15 @@ import {
 } from './shapes'
 import { autoSizeNode, fitTextHeight, markManuallySized } from './autosize'
 import { ensureFragmentBg } from './sequence'
-import { markTerminalManual, normalizeBranchPorts, normalizeFlowTargets } from './activity'
+import {
+  flowTerminalSide,
+  markTerminalManual,
+  normalizeBranchPorts,
+  normalizeFlowTargets,
+  setFlowPort,
+  setFlowTerminalSide
+} from './activity'
+import { droppedSide, type Side } from './branchPorts'
 import { applyBranchStyle, arrangeMindmap, checkBranch } from './mindmap'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
@@ -76,10 +84,18 @@ const CONNECTABLE_KINDS = new Set([
   'topic'
 ])
 
+/** 上下左右のポートを持つ（＝辺を指定して繋げる）ノードか */
+function hasFlowPorts(node: Node): boolean {
+  const ids = new Set(node.getPorts().map((port) => port.id))
+  return ids.has('top') && ids.has('right') && ids.has('bottom') && ids.has('left')
+}
+
 export class GraphEditor {
   readonly graph: Graph
   private readonly scroller: Scroller
   private normalizing = false
+  /** リサイズ開始時の中心（離したときにここへ戻して中心を保つ） */
+  private readonly resizeCenters = new Map<string, { x: number; y: number }>()
   private mode: EditorMode = 'sequence'
   private decisionShape: DecisionShape = DEFAULT_DECISION_SHAPE
   private mindmapLayout: MindmapLayout = DEFAULT_MINDMAP_LAYOUT
@@ -240,6 +256,29 @@ export class GraphEditor {
     this.graph.on('node:resized', ({ node }: { node: Node }) => {
       if (isActivityNodeKind(getCellKind(node))) markManuallySized(node)
     })
+
+    // ハンドルでリサイズしても中心は動かさない（issue #26）。
+    // 既定では掴んだ辺の反対側が固定されるので、幅を変えるたびに中心が横へずれ、
+    // 上下のノードと中心が合わなくなってフローが斜めになる。右パネルの数値入力は
+    // 元から中心を保つので、ハンドル操作もそれに揃える。
+    //
+    // 位置合わせはドラッグ中ではなく離した時に行う。X6 は「掴んだ辺の反対の角」
+    // からポインタまでの距離で新しいサイズを決めるので、途中で位置を動かすと
+    // 次の mousemove でその分さらに大きくなり、際限なく膨らんでしまう。
+    this.graph.on('node:resize', ({ node }: { node: Node }) => {
+      if (!isActivityNodeKind(getCellKind(node))) return
+      this.resizeCenters.set(node.id, node.getBBox().center)
+    })
+    this.graph.on('node:resized', ({ node }: { node: Node }) => {
+      const center = this.resizeCenters.get(node.id)
+      this.resizeCenters.delete(node.id)
+      if (!center) return
+      const size = node.getSize()
+      const next = { x: center.x - size.width / 2, y: center.y - size.height / 2 }
+      const now = node.getPosition()
+      if (Math.abs(now.x - next.x) < 0.5 && Math.abs(now.y - next.y) < 0.5) return
+      node.position(next.x, next.y)
+    })
   }
 
   // ---- 分岐/合流の枝が重ならないよう接続辺を割り当て直す ----
@@ -258,12 +297,43 @@ export class GraphEditor {
         normalizeFlowTargets(graph)
       })
     }
+
+    // 端点をドラッグしている最中（options.ui）は割り当て直さない。
+    //
+    // X6 はドラッグ中に吸着したポートへ端点を書き込むが、「吸着先が変わったとき」
+    // しか書き込まない。ここで割り当てを走らせると、ユーザーが左のポートへ吸着
+    // させた直後に自動割り当てが右へ書き戻し、X6 は吸着先が変わっていないので
+    // もう書き込まない。結果、離した時点の端点は元のまま＝変化なしとみなされて
+    // edge:connected も飛ばず、手動指定が一切効かなくなる（issue #25）。
+    // 確定後の割り当て直しは edge:connected 側で行う。
+    const rerunUnlessDragging = ({ options }: { options?: { ui?: boolean } }): void => {
+      if (options?.ui) return
+      rerun()
+    }
+
     graph.on('edge:added', rerun)
     graph.on('edge:removed', rerun)
-    graph.on('edge:change:source', rerun)
-    graph.on('edge:change:target', rerun)
+    graph.on('edge:change:source', rerunUnlessDragging)
+    graph.on('edge:change:target', rerunUnlessDragging)
     graph.on('node:change:position', rerun)
     graph.on('node:change:size', rerun)
+  }
+
+  /** フローの端点が今どの辺に固定されているか（'auto' なら自動割り当て） */
+  getFlowSide(edge: Edge, terminal: 'source' | 'target'): Side | 'auto' {
+    return flowTerminalSide(edge, terminal)
+  }
+
+  /**
+   * フローの端点を付ける辺を決める（右パネルから使う）。
+   * 'auto' に戻すと既定の接続へ戻り、以後は自動割り当ての対象になる。
+   */
+  setFlowSide(edge: Edge, terminal: 'source' | 'target', side: Side | 'auto'): void {
+    const cell = terminal === 'source' ? edge.getSourceCell() : edge.getTargetCell()
+    if (!cell?.isNode()) return
+    this.withNormalizing(() => setFlowTerminalSide(edge, cell, terminal, side))
+    // 辺が空いた / 塞がったので、残りの枝を割り当て直す
+    this.normalizeBranchPorts()
   }
 
   /** 図の作り直し後などに、フローの接続辺をまとめて割り当て直す */
@@ -459,10 +529,24 @@ export class GraphEditor {
     })
 
     // 端点の付け替え後も vertex を持たせて水平を保つ。
-    // フローはポート以外（ノード本体）への接続を midSide/boundary に揃える。
+    // フローはポート以外（ノード本体）へ落とした場合、離した位置に一番近い辺の
+    // ポートへ付ける（触っていない側は midSide/boundary の「近い辺」に任せる）。
     graph.on(
       'edge:connected',
-      ({ edge, e }: { edge: Edge; e: { clientX: number; clientY: number } }) => {
+      ({
+        edge,
+        e,
+        type,
+        currentPort,
+        currentPoint
+      }: {
+        edge: Edge
+        e: { clientX: number; clientY: number }
+        type?: 'source' | 'target'
+        /** ポートの丸の上で離したならその id。ノード本体で離したなら undefined */
+        currentPort?: string
+        currentPoint?: { x: number; y: number }
+      }) => {
         const kind = getCellKind(edge)
         if (kind === 'branch') {
           // 親から見た子の側で枝の形を決める（整列するまでの暫定）
@@ -477,12 +561,27 @@ export class GraphEditor {
           return
         }
         if (kind === 'flow') {
+          // 今ポインタで落とした側。ここだけは離した位置で辺を決める
+          const dropped = type === 'source' || type === 'target' ? type : null
+          const dropPoint = currentPoint ?? graph.clientToLocal(e.clientX, e.clientY)
           for (const side of ['source', 'target'] as const) {
             const terminal = side === 'source' ? edge.getSource() : edge.getTarget()
             const t = terminal as { cell?: string; port?: string }
             if (!t.cell) continue
             // ユーザーが選んだ接続先なので、以後の自動割り当てから外す
             this.withNormalizing(() => markTerminalManual(edge, side))
+            const cell = graph.getCellById(t.cell)
+            if (side === dropped && currentPort === undefined && cell?.isNode()) {
+              // ポートの丸を正確に掴めなくても、落とした位置に近い辺へ付ける。
+              // 分岐・合流は小さくポートが密集していて狙った辺に落としにくく、
+              // 自動割り当てに任せると意図と違う辺に付く（issue #25）
+              // 中央付近で離したときは辺を狙っていないので、既定の「近い辺」に任せる
+              const port = hasFlowPorts(cell) ? droppedSide(cell.getBBox(), dropPoint) : null
+              if (port) {
+                this.withNormalizing(() => setFlowPort(edge, cell, port))
+                continue
+              }
+            }
             if (t.port) continue
             const next = {
               cell: t.cell,
@@ -493,6 +592,9 @@ export class GraphEditor {
               side === 'source' ? edge.setSource(next) : edge.setTarget(next)
             )
           }
+          // ドラッグ中は割り当てを止めているので、確定したここで残りを整える
+          // （手動で埋まった辺を他の枝が避けるようにする）
+          this.normalizeBranchPorts()
           graph.select(edge)
           return
         }
