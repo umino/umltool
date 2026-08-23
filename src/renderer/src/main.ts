@@ -1191,6 +1191,26 @@ B --> A : 返す`
               header === lane.id && empty !== lane.id && overNode === inside.id
                 ? 'ok'
                 : `ng(header=${header === lane.id}, body=${empty}, node=${overNode === inside.id})`
+
+            // コピー＆貼り付けしたレーンも背面のままであること
+            // （X6 の貼り付けは zIndex を捨てるので、放っておくと中身を覆い隠す）
+            {
+              graph.resetSelection(lane)
+              this.editor.copySelection()
+              const pasted = this.editor.pasteClipboard()
+              await new Promise((r) => setTimeout(r, 120))
+              const copy = pasted.find((c) => getCellKind(c) === 'swimlane')
+              const copyZ = copy?.getZIndex()
+              activity['pasteLaneZOrder'] =
+                copy !== undefined &&
+                copyZ === lane.getZIndex() &&
+                copyZ !== undefined &&
+                copyZ < (inside.getZIndex() ?? 0)
+                  ? 'ok'
+                  : `ng(z=${copyZ}, lane=${lane.getZIndex()}, node=${inside.getZIndex()})`
+              graph.cleanSelection()
+              if (copy) graph.removeCells([copy])
+            }
             graph.removeCells([lane, inside])
           }
 

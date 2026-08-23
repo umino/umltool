@@ -243,6 +243,16 @@ export class GraphEditor {
     this.graph.on('node:added', ({ node }: { node: Node }) => {
       if (getCellKind(node) === 'decision') applyDecisionShape(node, this.decisionShape)
     })
+
+    // 重なり順は種別で決まる。貼り付けは zIndex を捨てて最前面に置く X6 の仕様
+    // なので、そのままだとスイムレーンやフラグメントの背景レイヤが中身の手前に
+    // 出てしまう。追加時に種別ごとの値へ戻す。
+    this.graph.on('cell:added', ({ cell }: { cell: Cell }) => {
+      const z = Z_BY_KIND[getCellKind(cell)]
+      if (z !== undefined && cell.getZIndex() !== z) {
+        this.withNormalizing(() => cell.setZIndex(z))
+      }
+    })
   }
 
   // ---- アクティビティノードの手動リサイズ ----
