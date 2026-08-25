@@ -31,6 +31,7 @@ import {
   type MessageKind,
   type UmlCellData
 } from './constants'
+import { clampCenterlineY } from './centerline'
 
 const COLOR = {
   stroke: '#1d2330',
@@ -943,14 +944,21 @@ export function registerShapes(): void {
         }
       }
 
-      const minY = bbox.y + (kind === 'lifeline' ? LIFELINE.headHeight + 4 : 0)
-      const maxY = bbox.y + bbox.height
-      const y = Math.min(Math.max(refY, minY), maxY)
       void magnet
-      return new Point(cx, y)
+      return new Point(cx, centerlineY(node, refY))
     },
     true
   )
+}
+
+/**
+ * 中心線アンカーが返す Y（参照 Y をノードの縦範囲へクランプしたもの）。
+ *
+ * vertex を失ったメッセージの現在位置を求めるのにも使うため、アンカー本体と
+ * 同じ式をここに置いて共有する。
+ */
+export function centerlineY(node: Node, refY: number): number {
+  return clampCenterlineY(getCellKind(node), node.getBBox(), refY)
 }
 
 type AttrsBySelector = Record<string, Record<string, unknown>>

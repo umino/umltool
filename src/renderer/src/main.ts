@@ -260,6 +260,30 @@ class AppController {
           }
         }
 
+        // メッセージが中央 vertex を失っても Y を保てるか（上下ドラッグが
+        // 定位置へ戻る不具合の回帰確認）。X6 の vertices ツールは既定で
+        // 「両端と一直線な vertex」を離した瞬間に消すため、無効化してある。
+        const msg = messages.find((e) => getCellKind(e) === 'message')
+        if (msg) {
+          const keep = msg.getVertices()
+          msg.setVertices([{ ...keep[0], y: keep[0].y + 40 }])
+          const movedY = msg.getVertices()[0]?.y ?? NaN
+          msg.setVertices([]) // ＝冗長 vertex 削除で起きる状態
+          const restored = msg.getVertices()[0]
+          behavior['messageVertexRestore'] = restored
+            ? 'ok'
+            : `ng(moved=${movedY}, restored=none)`
+          graph.resetSelection(msg)
+          const items = (msg.getTools()?.items ?? []) as { name?: string; args?: unknown }[]
+          const args = items.find((i) => i?.name === 'vertices')?.args as
+            | { removeRedundancies?: boolean }
+            | undefined
+          behavior['messageVertexTool'] =
+            args?.removeRedundancies === false ? 'ok' : `ng(${JSON.stringify(args)})`
+          graph.cleanSelection()
+          msg.setVertices(keep)
+        }
+
         const host = lifelines[0]
         if (host) {
           const act = addActivation(graph, host, host.getBBox().y + 120, 80)
@@ -668,6 +692,37 @@ B --> A : 返す`
         roundtripEdges = graph.getEdges().length
       } catch (e) {
         roundtripError = (e as Error).message
+      }
+
+      // 中央 vertex を落として保存された旧ファイルが、読み込み時に修復されるか。
+      // 検証後は元のグラフへ戻す（以降の検証が保存時の座標を前提にしているため）
+      let legacyVertexRepair = ''
+      try {
+        const pristine = serializeProject(this.editor, this.diagramType)
+        const doc = JSON.parse(pristine) as { graph: { cells: Record<string, unknown>[] } }
+        let stripped = 0
+        for (const cell of doc.graph.cells) {
+          const kind = (cell['data'] as { kind?: string } | undefined)?.kind
+          if (kind === 'message' && Array.isArray(cell['vertices'])) {
+            cell['vertices'] = []
+            stripped += 1
+          }
+        }
+        loadProject(this.editor, JSON.stringify(doc))
+        const missing = graph
+          .getEdges()
+          .filter(
+            (e) =>
+              getCellKind(e) === 'message' &&
+              e.getSourceCell() != null &&
+              e.getTargetCell() != null &&
+              e.getVertices().length === 0
+          ).length
+        legacyVertexRepair =
+          stripped > 0 && missing === 0 ? 'ok' : `ng(stripped=${stripped}, missing=${missing})`
+        loadProject(this.editor, pristine)
+      } catch (e) {
+        legacyVertexRepair = `error: ${(e as Error).message}`
       }
 
       // フラグメントの検証（サンプル DSL の alt/else。roundtrip 後のグラフに対して）
@@ -1914,6 +1969,7 @@ B --> A : 返す`
         roundtripVertices,
         roundtripEdges,
         roundtripError,
+        legacyVertexRepair,
         fragment,
         activity,
         mindmap
