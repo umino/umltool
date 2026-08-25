@@ -36,6 +36,7 @@ import {
   applyFrameHeader,
   applyLifelineGeometry,
   applyNoteGeometry,
+  centerlineY,
   getCellKind,
   getDividerGuard,
   getFragmentGuard,
@@ -513,7 +514,15 @@ export class GraphEditor {
       const kind = getCellKind(edge)
       if (kind === 'message') {
         edge.addTools([
-          { name: 'vertices', args: { addable: false, removable: false, snapRadius: 0 } },
+          // removeRedundancies を切るのは必須。X6 は掴んだ vertex を離した瞬間に
+          // 「両端アンカーと一直線なら冗長」と判断して消すが、メッセージは常に
+          // 水平＝必ず一直線なので、上下ドラッグのたびに中央 vertex が消える。
+          // vertex が無いメッセージは Y を保持できず、アンカーの既定位置
+          // （相手セルの中心 Y）へ戻ってしまう。
+          {
+            name: 'vertices',
+            args: { addable: false, removable: false, removeRedundancies: false, snapRadius: 0 }
+          },
           { name: 'source-arrowhead' },
           { name: 'target-arrowhead' }
         ])
@@ -705,7 +714,12 @@ export class GraphEditor {
     const tgt = edge.getTargetCell()
     if (!src || !tgt) return
     const vertices = edge.getVertices()
-    if (vertices.length === 0) return
+    if (vertices.length === 0) {
+      // vertex を失ったメッセージ（旧データや X6 の冗長 vertex 削除）は Y を
+      // 保持できない。今描かれている位置に中央 vertex を入れ直して復帰させる。
+      this.installMessageVertices(edge, this.anchoredMessageY(edge))
+      return
+    }
 
     if (src.id === tgt.id) {
       if (vertices.length < 2) {
@@ -734,6 +748,21 @@ export class GraphEditor {
     if (Math.abs(v.x - midX) > 0.5 || vertices.length > 1) {
       this.withNormalizing(() => edge.setVertices([{ x: midX, y: v.y }]))
     }
+  }
+
+  /**
+   * vertex を持たないメッセージが今描かれている Y。
+   *
+   * vertex が無いと X6 は「相手側の magnet」を参照点としてアンカーへ渡すので、
+   * centerline アンカーは相手セルの中心 Y をクランプした値を返す（shapes.ts）。
+   * 同じ順にクランプを重ねて、現在の見た目の位置をそのまま再現する。
+   */
+  private anchoredMessageY(edge: Edge): number {
+    const src = edge.getSourceCell()
+    const tgt = edge.getTargetCell()
+    if (!src?.isNode() || !tgt?.isNode()) return MESSAGE.startY
+    const tb = tgt.getBBox()
+    return centerlineY(tgt, centerlineY(src, tb.y + tb.height / 2))
   }
 
   /** ノード（とその子）に接続されたメッセージを再正規化する */
@@ -922,6 +951,11 @@ export class GraphEditor {
         if (getCellKind(node) === 'fragment') ensureFragmentBg(this.graph, node)
       }
     })
+    // vertex を落として保存されたメッセージ（この不具合で Y を失ったもの）に
+    // 中央 vertex を入れ直す。位置は今の見た目のままなので図は変わらない。
+    for (const edge of this.graph.getEdges()) {
+      if (getCellKind(edge) === 'message') this.normalizeMessage(edge)
+    }
   }
 
   fit(): void {
