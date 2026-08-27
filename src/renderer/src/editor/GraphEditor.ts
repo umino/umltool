@@ -712,7 +712,10 @@ export class GraphEditor {
     if (getCellKind(edge) !== 'message') return
     const src = edge.getSourceCell()
     const tgt = edge.getTargetCell()
-    if (!src || !tgt) return
+    if (!src || !tgt) {
+      this.normalizeGateMessage(edge)
+      return
+    }
     const vertices = edge.getVertices()
     if (vertices.length === 0) {
       // vertex を失ったメッセージ（旧データや X6 の冗長 vertex 削除）は Y を
@@ -748,6 +751,51 @@ export class GraphEditor {
     if (Math.abs(v.x - midX) > 0.5 || vertices.length > 1) {
       this.withNormalizing(() => edge.setVertices([{ x: midX, y: v.y }]))
     }
+  }
+
+  /**
+   * 外部ゲート付きメッセージ（`[-> A` / `A ->]`）の正規化。
+   *
+   * 片端は座標だけの自由な点で centerline アンカーが効かないため、vertex を上下
+   * ドラッグしても点側の y は取り残されて線が斜めになる。点の y を vertex に
+   * 合わせて水平を保ち、vertex の x はライフラインと点の中点へ寄せる
+   * （ラベルが線の中央に乗るので、中点にないと見た目がずれる）。
+   */
+  private normalizeGateMessage(edge: Edge): void {
+    const src = edge.getSourceCell()
+    const tgt = edge.getTargetCell()
+    // 自由な点になっている側。両端ともセル / 両端とも点なら対象外
+    const side: 'source' | 'target' | null =
+      src == null && tgt != null ? 'source' : tgt == null && src != null ? 'target' : null
+    if (side === null) return
+    const node = side === 'source' ? tgt! : src!
+    const point = (side === 'source' ? edge.getSource() : edge.getTarget()) as {
+      x?: number
+      y?: number
+    }
+    if (typeof point.x !== 'number' || typeof point.y !== 'number') return
+    const pointX = point.x
+
+    const vertices = edge.getVertices()
+    const midX = (centerXOf(node) + pointX) / 2
+    if (vertices.length === 0) {
+      // vertex を失ったら点の高さで入れ直す（水平を保てる唯一の手がかり）
+      this.withNormalizing(() => edge.setVertices([{ x: midX, y: point.y as number }]))
+      return
+    }
+
+    const v = vertices[0]
+    const movePoint = Math.abs(point.y - v.y) > 0.5
+    const moveVertex = Math.abs(v.x - midX) > 0.5 || vertices.length > 1
+    if (!movePoint && !moveVertex) return
+    this.withNormalizing(() => {
+      if (movePoint) {
+        const moved = { x: pointX, y: v.y }
+        if (side === 'source') edge.setSource(moved)
+        else edge.setTarget(moved)
+      }
+      if (moveVertex) edge.setVertices([{ x: midX, y: v.y }])
+    })
   }
 
   /**

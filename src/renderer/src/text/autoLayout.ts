@@ -64,8 +64,6 @@ const FRAG_GAP = { open: 30, separator: 22, close: 26 } as const
 /** ライフライン中心から注釈までの横方向の間隔 */
 const NOTE_GAP_X = 30
 
-/** ゲート（図の外の端点）を相手ライフラインの中心からどれだけ離すか */
-const GATE_LENGTH = 90
 /** 注釈が占める高さの見積り（実際の高さは描画時に本文へ合わせて詰め直される） */
 const NOTE_LINE_HEIGHT = 20
 const NOTE_PAD_Y = 16
@@ -125,7 +123,7 @@ export function layoutSequence(parsed: ParsedSequence): SequenceLayout {
     if (msg.gate === null) return null
     const partner = msg.gate === 'in' ? msg.to : msg.from
     const cx = centerXOf.get(partner) ?? LIFELINE.firstCenterX
-    return msg.gate === 'in' ? cx - GATE_LENGTH : cx + GATE_LENGTH
+    return msg.gate === 'in' ? cx - MESSAGE.gateLength : cx + MESSAGE.gateLength
   }
 
   // フラグメントの枠: 含まれるメッセージが通るライフラインの範囲 + 余白
