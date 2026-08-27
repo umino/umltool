@@ -75,7 +75,15 @@ import { buildMindmapFromText } from './text/buildMindmap'
 import { resolveMindmapMove, type MindmapDirection } from './text/mindmapNav'
 import { ParseError } from './text/sequenceParser'
 import { loadProject, serializeProject, type DiagramType } from './diagram/serialize'
-import { exportGraphToDataUrl, exportGraphToSvg, type ImageFormat } from './export/raster'
+import { dpiToPixelsPerMeter } from './export/dpiMetadata'
+import {
+  DEFAULT_DPI,
+  MAX_IMAGE_SIDE,
+  exportGraphToDataUrl,
+  exportGraphToImage,
+  exportGraphToSvg,
+  type ImageFormat
+} from './export/raster'
 
 const SAMPLE_SEQUENCE = `participant ユーザー
 participant "Web ブラウザ" as ブラウザ
@@ -150,6 +158,8 @@ class AppController {
   private diagramType: DiagramType = 'sequence'
   /** マインドマップの付け替え用クリップボード（図をまたいでは持ち越さない） */
   private mindmapClip: MindmapClip | null = null
+  /** 画像書き出しの解像度（ツールバーのセレクトと同期。メニュー経由でも使う） */
+  private exportDpi: number = DEFAULT_DPI
 
   private readonly shortcuts = buildShortcutOverlay(document.getElementById('app') as HTMLElement)
 
@@ -182,6 +192,9 @@ class AppController {
       zoomOut: () => this.editor.zoomOut(),
       zoomReset: () => this.editor.zoomActual(),
       fit: () => this.editor.fit(),
+      setExportDpi: (dpi) => {
+        this.exportDpi = dpi
+      },
       exportImage: (f) => this.exportImage(f),
       showShortcuts: () => this.shortcuts.toggle(this.diagramType)
     })
@@ -235,6 +248,44 @@ class AppController {
         } catch (e) {
           exports[fmt] = `error: ${(e as Error).message}`
         }
+      }
+
+      // 書き出し解像度: dpi で画素数が変わるか / 1 辺の上限で自動的に下がるか /
+      // PNG に解像度（pHYs）が埋まっているか
+      const exportDpi: Record<string, string> = {}
+      try {
+        const base = await exportGraphToImage(graph, 'png', { dpi: 96 })
+        const high = await exportGraphToImage(graph, 'png', { dpi: 192 })
+        exportDpi['scales'] =
+          high.width === base.width * 2 && high.height === base.height * 2
+            ? 'ok'
+            : `ng(96=${base.width}x${base.height}, 192=${high.width}x${high.height})`
+
+        const small = await exportGraphToImage(graph, 'png', { dpi: 72 })
+        exportDpi['shrink'] =
+          small.width === Math.round(base.width * 0.75) && small.width > 0
+            ? 'ok'
+            : `ng(72=${small.width}x${small.height}, 96=${base.width}x${base.height})`
+
+        const capped = await exportGraphToImage(graph, 'png', { dpi: 600, maxSide: 400 })
+        exportDpi['clamp'] =
+          capped.clamped && Math.max(capped.width, capped.height) === 400 && capped.dpi < 600
+            ? 'ok'
+            : `ng(clamped=${capped.clamped}, size=${capped.width}x${capped.height}, dpi=${capped.dpi})`
+
+        const bytes = atob(high.dataUrl.slice(high.dataUrl.indexOf(',') + 1))
+        const phys = bytes.indexOf('pHYs')
+        const ppm =
+          phys < 0
+            ? -1
+            : ((bytes.charCodeAt(phys + 4) << 24) |
+                (bytes.charCodeAt(phys + 5) << 16) |
+                (bytes.charCodeAt(phys + 6) << 8) |
+                bytes.charCodeAt(phys + 7)) >>>
+              0
+        exportDpi['png-phys'] = ppm === dpiToPixelsPerMeter(192) ? 'ok' : `ng(ppm=${ppm})`
+      } catch (e) {
+        exportDpi['error'] = (e as Error).message
       }
 
       // 挙動検証: ライフライン移動でメッセージ vertex が中点へ再正規化されるか /
@@ -1963,6 +2014,7 @@ B --> A : 返す`
         vertices,
         edges,
         error: this.textError.textContent,
+        exportDpi,
         exports,
         behavior,
         props,
@@ -2712,10 +2764,15 @@ B --> A : 返す`
   // ---- 書き出し ----
   private async exportImage(format: ImageFormat): Promise<void> {
     try {
-      const dataUrl = await exportGraphToDataUrl(this.editor.graph, format)
+      const image = await exportGraphToImage(this.editor.graph, format, { dpi: this.exportDpi })
       const name = this.defaultBaseName()
-      const saved = await window.uml.exportImage(dataUrl, format, `${name}.${format}`)
-      if (saved) this.setStatusMessage(`書き出しました: ${saved}`)
+      const saved = await window.uml.exportImage(image.dataUrl, format, `${name}.${format}`)
+      if (!saved) return
+      const size = `${image.width}×${image.height}px / ${Math.round(image.dpi)}dpi`
+      const note = image.clamped
+        ? `（1辺 ${MAX_IMAGE_SIDE}px の上限に合わせて ${image.requestedDpi}dpi から下げました）`
+        : ''
+      this.setStatusMessage(`書き出しました: ${saved} ${size}${note}`)
     } catch (e) {
       this.setStatusMessage(`書き出しに失敗しました: ${(e as Error).message}`)
     }

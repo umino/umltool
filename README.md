@@ -8,7 +8,7 @@ Visio のように要素を自由配置・自由配線できる WYSIWYG の UML 
 - エンジン: [AntV X6](https://github.com/antvis/X6) v3 + Electron + TypeScript (electron-vite)
 - テキスト（PlantUML サブセット）からの**初期生成は一方向**（生成後は GUI で自由に調整）
 - プロジェクト保存は `.umlproj`（JSON エンベロープ + X6 モデル）
-- 画像書き出し: PNG / JPEG / WebP
+- 画像書き出し: PNG / JPEG / WebP（解像度を 72〜600dpi から選択。1 辺 8192px を超える場合は自動で下げます）
 - 未保存の変更があるまま新規・開く・図種別切替・終了をすると、**保存する / 保存しない / キャンセル**の確認が出る
 
 ## 開発

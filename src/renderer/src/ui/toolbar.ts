@@ -4,6 +4,7 @@ import {
   type DecisionShape,
   type MindmapLayout
 } from '../editor/constants'
+import { CSS_DPI, DEFAULT_DPI, DPI_CHOICES, MAX_IMAGE_SIDE } from '../export/raster'
 
 export type ToolbarDiagramType = 'sequence' | 'activity' | 'mindmap'
 
@@ -21,6 +22,7 @@ export interface ToolbarActions {
   zoomOut: () => void
   zoomReset: () => void
   fit: () => void
+  setExportDpi: (dpi: number) => void
   exportImage: (format: 'png' | 'jpg' | 'webp') => void
   showShortcuts: () => void
 }
@@ -133,9 +135,26 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
       button('全体', '全体表示', actions.fit)
     )
   )
+  // 書き出し解像度。数字を上げるほど画素数が増えるので、Excel の貼り付け上限
+  // （1 辺 8192px）を超える図では書き出し側が自動で下げる。
+  const dpiSelect = document.createElement('select')
+  for (const dpi of DPI_CHOICES) {
+    const opt = document.createElement('option')
+    opt.value = String(dpi)
+    const note = dpi < CSS_DPI ? '（縮小）' : dpi === CSS_DPI ? '（等倍）' : dpi === DEFAULT_DPI ? '（標準）' : ''
+    opt.textContent = `${dpi} dpi${note}`
+    dpiSelect.appendChild(opt)
+  }
+  dpiSelect.value = String(DEFAULT_DPI)
+  dpiSelect.title =
+    `書き出す画像の解像度。96dpi が画面の実寸と等倍です。\n` +
+    `1 辺が ${MAX_IMAGE_SIDE}px（Excel に貼れる上限）を超える場合は自動で下げます。`
+  dpiSelect.addEventListener('change', () => actions.setExportDpi(Number(dpiSelect.value)))
+
   host.appendChild(
     group(
       label('書き出し:'),
+      dpiSelect,
       button('PNG', 'PNG で書き出し', () => actions.exportImage('png')),
       button('JPG', 'JPEG で書き出し', () => actions.exportImage('jpg')),
       button('WebP', 'WebP で書き出し', () => actions.exportImage('webp'))
