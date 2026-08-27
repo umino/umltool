@@ -79,12 +79,32 @@ export function resolveExportScale(
   }
 }
 
+/**
+ * 書き出す範囲。
+ *
+ * セルの矩形だけで測ると、はみ出したラベルが切れる。エッジのラベルは線の中点に
+ * 置かれるだけで線の長さには収まらないので、`[-> A` のような短いゲート線に長い
+ * ラベルを乗せると顕著に欠ける。実際に描かれている範囲（DOM 実測）との和を取る。
+ * DOM 側は選択中の編集ハンドルなども含みうるが、範囲が広がるだけで害はない
+ * （ハンドル自体は beforeSerialize で消している）。
+ */
+function contentBBoxWithLabels(graph: Graph): ReturnType<Graph['getContentBBox']> {
+  const geometry = graph.getContentBBox()
+  try {
+    const drawn = graph.getContentBBox({ useCellGeometry: false })
+    if (drawn.width > 0 && drawn.height > 0) return geometry.union(drawn)
+  } catch {
+    // 描画前などで実測できないときはセルの矩形だけで書き出す
+  }
+  return geometry
+}
+
 /** グラフを独立 SVG 文字列にする（余白は viewBox に焼き込む） */
 export async function exportGraphToSvg(
   graph: Graph,
   margin = 16
 ): Promise<{ svg: string; width: number; height: number }> {
-  const viewBox = graph.graphToLocal(graph.getContentBBox()).inflate(margin)
+  const viewBox = graph.graphToLocal(contentBBoxWithLabels(graph)).inflate(margin)
   const width = Math.max(1, viewBox.width)
   const height = Math.max(1, viewBox.height)
   const svg = await graph.toSVGAsync({
@@ -99,6 +119,8 @@ export async function exportGraphToSvg(
       svgEl.querySelector('.x6-graph-svg-viewport')?.removeAttribute('transform')
       // 画面では CSS で隠している接続ポートは、画像には含めない
       svgEl.querySelectorAll('.x6-port').forEach((el) => el.remove())
+      // 選択中のセルに出ている編集ハンドル（vertex / 端点付け替え）も画像には含めない
+      svgEl.querySelectorAll('.x6-cell-tools').forEach((el) => el.remove())
     }
   })
   return { svg, width, height }

@@ -6,6 +6,7 @@ import {
   addAttachedText,
   addFragment,
   addFragmentDivider,
+  addGateMessage,
   addLifeline,
   addMessage,
   attachLinkOf,
@@ -204,6 +205,7 @@ class AppController {
       addExecutionSpec: () => this.addExecutionSpec(),
       addFragment: () => this.addFragment(),
       addConnection: () => this.addConnection(),
+      addGate: (direction) => this.addGate(direction),
       addActivityNode: (kind) => this.addActivityNode(kind),
       addSwimlane: () => this.addSwimlane(),
       addFrame: () => this.addActivityFrame(),
@@ -286,6 +288,50 @@ class AppController {
         exportDpi['png-phys'] = ppm === dpiToPixelsPerMeter(192) ? 'ok' : `ng(ppm=${ppm})`
       } catch (e) {
         exportDpi['error'] = (e as Error).message
+      }
+
+      // 書き出し範囲: 線からはみ出したラベルが切れないか / 編集ハンドルが写らないか。
+      // ゲートメッセージ（`[-> A`）は線が短いのに対しラベルが長く、ラベルは線の
+      // 中点に置かれるため、セルの矩形だけで範囲を決めると左側が欠ける。
+      const exportBounds: Record<string, string> = {}
+      try {
+        buildSequenceFromText(
+          this.editor,
+          '[-> A : 外部システムから受信する要求を処理する準備\nA -> B : 通常'
+        )
+        await new Promise((r) => setTimeout(r, 150))
+        const gateEdge = graph
+          .getEdges()
+          .find((e) => (e.getData() as { gate?: string })?.gate === 'in')
+        const view = gateEdge ? graph.findViewByCell(gateEdge) : null
+        const labelEl = view?.container.querySelector('.x6-edge-label') as SVGGElement | null
+        const labelBox = labelEl?.getBBox()
+        const shift = labelEl?.transform.baseVal.consolidate()?.matrix.e ?? 0
+        const labelLeft = (labelBox?.x ?? NaN) + shift
+        const labelRight = labelLeft + (labelBox?.width ?? 0)
+        const edgeLeft = gateEdge?.getBBox().x ?? NaN
+
+        const { svg } = await exportGraphToSvg(graph)
+        const vb = /viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"/.exec(svg)
+        const left = vb ? Number(vb[1]) : NaN
+        const right = left + (vb ? Number(vb[3]) : NaN)
+        exportBounds['labelOverflows'] =
+          labelLeft < edgeLeft ? `ok(${Math.round(edgeLeft - labelLeft)}px)` : 'ng(no overflow)'
+        exportBounds['labelInside'] =
+          left <= labelLeft && labelRight <= right
+            ? 'ok'
+            : `ng(viewBox=${left}..${right}, label=${labelLeft}..${labelRight})`
+
+        if (gateEdge) {
+          graph.select(gateEdge)
+          await new Promise((r) => setTimeout(r, 150))
+          const selected = (await exportGraphToSvg(graph)).svg
+          exportBounds['noTools'] = selected.includes('x6-cell-tools') ? 'ng(tools in svg)' : 'ok'
+          graph.cleanSelection()
+        }
+        buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+      } catch (e) {
+        exportBounds['error'] = (e as Error).message
       }
 
       // 挙動検証: ライフライン移動でメッセージ vertex が中点へ再正規化されるか /
@@ -503,6 +549,72 @@ A -> B : 通常`
             horizontal
               ? 'ok'
               : `ng(gates=${gates.length}, inX=${inPoint?.x}, outX=${outPoint?.x}, aCx=${aCx}, horizontal=${horizontal})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+        }
+
+        // 部品パレットの「外部から」「外部へ」でゲート付きメッセージが作れるか。
+        // 作った後の上下ドラッグで、点側の端点も追従して水平が保たれるか。
+        {
+          buildSequenceFromText(this.editor, 'participant A\nparticipant B')
+          await new Promise((r) => setTimeout(r, 100))
+          const tiles = [
+            ...(document
+              .querySelectorAll('#palette-body .palette-grid')[0]
+              ?.querySelectorAll('.palette-item') ?? [])
+          ]
+          const click = (label: string): void =>
+            (tiles.find((b) => b.textContent?.includes(label)) as HTMLButtonElement | undefined)
+              ?.click() ?? undefined
+          const lifelineA = graph.getNodes().find((n) => getNodeLabel(n) === 'A')
+          if (lifelineA) graph.resetSelection(lifelineA)
+          click('外部から')
+          click('外部へ')
+
+          const gates = graph.getEdges().filter((e) => (e.getData() as { gate?: string })?.gate)
+          const inbound = gates.find((e) => (e.getData() as { gate?: string }).gate === 'in')
+          const outbound = gates.find((e) => (e.getData() as { gate?: string }).gate === 'out')
+          const aBox2 = lifelineA?.getBBox()
+          const cx = aBox2 ? aBox2.x + aBox2.width / 2 : 0
+          const pointOf = (e: Edge | undefined, side: 'source' | 'target'): { x?: number; y?: number } =>
+            ((side === 'source' ? e?.getSource() : e?.getTarget()) ?? {}) as { x?: number; y?: number }
+          const inPt = pointOf(inbound, 'source')
+          const outPt = pointOf(outbound, 'target')
+          behavior['gatePalette'] =
+            gates.length === 2 &&
+            inbound?.getTargetCellId() === lifelineA?.id &&
+            outbound?.getSourceCellId() === lifelineA?.id &&
+            inPt.x === cx - MESSAGE.gateLength &&
+            outPt.x === cx + MESSAGE.gateLength
+              ? 'ok'
+              : `ng(gates=${gates.length}, inX=${inPt.x}, outX=${outPt.x}, cx=${cx})`
+
+          // 上下ドラッグ相当: vertex を 40 下げると点側も同じ y へ動く
+          let dragResult = 'ng(no gate)'
+          if (inbound) {
+            const v = inbound.getVertices()[0]
+            inbound.setVertices([{ x: v.x, y: v.y + 40 }])
+            const moved = inbound.getVertices()[0]
+            const pt = pointOf(inbound, 'source')
+            dragResult =
+              Math.abs((pt.y ?? NaN) - moved.y) < 0.5 && Math.abs(moved.y - (v.y + 40)) < 0.5
+                ? 'ok'
+                : `ng(vertexY=${moved.y}, pointY=${pt.y}, want=${v.y + 40})`
+          }
+          behavior['gateDragHorizontal'] = dragResult
+
+          // 保存→読込で点側の端点（cell を持たない終端）が残るか
+          const saved = serializeProject(this.editor, 'sequence')
+          loadProject(this.editor, saved)
+          const reloaded = graph.getEdges().filter((e) => (e.getData() as { gate?: string })?.gate)
+          const stillPoints = reloaded.every((e) => {
+            const g = (e.getData() as { gate?: string }).gate
+            const p = (g === 'in' ? e.getSource() : e.getTarget()) as { x?: number; cell?: string }
+            return p.cell === undefined && typeof p.x === 'number'
+          })
+          behavior['gateRoundtrip'] =
+            reloaded.length === 2 && stillPoints
+              ? 'ok'
+              : `ng(gates=${reloaded.length}, points=${stillPoints})`
           buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
 
@@ -2015,6 +2127,7 @@ B --> A : 返す`
         edges,
         error: this.textError.textContent,
         exportDpi,
+        exportBounds,
         exports,
         behavior,
         props,
@@ -2145,6 +2258,39 @@ B --> A : 返す`
     if (created) {
       graph.resetSelection(created)
       this.editor.ensureCellVisible(created)
+    }
+  }
+
+  // ---- 外部ゲート付きメッセージ追加（PlantUML の `[-> A` / `A ->]`）----
+  //
+  // 片端が図の外（座標だけの点）になるメッセージ。相手はライフライン 1 つで
+  // 決まるので、接続の 2 要素選択ではなく単独のパレット操作にしている。
+  private addGate(direction: 'in' | 'out'): void {
+    const graph = this.editor.graph
+    const target = this.resolveTargetLifeline()
+    if (!target) {
+      this.setStatusMessage('ライフラインがありません。先に追加してください。')
+      return
+    }
+    const bbox = target.getBBox()
+    const centerX = bbox.x + bbox.width / 2
+    const gateX = direction === 'in' ? centerX - MESSAGE.gateLength : centerX + MESSAGE.gateLength
+    let created: Edge | null = null
+    this.editor.batch(() => {
+      created = addGateMessage(graph, target, direction, 'sync', '', {
+        y: nextMessageY(graph),
+        gateX
+      })
+    })
+    if (created) {
+      graph.resetSelection(created)
+      this.editor.ensureCellVisible(created)
+      const name = getNodeLabel(target)
+      this.setStatusMessage(
+        direction === 'in'
+          ? `図の外から「${name}」へのメッセージを追加しました。ラベルは右パネルかダブルクリックで入力できます。`
+          : `「${name}」から図の外へのメッセージを追加しました。ラベルは右パネルかダブルクリックで入力できます。`
+      )
     }
   }
 

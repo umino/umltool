@@ -11,6 +11,7 @@ export interface PaletteActions {
   addFragment: () => void
   addNote: () => void
   addConnection: () => void
+  addGate: (direction: 'in' | 'out') => void
   addActivityNode: (kind: ActivityNodeKind) => void
   addSwimlane: () => void
   addFrame: () => void
@@ -95,6 +96,30 @@ function sequenceItems(a: PaletteActions): PaletteItem[] {
         `<line x1="4" y1="15" x2="34" y2="15" stroke="${C.stroke}" stroke-width="1.6"/>` +
         `<path d="M 34 15 L 26 10.5 V 19.5 Z" fill="${C.stroke}"/>`,
       onClick: a.addConnection
+    },
+    // 図の外を端点にするメッセージ（PlantUML の `[-> A` / `A ->]`）。
+    // 相手はライフライン 1 つで決まるので、2 要素を選ばなくても押せる。
+    {
+      label: '外部から',
+      title:
+        '図の外から選択中のライフラインへのメッセージを追加（PlantUML の [-> A）。' +
+        '選択がなければ一番左のライフラインに付きます',
+      icon:
+        `<line x1="6" y1="3" x2="6" y2="27" stroke="${C.gray}" stroke-width="2"/>` +
+        `<line x1="6" y1="15" x2="38" y2="15" stroke="${C.stroke}" stroke-width="1.6"/>` +
+        `<path d="M 38 15 L 30 10.5 V 19.5 Z" fill="${C.stroke}"/>`,
+      onClick: () => a.addGate('in')
+    },
+    {
+      label: '外部へ',
+      title:
+        '選択中のライフラインから図の外へのメッセージを追加（PlantUML の A ->]）。' +
+        '選択がなければ一番左のライフラインに付きます',
+      icon:
+        `<line x1="4" y1="15" x2="34" y2="15" stroke="${C.stroke}" stroke-width="1.6"/>` +
+        `<path d="M 34 15 L 26 10.5 V 19.5 Z" fill="${C.stroke}"/>` +
+        `<line x1="38" y1="3" x2="38" y2="27" stroke="${C.gray}" stroke-width="2"/>`,
+      onClick: () => a.addGate('out')
     },
     {
       label: 'フラグメント',

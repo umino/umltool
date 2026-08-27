@@ -122,7 +122,9 @@ export const MESSAGE = {
   stepY: 48,
   /** 自己メッセージのループ幅 */
   selfWidth: 60,
-  selfHeight: 32
+  selfHeight: 32,
+  /** ゲート（図の外の端点）を相手ライフラインの中心からどれだけ離すか */
+  gateLength: 90
 } as const
 
 export const ACTIVATION = {
