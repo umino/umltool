@@ -39,6 +39,7 @@ import {
 } from './editor/mindmap'
 import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
+import { DIRECTION_LABEL, type Direction } from './editor/arrange'
 import {
   getCellKind,
   getEdgeStroke,
@@ -146,6 +147,14 @@ const SAMPLE_MINDMAP = `* Webサイト刷新
 *** 効果測定`
 
 /** Ctrl+矢印でトピックを動かす量（グリッド 1 マス / Shift 併用で 5 マス） */
+/** 矢印キー → 向き。一括選択（Shift+矢印）と移動（Ctrl+矢印）で共用する */
+const ARROW_DIRECTIONS: Record<string, Direction> = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right'
+}
+
 const NUDGE_STEP = 8
 const NUDGE_STEP_LARGE = 40
 
@@ -1728,6 +1737,125 @@ B --> A : 返す`
         } catch (e) {
           activity['portAnchor'] = `error: ${(e as Error).message}`
         }
+
+        // 一括選択（issue #34）と整列・中心スナップ（issue #35）
+        try {
+          // 縦に 3 つ並べ、真ん中だけ中心を 4px ずらしておく
+          const n1 = addActivityNode(graph, 'action', '上', { centerX: 2000, centerY: 100 })
+          const n2 = addActivityNode(graph, 'action', '中', { centerX: 2004, centerY: 260 })
+          const n3 = addActivityNode(graph, 'action', '下', { centerX: 2000, centerY: 420 })
+          const n4 = addActivityNode(graph, 'action', '右', { centerX: 2400, centerY: 100 })
+          addFlow(graph, n1, n2)
+          addFlow(graph, n2, n3)
+          await new Promise((r) => setTimeout(r, 60))
+
+          // Shift+↓ 相当: 基準より下から始まるものだけが増える
+          graph.resetSelection(n1)
+          const added = this.editor.extendSelection('down')
+          const chosen = graph.getSelectedCells().filter((c) => c.isNode()) as Node[]
+          const bottomOfN1 = n1.getBBox().y + n1.getBBox().height
+          // 基準より下から始まるものだけ（横に離れていても掴む）が増えること
+          const onlyBelow = chosen.every(
+            (n) => n.id === n1.id || n.getBBox().y >= bottomOfN1 - 0.5
+          )
+          const ids = new Set(chosen.map((c) => c.id))
+          activity['extendSelect'] =
+            added >= 2 && ids.has(n2.id) && ids.has(n3.id) && ids.has(n1.id) && onlyBelow
+              ? 'ok'
+              : `ng(added=${added}, n2=${ids.has(n2.id)}, n3=${ids.has(n3.id)}, onlyBelow=${onlyBelow})`
+
+          // 続けて別の向きを押しても効く（基準は最初に選んだ n1 のまま）
+          const rightAdded = this.editor.extendSelection('right')
+          const chained = graph.getSelectedCells().some((c) => c.id === n4.id)
+          // 選択し直したら基準も取り直す
+          graph.resetSelection(n4)
+          const reAnchored = this.editor.extendSelection('left') > 0
+          activity['extendChain'] =
+            rightAdded >= 1 && chained && reAnchored
+              ? 'ok'
+              : `ng(right=${rightAdded}, n4=${chained}, reAnchored=${reAnchored})`
+
+          // まとめて動かすと相対位置は変わらない
+          graph.resetSelection([n1, n2, n3])
+          const before = [n1, n2, n3].map((n) => n.getBBox().y)
+          this.editor.nudgeSelection('down', 40)
+          const after = [n1, n2, n3].map((n) => n.getBBox().y)
+          activity['nudgeSelection'] = after.every((y, i) => Math.round(y - before[i]) === 40)
+            ? 'ok'
+            : `ng(${after.map((y, i) => Math.round(y - before[i])).join('/')})`
+
+          // キー操作でも同じことができる: Shift+↓ で掴み、Ctrl+↓ で動かす
+          {
+            const key = async (k: string, mods: Record<string, boolean>): Promise<void> => {
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...mods }))
+              await new Promise((r) => setTimeout(r, 60))
+            }
+            graph.resetSelection(n1)
+            await key('ArrowDown', { shiftKey: true })
+            const grabbed = graph.getSelectedCells().some((c) => c.id === n3.id)
+            const y3 = n3.getBBox().y
+            await key('ArrowDown', { ctrlKey: true })
+            const moved = Math.round(n3.getBBox().y - y3)
+            await key('ArrowUp', { ctrlKey: true, shiftKey: true })
+            const large = Math.round(n3.getBBox().y - y3)
+            activity['arrangeKeys'] =
+              grabbed && moved === NUDGE_STEP && large === NUDGE_STEP - NUDGE_STEP_LARGE
+                ? 'ok'
+                : `ng(grabbed=${grabbed}, nudge=${moved}, large=${large})`
+          }
+
+          // 整列: 中心が揃う（矢印がまっすぐになる）
+          graph.resetSelection([n1, n2, n3])
+          this.editor.alignSelection('centerX')
+          const centers = [n1, n2, n3].map((n) => n.getBBox().center.x)
+          activity['alignCenter'] =
+            Math.max(...centers) - Math.min(...centers) < 0.5
+              ? 'ok'
+              : `ng(${centers.map((c) => Math.round(c)).join('/')})`
+
+          // 置いた直後の中心スナップ: 数 px のずれは吸着し、大きなずらしは残す
+          graph.cleanSelection()
+          graph.resetSelection(n2)
+          n2.translate(5, 0)
+          graph.trigger('node:moved', { node: n2 })
+          const snapped = Math.abs(n2.getBBox().center.x - n1.getBBox().center.x) < 0.5
+          n2.translate(60, 0)
+          graph.trigger('node:moved', { node: n2 })
+          const kept = Math.abs(n2.getBBox().center.x - n1.getBBox().center.x - 60) < 0.5
+          // まとめて動かしている最中は吸着しない（選択内の相対位置を崩さない）
+          graph.resetSelection([n2, n3])
+          n2.translate(-56, 0)
+          graph.trigger('node:moved', { node: n2 })
+          const multi = Math.abs(n2.getBBox().center.x - n1.getBBox().center.x - 4) < 0.5
+          activity['centerSnap'] =
+            snapped && kept && multi
+              ? 'ok'
+              : `ng(snap=${snapped}, kept=${kept}, multi=${multi})`
+
+          // 右パネル: 複数選択で整列欄、単一選択でまとめて選択欄が出る
+          graph.resetSelection([n1, n2])
+          await new Promise((r) => setTimeout(r, 100))
+          const bodyEl = document.getElementById('props-body')
+          const titlesOf = (): string[] =>
+            [...(bodyEl?.querySelectorAll('.section-title') ?? [])].map(
+              (el) => el.textContent ?? ''
+            )
+          const multiTitles = titlesOf()
+          graph.resetSelection(n1)
+          await new Promise((r) => setTimeout(r, 100))
+          const singleTitles = titlesOf()
+          activity['arrangePanel'] =
+            multiTitles.includes('整列') &&
+            multiTitles.includes('まとめて選択') &&
+            singleTitles.includes('まとめて選択')
+              ? 'ok'
+              : `ng(multi=${multiTitles.join('/')}, single=${singleTitles.join('/')})`
+
+          graph.cleanSelection()
+          graph.removeCells([n1, n2, n3, n4])
+        } catch (e) {
+          activity['arrange'] = `error: ${(e as Error).message}`
+        }
       } catch (e) {
         activity['error'] = (e as Error).message
       }
@@ -2219,6 +2347,14 @@ B --> A : 返す`
         exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
       ;(window as unknown as Record<string, unknown>).__umlExportSvg = async () =>
         (await exportGraphToSvg(graph)).svg
+
+      // 右パネルの整列欄を見た目で確認するための状態づくり（スクリーンショット用）
+      ;(window as unknown as Record<string, unknown>).__umlShowArrangePanel = () => {
+        const nodes = graph.getNodes().filter((n) => getCellKind(n) === 'action')
+        if (nodes.length < 2) return 'no nodes'
+        graph.resetSelection(nodes.slice(0, 2))
+        return 'ok'
+      }
 
       return {
         vertices,
@@ -3249,6 +3385,36 @@ B --> A : 返す`
     return false
   }
 
+  /** Shift+矢印: その向きにあるノードをまとめて選択に足す。処理したら true */
+  private handleExtendKey(e: KeyboardEvent): boolean {
+    const direction = ARROW_DIRECTIONS[e.key]
+    if (direction === undefined) return false
+    e.preventDefault()
+    if (this.editor.isSelectionEmpty()) {
+      this.setStatusMessage('基準になる要素を選択してから Shift+矢印を押してください。')
+      return true
+    }
+    const added = this.editor.extendSelection(direction)
+    this.setStatusMessage(
+      added > 0
+        ? `${DIRECTION_LABEL[direction]}にある ${added} 個を選択に追加しました（ドラッグまたは Ctrl+矢印で移動）`
+        : `${DIRECTION_LABEL[direction]}には追加できる要素がありません。`
+    )
+    return true
+  }
+
+  /** Ctrl+矢印: 選択したノードをずらす（Shift 併用で大きく）。処理したら true */
+  private handleNudgeKey(e: KeyboardEvent): boolean {
+    const direction = ARROW_DIRECTIONS[e.key]
+    if (direction === undefined) return false
+    e.preventDefault()
+    const step = e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP
+    if (this.editor.nudgeSelection(direction, step) === 0) {
+      this.setStatusMessage('動かす要素を選択してください。')
+    }
+    return true
+  }
+
   private bindKeys(): void {
     document.addEventListener('keydown', (e) => {
       const target = e.target as HTMLElement
@@ -3271,8 +3437,15 @@ B --> A : 返す`
         return
       }
 
+      // 向きで一括選択（Shift+矢印）は図種別を問わず同じ。マインドマップの
+      // 矢印移動（修飾キー無し）より先に見る。
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && this.handleExtendKey(e)) return
+
       // マインドマップはキーボード主体で編集できるよう、専用の割り当てを持つ
       if (this.diagramType === 'mindmap' && this.handleMindmapKey(e)) return
+
+      // Ctrl+矢印で選択を動かす（マインドマップは専用ハンドラ側で処理済み）
+      if (e.ctrlKey && !e.altKey && this.handleNudgeKey(e)) return
 
       const key = e.key.toLowerCase()
       if (e.ctrlKey && !e.shiftKey && key === 'z') {

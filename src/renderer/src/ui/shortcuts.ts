@@ -31,6 +31,8 @@ export const COMMON_SHORTCUTS: ShortcutGroup = {
     { keys: ['Ctrl', '＋', 'C'], label: 'コピー' },
     { keys: ['Ctrl', '＋', 'V'], label: '貼り付け' },
     { keys: ['Ctrl', '＋', 'A'], label: 'すべて選択' },
+    { keys: ['Shift', '＋', '←→↑↓'], label: 'その向きにある要素をまとめて選択に追加' },
+    { keys: ['Ctrl', '＋', '←→↑↓'], label: '選択した要素を動かす（Shift 併用で大きく）' },
     { keys: ['Delete'], label: '選択を削除' }
   ]
 }
@@ -55,7 +57,6 @@ export const MINDMAP_SHORTCUTS: ShortcutGroup = {
     { keys: ['↑', '↓'], label: '兄弟トピックへ移動' },
     { keys: ['←', '→'], label: '親 / 子トピックへ移動（枝の向きに追従）' },
     { keys: ['Home'], label: 'ルートへ移動' },
-    { keys: ['Ctrl', '＋', '←→↑↓'], label: 'トピックを動かす（Shift 併用で大きく）' },
     { keys: ['Tab'], label: '子トピックを追加' },
     { keys: ['Enter'], label: '兄弟トピックを追加' },
     { keys: ['F2'], label: '名前を編集' },

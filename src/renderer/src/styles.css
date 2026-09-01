@@ -427,6 +427,17 @@ body,
   color: var(--muted);
 }
 
+/* 整列・まとめて選択のボタン列。等幅に並べて押し間違いを減らす */
+#props-body .button-row {
+  display: flex;
+  gap: 6px;
+}
+
+#props-body .button-row button {
+  flex: 1;
+  padding: 5px 0;
+}
+
 /* カラー入力: 自由入力（左）とプリセットのスウォッチ（右・折返し）を併置 */
 #props-body .color-row {
   display: flex;
