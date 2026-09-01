@@ -61,6 +61,12 @@ import {
   setTextFontSize
 } from '../editor/shapes'
 import {
+  ALIGN_LABEL,
+  DIRECTION_LABEL,
+  type AlignMode,
+  type Direction
+} from '../editor/arrange'
+import {
   childTopics,
   isCollapsed,
   setCollapsed,
@@ -120,6 +126,8 @@ export class PropertiesPanel {
     }
     if (cells.length > 1) {
       this.host.appendChild(hint(`${cells.length} 個の要素を選択中`))
+      this.appendAlignSection()
+      this.appendExtendSection()
       return
     }
     const cell = cells[0]
@@ -133,6 +141,7 @@ export class PropertiesPanel {
     if (!handled && !styled) {
       this.host.appendChild(hint('この要素には編集可能なプロパティがありません。'))
     }
+    if (cell.isNode()) this.appendExtendSection()
   }
 
   /** 種別ごとの固有プロパティ。何か出したら true */
@@ -544,6 +553,66 @@ export class PropertiesPanel {
       )
     }
     return true
+  }
+
+  /**
+   * 選択の外側にあるノードをまとめて選択に足す欄（issue #34）。
+   *
+   * 図が混んでくると、新しいノードを差し込む場所を空けるために「ここから下を
+   * 全部下げる」ことになる。1 つずつ Ctrl+クリックで拾うのは数が多いと辛く、
+   * 拾い直しも起きるので、向きで一括して掴めるようにする。
+   */
+  private appendExtendSection(): void {
+    if (this.editor.getMode() === 'sequence') return
+    this.host.appendChild(sectionTitle('まとめて選択'))
+    const row = document.createElement('div')
+    row.className = 'button-row'
+    for (const [direction, glyph] of [
+      ['up', '↑'],
+      ['down', '↓'],
+      ['left', '←'],
+      ['right', '→']
+    ] as [Direction, string][]) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.textContent = glyph
+      btn.title = `選択より${DIRECTION_LABEL[direction]}にあるノードを選択に追加 (Shift+${glyph})`
+      btn.addEventListener('click', () => this.editor.extendSelection(direction))
+      row.appendChild(btn)
+    }
+    this.host.appendChild(row)
+    this.host.appendChild(
+      hint(
+        '空きを作るときは、ずらしたい向きで選択を広げてからドラッグ（Ctrl+矢印でも動かせます）。' +
+          '向きは続けて押せます（基準は最初に選んだ要素のまま）。'
+      )
+    )
+  }
+
+  /** 選択したノードの位置を揃える欄（矢印がまっすぐになるよう中心を合わせる用） */
+  private appendAlignSection(): void {
+    if (this.editor.getMode() === 'sequence') return
+    if (this.editor.selectedMovableNodes().length < 2) return
+    this.host.appendChild(sectionTitle('整列'))
+    for (const modes of [
+      ['left', 'centerX', 'right'],
+      ['top', 'centerY', 'bottom']
+    ] as AlignMode[][]) {
+      const row = document.createElement('div')
+      row.className = 'button-row'
+      for (const mode of modes) {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.textContent = ALIGN_LABEL[mode]
+        btn.title = `選択したノードを${ALIGN_LABEL[mode]}に揃える`
+        btn.addEventListener('click', () => this.editor.alignSelection(mode))
+        row.appendChild(btn)
+      }
+      this.host.appendChild(row)
+    }
+    this.host.appendChild(
+      hint('「左右中央」で縦に並んだノードの中心が揃い、繋いだ矢印がまっすぐになります。')
+    )
   }
 }
 

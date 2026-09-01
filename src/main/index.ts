@@ -162,6 +162,18 @@ function createWindow(): void {
             console.log(`[DIAG-SVG] ${outSvg}`)
           }
 
+          // 右パネル（複数選択時の整列欄）のスクリーンショット
+          await wc.executeJavaScript(
+            'window.__umlShowArrangePanel ? window.__umlShowArrangePanel() : ""'
+          )
+          await sleep(300)
+          const panelShot = await wc.capturePage()
+          if (!panelShot.isEmpty()) {
+            const outPanel = join(process.cwd(), 'diag-output-panel.png')
+            await writeFile(outPanel, panelShot.toPNG())
+            console.log(`[DIAG-PANEL] ${outPanel}`)
+          }
+
           // UI 全体のスクリーンショット（部品タブを開いた状態）
           await wc.executeJavaScript('document.getElementById("tab-btn-palette")?.click()')
           await sleep(300)

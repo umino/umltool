@@ -64,6 +64,19 @@ import { droppedSide, type Side } from './branchPorts'
 import { applyBranchStyle, arrangeMindmap, checkBranch } from './mindmap'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
+import {
+  alignedPosition,
+  centerSnapOffset,
+  directionDelta,
+  isBeyond,
+  unionBox,
+  type AlignMode,
+  type Box,
+  type Direction
+} from './arrange'
+
+/** 置いた直後に「繋がっている相手と中心を揃える」ずれの上限 px（issue #35） */
+const CENTER_SNAP = 8
 
 const ZOOM_MIN = 0.2
 const ZOOM_MAX = 8
@@ -238,6 +251,7 @@ export class GraphEditor {
     this.wireSequenceBehavior()
     this.wireInlineEditing()
     this.wireActivityResize()
+    this.wireCenterSnap()
     this.wireBranchPorts()
 
     // 新しく増えた分岐は、パレット・DSL・貼り付けのどれで来ても現在の図形に揃える
@@ -289,6 +303,33 @@ export class GraphEditor {
       const now = node.getPosition()
       if (Math.abs(now.x - next.x) < 0.5 && Math.abs(now.y - next.y) < 0.5) return
       node.position(next.x, next.y)
+    })
+  }
+
+  /**
+   * 置いたノードの中心を、フローで繋がっている相手にぴたりと合わせる（issue #35）。
+   *
+   * フローはノードの辺の中央から出るので、中心が数 px ずれるだけで縦（横）の
+   * 矢印が斜めになる。ドラッグを離した時点で、相手との中心の差が CENTER_SNAP
+   * 以内なら揃える。それより大きいずれは意図した配置とみなして触らない。
+   *
+   * まとめて動かしている最中は、1 つだけ吸着させると選択内の相対位置が崩れる
+   * ので何もしない。
+   */
+  private wireCenterSnap(): void {
+    this.graph.on('node:moved', ({ node }: { node: Node }) => {
+      if (this.mode !== 'activity' || this.normalizing) return
+      if (!isActivityNodeKind(getCellKind(node))) return
+      if (this.graph.getSelectedCells().filter((c) => c.isNode()).length > 1) return
+      const neighbours = this.graph.model
+        .getConnectedEdges(node)
+        .filter((e) => getCellKind(e) === 'flow')
+        .map((e) => (e.getSourceCellId() === node.id ? e.getTargetCell() : e.getSourceCell()))
+        .filter((c): c is Node => c != null && c.isNode() && c.id !== node.id)
+        .map((n) => n.getBBox() as Box)
+      const { dx, dy } = centerSnapOffset(node.getBBox() as Box, neighbours, CENTER_SNAP)
+      if (dx === 0 && dy === 0) return
+      node.translate(dx, dy)
     })
   }
 
@@ -1077,6 +1118,110 @@ export class GraphEditor {
 
   selectAll(): void {
     this.graph.resetSelection(this.graph.getCells())
+  }
+
+  /**
+   * 「まとめて動かせるノード」か。
+   *
+   * コンテナ（レーン / フレーム / フラグメント）は中身ごと動くので、一括選択に
+   * 混ぜると中のノードが二重にずれる。純描画用の背景レイヤや、親に貼り付いて
+   * 位置が決まるもの（活性化バー・区切り線）も対象外。
+   */
+  private isArrangeable(node: Node): boolean {
+    const kind = getCellKind(node)
+    if (kind === 'swimlane' || kind === 'frame' || kind === 'fragment') return false
+    if (kind === 'fragmentBg' || kind === 'divider' || kind === 'activation') return false
+    return true
+  }
+
+  /** 選択中のノード（祖先も選ばれているものは、二重移動を避けて除く） */
+  selectedMovableNodes(): Node[] {
+    const nodes = this.graph
+      .getSelectedCells()
+      .filter((c): c is Node => c.isNode() && this.isArrangeable(c))
+    const ids = new Set(nodes.map((n) => n.id))
+    return nodes.filter((n) => !n.getAncestors().some((a) => ids.has(a.id)))
+  }
+
+  /**
+   * 選択の外接矩形より direction 側にあるノードを選択に加える（issue #34）。
+   * 追加できた数を返す。「下に空きを作る」ような一括移動の下ごしらえ。
+   *
+   * 基準は「最初に選んでいたもの」で固定する。1 回目で広がった選択をそのまま
+   * 基準にすると外接矩形が図全体に育ってしまい、続けて別の向きを押しても外側に
+   * 何も残らない（＝無反応に見える）。下→右と続けて押せば、最初のノードから
+   * 見て下にあるものと右にあるものが両方入る。
+   *
+   * 選択を自分で変えたら（クリック・矩形選択・削除など）基準も取り直す。
+   */
+  extendSelection(direction: Direction): number {
+    const selectedIds = this.graph.getSelectedCells().map((c) => c.id)
+    const base = this.extendBaseIds(selectedIds)
+    // 基準にしたノードは動かされていることもあるので、位置は都度測り直す
+    const anchor = unionBox(
+      [...base]
+        .map((id) => this.graph.getCellById(id))
+        .filter((c): c is Node => c != null && c.isNode())
+        .map((n) => n.getBBox() as Box)
+    )
+    if (anchor === null) return 0
+    const ids = new Set(selectedIds)
+    const add = this.graph
+      .getNodes()
+      .filter((n) => !ids.has(n.id) && this.isArrangeable(n))
+      .filter((n) => isBeyond(anchor, n.getBBox() as Box, direction))
+    if (add.length > 0) this.graph.select(add)
+    this.extendAnchor = {
+      base,
+      selection: new Set(this.graph.getSelectedCells().map((c) => c.id))
+    }
+    return add.length
+  }
+
+  /**
+   * 基準にするノードの id。前回の拡張から選択が変わっていなければ引き継ぎ、
+   * 変わっていれば（クリックし直した・矩形選択したなど）今の選択から取り直す。
+   */
+  private extendBaseIds(selectedIds: string[]): Set<string> {
+    const previous = this.extendAnchor
+    const continuing =
+      previous != null &&
+      previous.selection.size === selectedIds.length &&
+      selectedIds.every((id) => previous.selection.has(id))
+    if (continuing) return previous.base
+    return new Set(selectedIds)
+  }
+
+  /** まとめて選択の基準（連続して別の向きを押したときに使う） */
+  private extendAnchor: { base: Set<string>; selection: Set<string> } | null = null
+
+  /** 選択中のノードを direction へ step だけずらす。動かした数を返す */
+  nudgeSelection(direction: Direction, step: number): number {
+    const nodes = this.selectedMovableNodes()
+    if (nodes.length === 0) return 0
+    const { dx, dy } = directionDelta(direction, step)
+    this.batch(() => {
+      for (const node of nodes) node.translate(dx, dy)
+    })
+    this.ensureCellVisible(nodes[0])
+    return nodes.length
+  }
+
+  /** 選択中のノードを揃える（基準は選択全体の外接矩形）。揃えた数を返す */
+  alignSelection(mode: AlignMode): number {
+    const nodes = this.selectedMovableNodes()
+    if (nodes.length < 2) return 0
+    const target = unionBox(nodes.map((n) => n.getBBox() as Box))
+    if (target === null) return 0
+    this.batch(() => {
+      for (const node of nodes) {
+        const box = node.getBBox() as Box
+        const next = alignedPosition(box, target, mode)
+        if (Math.abs(box.x - next.x) < 0.5 && Math.abs(box.y - next.y) < 0.5) continue
+        node.translate(next.x - box.x, next.y - box.y)
+      }
+    })
+    return nodes.length
   }
 
   isSelectionEmpty(): boolean {
