@@ -123,6 +123,20 @@ const MARKER_OPEN = {
   strokeWidth: 1.5
 } as const
 
+/**
+ * ラベルを持つエッジ種別の既定文字スタイル。
+ *
+ * ラベルは defaultLabel（= セルの attrs には入らない）で描かれるため、右パネルの
+ * 「現在値」はこの表から拾う。registerEdge 側もここを参照して二重管理を避ける。
+ */
+const EDGE_LABEL_STYLE = {
+  message: { fontSize: 12, fontFamily: FONT_FAMILY, fill: COLOR.stroke },
+  flow: { fontSize: 12, fontFamily: FONT_FAMILY, fill: COLOR.stroke },
+  branch: { fontSize: 11, fontFamily: FONT_FAMILY, fill: COLOR.lifeline }
+} as const
+
+type LabeledEdgeKind = keyof typeof EDGE_LABEL_STYLE
+
 let registered = false
 
 /** カスタムシェイプ・アンカーを X6 に登録する（多重呼び出し可） */
@@ -223,9 +237,7 @@ export function registerShapes(): void {
         ],
         attrs: {
           text: {
-            fontSize: 12,
-            fontFamily: FONT_FAMILY,
-            fill: COLOR.stroke,
+            ...EDGE_LABEL_STYLE.message,
             textAnchor: 'middle',
             textVerticalAnchor: 'bottom',
             pointerEvents: 'none'
@@ -771,9 +783,7 @@ export function registerShapes(): void {
         ],
         attrs: {
           text: {
-            fontSize: 12,
-            fontFamily: FONT_FAMILY,
-            fill: COLOR.stroke,
+            ...EDGE_LABEL_STYLE.flow,
             textAnchor: 'middle',
             textVerticalAnchor: 'middle',
             pointerEvents: 'none'
@@ -875,9 +885,7 @@ export function registerShapes(): void {
         ],
         attrs: {
           text: {
-            fontSize: 11,
-            fontFamily: FONT_FAMILY,
-            fill: COLOR.lifeline,
+            ...EDGE_LABEL_STYLE.branch,
             textAnchor: 'middle',
             textVerticalAnchor: 'middle',
             pointerEvents: 'none'
@@ -1087,6 +1095,8 @@ export function setMessageKind(edge: Edge, kind: MessageKind): void {
   const data = { ...(edge.getData<UmlCellData>() ?? { kind: 'message' }), msgKind: kind }
   edge.setData(data, { overwrite: true })
   edge.attr('line', messageLineAttrs(kind) as never)
+  // 種別ごとの矢印は自前の色を持っているので、選んである線色を塗り直す
+  setEdgeStroke(edge, getEdgeStroke(edge))
 
   // 別ノード間のメッセージを self へ切り替えたら、送信元への自己メッセージに付け替える
   const srcId = edge.getSourceCellId()
@@ -1111,9 +1121,8 @@ export function setMessageKind(edge: Edge, kind: MessageKind): void {
     edge.setVertices([vertices[0]])
   }
 
-  // 種別によってラベル位置が変わるため再設定する
-  const text = getMessageLabel(edge)
-  if (text !== '') setMessageLabel(edge, text)
+  // 種別によってラベル位置が変わるため再設定する（文字スタイルは維持される）
+  setMessageLabel(edge, getMessageLabel(edge))
 }
 
 /** メッセージのラベル文字列を取得 */
@@ -1123,9 +1132,23 @@ export function getMessageLabel(edge: Edge): string {
   return attrs?.text?.text ?? ''
 }
 
-/** メッセージのラベル文字列を設定 */
-export function setMessageLabel(edge: Edge, text: string): void {
-  if (text === '') {
+/**
+ * メッセージのラベル文字列を設定する。
+ *
+ * setLabelAt はラベルを丸ごと差し替えるので、右パネルで付けた文字スタイル
+ * （色・フォント等）を明示的に引き継ぐ。stylePatch はそのスタイルの更新分。
+ */
+export function setMessageLabel(
+  edge: Edge,
+  text: string,
+  stylePatch: Record<string, unknown> = {}
+): void {
+  const previous = edge.getLabelAt(0)?.attrs as
+    | Record<string, Record<string, unknown>>
+    | undefined
+  const { text: _dropped, ...style } = { ...previous?.text, ...stylePatch }
+  // 文字もスタイルも無いラベルは残さない（保存ファイルを汚さない）
+  if (text === '' && Object.keys(style).length === 0) {
     while (edge.getLabels().length > 0) edge.removeLabelAt(0)
     return
   }
@@ -1133,7 +1156,7 @@ export function setMessageLabel(edge: Edge, text: string): void {
   // distance はポリライン全長に対する比率で、ループは 上辺60 + 縦32 + 下辺60。
   const isSelf = getMessageKind(edge) === 'self'
   const label = {
-    attrs: { text: { text } },
+    attrs: { text: { ...style, text } },
     position: { distance: isSelf ? 0.2 : 0.5, offset: { x: 0, y: -6 } }
   }
   if (edge.getLabels().length > 0) edge.setLabelAt(0, label)
@@ -1327,6 +1350,102 @@ export function getTextFontFamily(node: Node): string {
 export function setTextFontFamily(node: Node, family: string): void {
   const path = labelPath(node, 'fontFamily')
   if (path !== null) node.attr(path, family)
+}
+
+// ---- エッジの外観（線色 / ラベルの文字スタイル） ----
+//
+// ノード側（STYLE_TARGETS）と対になる仕組み。エッジは線が 'line' セレクタ 1 本、
+// 文字はセルの attrs ではなくラベルの attrs に載る、という違いがある。
+
+/** 線色を変更できるエッジか */
+export function canSetEdgeStroke(edge: Edge): boolean {
+  const kind = getCellKind(edge)
+  return kind === 'message' || kind === 'flow' || kind === 'branch' || kind === 'attachLink'
+}
+
+/** ラベルの文字スタイルを変更できるエッジか */
+export function canSetEdgeTextStyle(edge: Edge): boolean {
+  return getCellKind(edge) in EDGE_LABEL_STYLE
+}
+
+function edgeLabelStyle(edge: Edge): (typeof EDGE_LABEL_STYLE)[LabeledEdgeKind] {
+  const kind = getCellKind(edge)
+  return EDGE_LABEL_STYLE[kind as LabeledEdgeKind] ?? EDGE_LABEL_STYLE.message
+}
+
+export function getEdgeStroke(edge: Edge): string {
+  const v = edge.attr('line/stroke')
+  return typeof v === 'string' && v !== '' ? v : COLOR.stroke
+}
+
+/**
+ * 線色を変える。矢印マーカーは自前で色を持っている（既定マーカーとの深いマージ
+ * 対策で明示している）ため、線と一緒に塗り直さないと矢の先だけ黒く残る。
+ * 開矢印は fill: 'none' が形そのものなので、塗りは色が入っているときだけ移す。
+ */
+export function setEdgeStroke(edge: Edge, color: string): void {
+  edge.attr('line/stroke', color)
+  for (const marker of ['targetMarker', 'sourceMarker'] as const) {
+    const current = edge.attr(`line/${marker}`)
+    if (current == null || typeof current !== 'object') continue
+    edge.attr(`line/${marker}/stroke`, color)
+    const fill = (current as { fill?: unknown }).fill
+    if (typeof fill === 'string' && fill !== 'none') edge.attr(`line/${marker}/fill`, color)
+  }
+}
+
+/** ラベル 0 の text 属性（未設定の項目は種別の既定値） */
+function edgeLabelAttrs(edge: Edge): Record<string, unknown> {
+  const label = edge.getLabelAt(0)
+  const attrs = label?.attrs as Record<string, Record<string, unknown>> | undefined
+  return attrs?.text ?? {}
+}
+
+/**
+ * ラベル 0 の text 属性を書き換える。
+ *
+ * ラベルがまだ無い（文字が空の）エッジでも、後で文字を入れたときに効くよう
+ * 空文字のラベルを作って持たせる。setMessageLabel はこのスタイルを引き継ぐ。
+ */
+function patchEdgeLabelAttrs(edge: Edge, patch: Record<string, unknown>): void {
+  if (!canSetEdgeTextStyle(edge)) return
+  setMessageLabel(edge, getMessageLabel(edge), patch)
+}
+
+export function getEdgeTextFontSize(edge: Edge): number {
+  const v = Number(edgeLabelAttrs(edge).fontSize)
+  return Number.isFinite(v) && v > 0 ? v : edgeLabelStyle(edge).fontSize
+}
+
+export function setEdgeTextFontSize(edge: Edge, size: number): void {
+  patchEdgeLabelAttrs(edge, { fontSize: size })
+}
+
+export function getEdgeTextFontFamily(edge: Edge): string {
+  const v = edgeLabelAttrs(edge).fontFamily
+  return typeof v === 'string' && v !== '' ? v : edgeLabelStyle(edge).fontFamily
+}
+
+export function setEdgeTextFontFamily(edge: Edge, family: string): void {
+  patchEdgeLabelAttrs(edge, { fontFamily: family })
+}
+
+export function getEdgeTextBold(edge: Edge): boolean {
+  const v = edgeLabelAttrs(edge).fontWeight
+  return v === 'bold' || v === 700 || v === '700'
+}
+
+export function setEdgeTextBold(edge: Edge, bold: boolean): void {
+  patchEdgeLabelAttrs(edge, { fontWeight: bold ? 700 : 400 })
+}
+
+export function getEdgeTextColor(edge: Edge): string {
+  const v = edgeLabelAttrs(edge).fill
+  return typeof v === 'string' && v !== '' ? v : edgeLabelStyle(edge).fill
+}
+
+export function setEdgeTextColor(edge: Edge, color: string): void {
+  patchEdgeLabelAttrs(edge, { fill: color })
 }
 
 // ---- フレーム（コンテナ） ----

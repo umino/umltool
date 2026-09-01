@@ -16,12 +16,19 @@ import {
 } from '../editor/sequence'
 import {
   applyFrameHeader,
+  canSetEdgeStroke,
+  canSetEdgeTextStyle,
   canSetFill,
   canSetStroke,
   canSetTextAlign,
   canSetTextStyle,
   getCellKind,
   getDividerGuard,
+  getEdgeStroke,
+  getEdgeTextBold,
+  getEdgeTextColor,
+  getEdgeTextFontFamily,
+  getEdgeTextFontSize,
   getFragmentGuard,
   getFragmentOperator,
   getMessageKind,
@@ -35,6 +42,11 @@ import {
   getTextFontFamily,
   getTextFontSize,
   setDividerGuard,
+  setEdgeStroke,
+  setEdgeTextBold,
+  setEdgeTextColor,
+  setEdgeTextFontFamily,
+  setEdgeTextFontSize,
   setFragmentGuard,
   setFragmentOperator,
   setMessageKind,
@@ -115,7 +127,9 @@ export class PropertiesPanel {
     this.host.appendChild(typeRow(kind, cell))
     const handled = this.renderKind(kind, cell)
     // 外観（背景色/線色/文字）は種別を問わず共通。持てるものだけが出る
-    const styled = cell.isNode() ? this.appendStyleSection(cell) : false
+    const styled = cell.isNode()
+      ? this.appendStyleSection(cell)
+      : this.appendEdgeStyleSection(cell as Edge)
     if (!handled && !styled) {
       this.host.appendChild(hint('この要素には編集可能なプロパティがありません。'))
     }
@@ -490,6 +504,43 @@ export class PropertiesPanel {
       }
       this.host.appendChild(
         colorInput('文字色', getTextColor(node), (value) => setTextColor(node, value))
+      )
+    }
+    return true
+  }
+
+  /**
+   * 矢印（メッセージ / フロー / 枝）の外観。線の色と、線に乗るラベルの文字
+   * スタイルを、ノードの「外観」と同じ並びで出す。何か出したら true。
+   */
+  private appendEdgeStyleSection(edge: Edge): boolean {
+    const stroke = canSetEdgeStroke(edge)
+    const text = canSetEdgeTextStyle(edge)
+    if (!stroke && !text) return false
+
+    this.host.appendChild(sectionTitle('外観'))
+
+    if (stroke) {
+      this.host.appendChild(
+        colorInput('線の色', getEdgeStroke(edge), (value) => setEdgeStroke(edge, value))
+      )
+    }
+    if (text) {
+      this.host.appendChild(
+        numberInput('フォントサイズ', getEdgeTextFontSize(edge), 8, 96, (value) =>
+          setEdgeTextFontSize(edge, value)
+        )
+      )
+      this.host.appendChild(
+        fontFamilySelect(getEdgeTextFontFamily(edge), (value) =>
+          setEdgeTextFontFamily(edge, value)
+        )
+      )
+      this.host.appendChild(
+        checkboxInput('太字', getEdgeTextBold(edge), (value) => setEdgeTextBold(edge, value))
+      )
+      this.host.appendChild(
+        colorInput('文字色', getEdgeTextColor(edge), (value) => setEdgeTextColor(edge, value))
       )
     }
     return true

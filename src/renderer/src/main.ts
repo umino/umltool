@@ -41,9 +41,22 @@ import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
 import {
   getCellKind,
+  getEdgeStroke,
+  getEdgeTextBold,
+  getEdgeTextColor,
+  getEdgeTextFontFamily,
+  getEdgeTextFontSize,
+  getMessageLabel,
   getNodeLabel,
   getTextBold,
   getTextFontSize,
+  setEdgeStroke,
+  setEdgeTextBold,
+  setEdgeTextColor,
+  setEdgeTextFontFamily,
+  setEdgeTextFontSize,
+  setMessageKind,
+  setMessageLabel,
   setNodeFill,
   setTextBold,
   setTextFontSize
@@ -615,6 +628,91 @@ A -> B : 通常`
             reloaded.length === 2 && stillPoints
               ? 'ok'
               : `ng(gates=${reloaded.length}, points=${stillPoints})`
+          buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+        }
+
+        // 矢印の外観: 線色（矢じりを含む）とラベルの文字スタイルを右パネルから
+        // 変えられるか。ラベル差し替え・種別変更・保存往復で消えないかまで見る。
+        {
+          buildSequenceFromText(this.editor, 'A -> B : 送る')
+          await new Promise((r) => setTimeout(r, 100))
+          const edge = graph.getEdges().find((e) => getCellKind(e) === 'message')
+          if (!edge) {
+            behavior['edgeStyle'] = 'ng(no message)'
+          } else {
+            setEdgeStroke(edge, '#c0392b')
+            setEdgeTextColor(edge, '#2d6cdf')
+            setEdgeTextFontSize(edge, 18)
+            setEdgeTextFontFamily(edge, '\"Yu Mincho\", serif')
+            setEdgeTextBold(edge, true)
+            await new Promise((r) => setTimeout(r, 60))
+
+            // 線と矢じりの両方に色が乗ったか（矢じりは自前の色を持っている）
+            const marker = edge.attr('line/targetMarker') as { fill?: string; stroke?: string }
+            const strokeOk =
+              getEdgeStroke(edge) === '#c0392b' &&
+              marker?.stroke === '#c0392b' &&
+              marker?.fill === '#c0392b'
+
+            // 実際に描かれている文字にも効いているか
+            const view = graph.findViewByCell(edge)
+            const textEl = view?.container.querySelector('.x6-edge-label text') as SVGTextElement | null
+            const drawn = textEl
+              ? {
+                  fill: textEl.getAttribute('fill'),
+                  size: textEl.getAttribute('font-size'),
+                  weight: String(textEl.getAttribute('font-weight'))
+                }
+              : null
+            const drawnOk =
+              drawn?.fill === '#2d6cdf' && drawn?.size === '18' && drawn?.weight === '700'
+
+            // ラベル文字の変更でスタイルが飛ばないか
+            setMessageLabel(edge, '書き換えた')
+            const keptOnRename =
+              getMessageLabel(edge) === '書き換えた' &&
+              getEdgeTextColor(edge) === '#2d6cdf' &&
+              getEdgeTextFontSize(edge) === 18 &&
+              getEdgeTextBold(edge) &&
+              getEdgeTextFontFamily(edge).includes('Mincho')
+
+            // 種別変更（矢印の形が変わる）でも線色が残るか
+            setMessageKind(edge, 'return')
+            const openMarker = edge.attr('line/targetMarker') as { fill?: string; stroke?: string }
+            const keptOnKind =
+              getEdgeStroke(edge) === '#c0392b' &&
+              openMarker?.stroke === '#c0392b' &&
+              openMarker?.fill === 'none' &&
+              getEdgeTextColor(edge) === '#2d6cdf'
+
+            // 右パネルに矢印用の外観欄が出るか（線の色 / フォント / 文字色）
+            graph.resetSelection(edge)
+            await new Promise((r) => setTimeout(r, 100))
+            const body = document.getElementById('props-body')
+            // 見出しは label 直下の最初のテキストノード（チェックボックスは input が先）
+            const captions = [...(body?.querySelectorAll('label') ?? [])].map(
+              (el) => [...el.childNodes].find((n) => n.nodeType === 3)?.textContent ?? ''
+            )
+            const panelOk = ['線の色', 'フォントサイズ', 'フォント', '太字', '文字色'].every((c) =>
+              captions.includes(c)
+            )
+            graph.cleanSelection()
+
+            // 保存→読込で残るか
+            const saved = serializeProject(this.editor, 'sequence')
+            loadProject(this.editor, saved)
+            const reloaded = graph.getEdges().find((e) => getCellKind(e) === 'message')
+            const keptOnLoad =
+              reloaded !== undefined &&
+              getEdgeStroke(reloaded) === '#c0392b' &&
+              getEdgeTextColor(reloaded) === '#2d6cdf' &&
+              getEdgeTextFontSize(reloaded) === 18
+
+            behavior['edgeStyle'] =
+              strokeOk && drawnOk && keptOnRename && keptOnKind && keptOnLoad && panelOk
+                ? 'ok'
+                : `ng(stroke=${strokeOk}, drawn=${JSON.stringify(drawn)}, rename=${keptOnRename}, kind=${keptOnKind}, load=${keptOnLoad}, panel=${captions.join('/')})`
+          }
           buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
         }
 
