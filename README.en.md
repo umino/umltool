@@ -61,6 +61,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - Selecting an element reveals an "**外観**" (appearance) section in the right panel, showing only the properties that shape can carry (initial/final/fork nodes have a background colour only; merge has background and line colour)
 - **The colour picker combines presets with free input**: click one of the swatches to apply it immediately, or use the colour box on the left to pick any colour
 - Supported: lifeline / activation bar / fragment / action / decision / merge / initial / final / fork / join / swimlane / frame / text / note / central topic / topic
+- **Line width** is set in the same section, from 0.5 to 12. Use it to tell crossing lines apart — making just the loop-back arrow thicker, say (open arrowheads thicken with the line)
 
 ### Sequence diagrams
 
@@ -79,6 +80,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 - **Create a flow**: drag from a connection port (the circles on each side shown on hover).
   Or use the "フロー" palette item (with 2 nodes selected, connects them in selection order; with 1, connects to the nearest)
 - Flows use orthogonal (manhattan) routing; select a flow to add and adjust waypoints
+- **Removing waypoints**: **double-click** a waypoint to delete that one. To clear them all, select the flow and press the button under "経路" (route) in the right panel — every waypoint goes and both endpoints return to the automatic side assignment
 - Edit guard conditions by selecting a flow and using the right panel
 - **Decision and merge are separate nodes**: a decision is a diamond with a condition label, while a merge is a small empty diamond (the "合流" palette item)
 - **Decision shape**: pick **菱形** (diamond) or **6 角形** (a wide PlantUML-style hexagon) from "分岐:" in the toolbar. It is a whole-diagram setting: it applies to every existing decision and to ones added afterwards, and it is saved in the project file. Merges stay diamonds so the two remain distinguishable. Switching may disturb the layout

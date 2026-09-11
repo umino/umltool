@@ -17,6 +17,7 @@ import {
 import {
   applyFrameHeader,
   canSetEdgeStroke,
+  canSetEdgeStrokeWidth,
   canSetEdgeTextStyle,
   canSetFill,
   canSetStroke,
@@ -25,6 +26,7 @@ import {
   getCellKind,
   getDividerGuard,
   getEdgeStroke,
+  getEdgeStrokeWidth,
   getEdgeTextBold,
   getEdgeTextColor,
   getEdgeTextFontFamily,
@@ -45,6 +47,7 @@ import {
   normalizeLabelFor,
   setDividerGuard,
   setEdgeStroke,
+  setEdgeStrokeWidth,
   setEdgeTextBold,
   setEdgeTextColor,
   setEdgeTextFontFamily,
@@ -81,6 +84,7 @@ import {
   CODE_TOPIC,
   COLOR_PRESETS,
   DIVIDABLE_OPERATORS,
+  EDGE_WIDTH,
   FONT_FAMILY_CHOICES,
   FRAGMENT,
   FRAGMENT_OPERATORS,
@@ -117,6 +121,15 @@ export class PropertiesPanel {
     }
     editor.graph.on('cell:change:attrs', refresh)
     editor.graph.on('cell:change:labels', refresh)
+
+    // 経由点の増減で「経路」欄の個数表示を追従させる。ドラッグ中は 1 回の移動で
+    // 何度も発火するので、少し待ってからまとめて描き直す。
+    let verticesTimer: number | undefined
+    editor.graph.on('cell:change:vertices', ({ cell }: { cell: Cell }) => {
+      if (this.current.length !== 1 || this.current[0].id !== cell.id) return
+      window.clearTimeout(verticesTimer)
+      verticesTimer = window.setTimeout(() => refresh({ cell }), 150)
+    })
 
     this.render([])
   }
@@ -313,6 +326,7 @@ export class PropertiesPanel {
         })
       )
       this.appendFlowSideSection(edge)
+      this.appendFlowRouteSection(edge)
       return true
     }
 
@@ -478,6 +492,31 @@ export class PropertiesPanel {
   }
 
   /**
+   * 経路の初期化（issue #39）。
+   *
+   * 経由点は線をドラッグすれば増やせるが、減らす手段が点のダブルクリックしか
+   * 無く、気づかないと「作り直すしかない」状態になる。まとめて消して既定の
+   * 接続へ戻す導線をここに置く。
+   */
+  private appendFlowRouteSection(edge: Edge): void {
+    const count = edge.getVertices().length
+    this.host.appendChild(sectionTitle('経路'))
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.textContent =
+      count > 0 ? `中間ポイントを消す（${count} 個）` : '自動接続に戻す'
+    btn.title = '経由点をすべて削除し、接続する辺の指定も「自動」に戻します'
+    btn.addEventListener('click', () => {
+      this.editor.resetFlowRoute(edge)
+      this.render([edge])
+    })
+    this.host.appendChild(btn)
+    this.host.appendChild(
+      hint('経由点は線をドラッグすると増え、点をダブルクリックすると 1 つだけ消せます。')
+    )
+  }
+
+  /**
    * 外観（背景色 / 線色 / 文字スタイル）。図形が持てる項目だけを出す。
    * 何か出したら true。
    */
@@ -550,6 +589,18 @@ export class PropertiesPanel {
     if (stroke) {
       this.host.appendChild(
         colorInput('線の色', getEdgeStroke(edge), (value) => setEdgeStroke(edge, value))
+      )
+    }
+    if (canSetEdgeStrokeWidth(edge)) {
+      this.host.appendChild(
+        numberInput(
+          '線の太さ',
+          getEdgeStrokeWidth(edge),
+          EDGE_WIDTH.min,
+          EDGE_WIDTH.max,
+          (value) => setEdgeStrokeWidth(edge, value),
+          EDGE_WIDTH.step
+        )
       )
     }
     if (text) {
@@ -818,7 +869,8 @@ function numberInput(
   value: number,
   min: number,
   max: number,
-  onCommit: (value: number) => void
+  onCommit: (value: number) => void,
+  step?: number
 ): HTMLElement {
   const wrap = document.createElement('label')
   wrap.textContent = caption
@@ -826,6 +878,7 @@ function numberInput(
   input.type = 'number'
   input.min = String(min)
   input.max = String(max)
+  if (step !== undefined) input.step = String(step)
   input.value = String(value)
   input.addEventListener('change', () => {
     const v = Math.min(max, Math.max(min, Number(input.value) || value))
