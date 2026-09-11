@@ -412,6 +412,15 @@ body,
   line-height: 1.4;
 }
 
+/* コード表示のトピック本文。折り返さず等幅で、インデントが見える形で編集する */
+#props-body textarea.code {
+  font-family: 'Consolas', 'MS Gothic', monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 4;
+}
+
 #props-body .empty {
   color: var(--muted);
   font-size: 12px;

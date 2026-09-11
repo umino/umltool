@@ -117,6 +117,7 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 | 1 – 6 | Recolour (blue / green / yellow / red / purple / grey) |
 | 0 | Reset the colour to the depth-based default |
 | B | Bold |
+| C | Toggle **code display** (monospace, left-aligned, indentation kept — for quoting C++ and the like) |
 | + / - | Change the font size (the node is re-measured to fit) |
 | Delete | Delete |
 
@@ -131,6 +132,10 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
   - To **insert a topic between a topic and its parent**: Ctrl+X on the topic, select the parent, Tab for a new topic, Ctrl+V
   - Ctrl+C duplicates a sub-tree instead of moving it (colours and collapsed state included)
 - **Collapsing** only hides descendants; nothing moves. Press "整列" to close the gap
+- **Quoting code**: select a topic and press **C** (or tick "コード表示" in the right panel, or use the "コード" palette item). The topic stays the same node but switches to **monospace, left-aligned, no wrapping**; press again to turn it back into a normal topic
+  - Leading indentation is kept as typed. Tabs expand to spaces on 4-column stops; trailing spaces and blank lines at either end are dropped
+  - While editing (double-click / F2), **Enter inserts a newline and Ctrl+Enter commits**; Tab inserts 4 spaces. The "コード" box in the right panel behaves the same way
+  - The node grows to fit the longest line and the number of lines. Colour, font size and bold work as for any topic
 - Several roots (topics with no parent) are allowed; arranging stacks them vertically
 - Topic colours follow their depth, but can be changed at any time in the right panel's 外観 section — arranging never overwrites them
 

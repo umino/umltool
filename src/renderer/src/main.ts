@@ -60,7 +60,9 @@ import {
   setMessageLabel,
   setNodeFill,
   setTextBold,
-  setTextFontSize
+  setTextFontSize,
+  isCodeTopic,
+  setTopicCode
 } from './editor/shapes'
 import { autoSizeNode } from './editor/autosize'
 import {
@@ -236,7 +238,8 @@ class AppController {
       addRootTopic: () => this.addRootTopic(),
       addChildTopic: () => this.addRelatedTopic('child'),
       addSiblingTopic: () => this.addRelatedTopic('sibling'),
-      toggleCollapse: () => this.toggleCollapse()
+      toggleCollapse: () => this.toggleCollapse(),
+      toggleCodeTopic: () => this.toggleCodeTopic()
     })
     this.bindSideTabs()
 
@@ -2177,6 +2180,100 @@ B --> A : 返す`
                   : `ng(color=${colored}, bold=${bold}/${unbold}, size=${bigger}/${restored}, reset=${reset})`
             }
 
+            // コード表示: C で切替。インライン編集（Enter は改行・Ctrl+Enter で確定）で
+            // 入れたコードが、等幅・左揃え・インデント保持・折り返し無しで描かれる
+            {
+              const s = await import('./editor/shapes')
+              const { autoSizeNode: fit } = await import('./editor/autosize')
+              const target = mm.childTopics(graph, root)[0]
+              const originalLabel = s.getNodeLabel(target)
+              const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+              graph.resetSelection(target)
+              await key('c')
+              const on = s.isCodeTopic(target)
+
+              this.editor.startLabelEdit(target)
+              await wait(30)
+              const box = document.querySelector('div[contenteditable]') as HTMLElement | null
+              const plain = box?.getAttribute('contenteditable') === 'plaintext-only'
+              const typed = 'int main() {\n\tif (argc > 1) {\n        return 1;  \n    }\n    return 0;\n}\n'
+              const expected = 'int main() {\n    if (argc > 1) {\n        return 1;\n    }\n    return 0;\n}'
+              if (box) box.textContent = typed
+              box?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+              const stillOpen = box?.isConnected === true
+              box?.dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })
+              )
+              await wait(80)
+              const committed = !(box?.isConnected ?? false) && s.getNodeLabel(target) === expected
+
+              const lines = (): SVGTextContentElement[] => {
+                const view = graph.findViewByCell(target)
+                return [
+                  ...(view?.container.querySelectorAll('text tspan.v-line') ?? [])
+                ] as SVGTextContentElement[]
+              }
+              const rendered = lines()
+              const lineCount = rendered.length
+              // 行頭の空白が残り、字下げ 1 段ぶん（4 桁）ずつ右へずれて描かれる
+              const x0 = rendered[0]?.getStartPositionOfChar(0).x ?? 0
+              const indent1 = (rendered[1]?.getStartPositionOfChar(4).x ?? 0) - x0
+              const indent2 = (rendered[2]?.getStartPositionOfChar(8).x ?? 0) - x0
+              const keptSpaces = /^[ \u00a0]{8}return/.test(rendered[2]?.textContent ?? '')
+              const indented = indent1 > 10 && Math.abs(indent2 - indent1 * 2) < 1.5
+              // 左端は枠の内側 padX の位置、文字は枠からはみ出さない
+              const view = graph.findViewByCell(target)
+              const bodyRect = view?.container.querySelector('rect')?.getBoundingClientRect()
+              const textRect = view?.container.querySelector('text')?.getBoundingClientRect()
+              const inside =
+                bodyRect !== undefined &&
+                textRect !== undefined &&
+                textRect.left >= bodyRect.left &&
+                textRect.right <= bodyRect.right + 1 &&
+                textRect.top >= bodyRect.top &&
+                textRect.bottom <= bodyRect.bottom + 1 &&
+                textRect.left - bodyRect.left < 20
+              const mono = String(target.attr('label/fontFamily')).includes('Consolas')
+
+              // 枠を狭めても折り返さない（行数が変わらない）
+              const size = target.getSize()
+              target.resize(90, size.height)
+              await wait(30)
+              const noWrap = lines().length === lineCount
+              fit(target, s.getNodeLabel(target))
+              const refit = Math.abs(target.getSize().width - size.width) < 1
+
+              // 保存形式（JSON）から作り直してもコード表示のまま
+              const json = target.toJSON()
+              delete (json as { id?: string }).id
+              const copy = graph.addNode(json as never)
+              await wait(30)
+              const copyView = graph.findViewByCell(copy)
+              const copyLines = copyView?.container.querySelectorAll('text tspan.v-line').length
+              const persisted =
+                s.isCodeTopic(copy) && copy.attr('label/textWrap') === false && copyLines === lineCount
+              graph.removeCell(copy)
+              ;(window as unknown as Record<string, unknown>).__codeTopicPng =
+                await exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
+
+              // 解除で通常のトピック（中央揃え・折り返し有り・既定フォント）へ戻る
+              graph.resetSelection(target)
+              await key('c')
+              const off =
+                !s.isCodeTopic(target) &&
+                target.attr('label/textAnchor') === 'middle' &&
+                typeof target.attr('label/textWrap') === 'object' &&
+                !String(target.attr('label/fontFamily')).includes('Consolas')
+              s.setNodeLabel(target, originalLabel)
+              fit(target, originalLabel)
+
+              mindmap['codeTopic'] =
+                on && plain && stillOpen && committed && lineCount === 6 && keptSpaces &&
+                indented && inside && mono && noWrap && refit && persisted && off
+                  ? 'ok'
+                  : `ng(on=${on}, plain=${plain}, open=${stillOpen}, commit=${committed}, lines=${lineCount}, spaces=${keptSpaces}, indent=${Math.round(indent1)}/${Math.round(indent2)}, inside=${inside}, mono=${mono}, noWrap=${noWrap}, refit=${refit}, persisted=${persisted}, off=${off})`
+            }
+
             // サブツリーの切り取り / 貼り付け（トピックの付け替え）
             {
               const kids = mm.childTopics(graph, root)
@@ -2997,6 +3094,25 @@ B --> A : 返す`
     }, bold ? '太字にしました。' : '太字を解除しました。')
   }
 
+  /** コード表示を切り替える（複数選択時は先頭の状態に合わせる） */
+  private toggleCodeTopic(): void {
+    const first = this.selectedTopic()
+    if (!first) {
+      this.setStatusMessage('コード表示にするトピックを選択してください。')
+      return
+    }
+    const code = !isCodeTopic(first)
+    this.decorateTopics(
+      (node) => {
+        setTopicCode(node, code)
+        autoSizeNode(node, getNodeLabel(node))
+      },
+      code
+        ? 'コード表示にしました（等幅・左揃え・インデント保持）。編集中は Enter で改行、Ctrl+Enter で確定。'
+        : 'コード表示を解除しました。'
+    )
+  }
+
   /**
    * 数字キーの配色。1〜6 はパレット、0 は深さに応じた既定色に戻す。
    */
@@ -3364,6 +3480,11 @@ B --> A : 返す`
       case 'B':
         e.preventDefault()
         this.toggleTopicBold()
+        return true
+      case 'c':
+      case 'C':
+        e.preventDefault()
+        this.toggleCodeTopic()
         return true
       case '+':
       case '=':

@@ -11,6 +11,7 @@ import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
 import {
   ACTIVATION,
   ACTIVITY,
+  CODE_TOPIC,
   DECISION_SHAPE_POINTS,
   DEFAULT_DECISION_SHAPE,
   FONT_FAMILY,
@@ -32,6 +33,7 @@ import {
   type UmlCellData
 } from './constants'
 import { clampCenterlineY } from './centerline'
+import { normalizeCodeText } from './codeText'
 
 const COLOR = {
   stroke: '#1d2330',
@@ -1350,6 +1352,56 @@ export function getTextFontFamily(node: Node): string {
 export function setTextFontFamily(node: Node, family: string): void {
   const path = labelPath(node, 'fontFamily')
   if (path !== null) node.attr(path, family)
+}
+
+// ---- マインドマップのコード表示 ----
+//
+// ノードは普通のトピックのまま、ラベルの組み方だけを切り替える。行頭の空白は X6 が
+// NBSP に置き換えて描くので潰れず、左揃え + 折り返し無しにすればインデントが保たれる。
+
+/** 折り返し幅（shape 登録時の値。通常表示へ戻すときに書き戻す） */
+const TOPIC_TEXT_WRAP = {
+  rootTopic: { width: -28, breakWord: true },
+  topic: { width: -24, breakWord: true }
+} as const
+
+/** コード表示に切り替えられる図形か（マインドマップのトピックのみ） */
+export function canSetCode(node: Node): boolean {
+  const kind = getCellKind(node)
+  return kind === 'topic' || kind === 'rootTopic'
+}
+
+export function isCodeTopic(node: Node): boolean {
+  return canSetCode(node) && node.getData<UmlCellData>()?.code === true
+}
+
+/**
+ * コード表示を切り替える。オンにすると本文のタブを空白へ展開し、等幅・左揃え・
+ * 折り返し無しにする。オフで通常のトピック（中央揃え・折り返し・既定フォント）へ戻す。
+ * 色・文字サイズ・太字はどちらでも触らない。
+ */
+export function setTopicCode(node: Node, code: boolean): void {
+  if (!canSetCode(node)) return
+  node.updateData({ code })
+  const align = code ? alignAttrs('left', CODE_TOPIC.padX) : alignAttrs('center', 0)
+  for (const [name, value] of Object.entries(align)) node.attr(`label/${name}`, value)
+  if (code) {
+    node.attr('label/text', normalizeCodeText(getNodeLabel(node), CODE_TOPIC.tabSize))
+    node.attr('label/fontFamily', CODE_TOPIC.fontFamily)
+    node.attr('label/lineHeight', `${CODE_TOPIC.lineHeight}em`)
+    // 折り返しは false で止める。null だと属性ごと消え、読込時に shape の既定値
+    // （折り返し有り）が合成されて戻ってしまう
+    node.attr('label/textWrap', false)
+  } else {
+    node.attr('label/fontFamily', FONT_FAMILY)
+    node.removeAttrByPath('label/lineHeight')
+    node.attr('label/textWrap', { ...TOPIC_TEXT_WRAP[getCellKind(node) as keyof typeof TOPIC_TEXT_WRAP] })
+  }
+}
+
+/** ラベルとして保存する形に整える（コード表示ならタブ展開・行末空白の除去） */
+export function normalizeLabelFor(node: Node, text: string): string {
+  return isCodeTopic(node) ? normalizeCodeText(text, CODE_TOPIC.tabSize) : text
 }
 
 // ---- エッジの外観（線色 / ラベルの文字スタイル） ----

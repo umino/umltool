@@ -5,6 +5,7 @@
 import type { Node } from '@antv/x6'
 import {
   ACTIVITY,
+  CODE_TOPIC,
   DECISION_SHAPE_POINTS,
   DECISION_WIDTH_FACTOR,
   DEFAULT_DECISION_SHAPE,
@@ -38,6 +39,8 @@ export interface AutoSizeSpec {
   lineHeight: number
   /** 図形内でテキストに使える幅の割合（矩形=1、菱形=0.55 など） */
   widthFactor: number
+  /** 折り返さない（行数 = 改行で区切った数）。コード表示のトピック用 */
+  noWrap?: boolean
 }
 
 export const AUTO_SIZE_SPECS = {
@@ -117,9 +120,11 @@ export function computeAutoSize(label: string, spec: AutoSizeSpec, measure: Text
   const width = Math.min(Math.max(spec.minWidth, Math.ceil(requiredWidth)), spec.maxWidth)
 
   const innerAvail = Math.max(1, (width - spec.padX * 2) * spec.widthFactor)
-  const lines = label
-    .split('\n')
-    .reduce((sum, line) => sum + Math.max(1, Math.ceil(measure(line) / innerAvail)), 0)
+  const lines = spec.noWrap
+    ? label.split('\n').length
+    : label
+        .split('\n')
+        .reduce((sum, line) => sum + Math.max(1, Math.ceil(measure(line) / innerAvail)), 0)
 
   const height = Math.max(spec.minHeight, lines * spec.lineHeight + spec.padY)
   return { width, height, lines }
@@ -161,10 +166,12 @@ export function clearManualSize(node: Node): void {
  * ユーザーが手動リサイズしたノードは、その意思を優先して対象外にする。
  */
 export function autoSizeNode(node: Node, label: string): void {
-  const rawKind = (node.getData() as { kind?: string } | undefined)?.kind
+  const data = node.getData() as { kind?: string; code?: boolean } | undefined
+  const rawKind = data?.kind
   if (rawKind === undefined || !(rawKind in AUTO_SIZE_SPECS)) return
   const kind = rawKind as AutoSizeKind
   if (isManuallySized(node)) return
+  const code = data?.code === true && (kind === 'topic' || kind === 'rootTopic')
 
   const defaults = AUTO_SIZE_SPECS[kind]
   // ユーザーがフォントを変えていれば、その実寸で測って行高も比例させる
@@ -172,15 +179,31 @@ export function autoSizeNode(node: Node, label: string): void {
   const attrFontSize = Number(node.attr('label/fontSize'))
   const fontSize = Number.isFinite(attrFontSize) && attrFontSize > 0 ? attrFontSize : defaultFontSize
   const attrFamily = node.attr('label/fontFamily')
-  const fontFamily = typeof attrFamily === 'string' && attrFamily !== '' ? attrFamily : FONT_FAMILY
-  const spec: AutoSizeSpec = {
-    ...defaults,
-    lineHeight: Math.round(fontSize * (defaults.lineHeight / defaultFontSize)),
-    // 分岐は図形（菱形 / 6 角形）によって文字を置ける幅が変わる
-    ...(kind === 'decision'
-      ? { widthFactor: DECISION_WIDTH_FACTOR[decisionShapeOf(node)] }
-      : {})
-  }
+  const fontFamily =
+    typeof attrFamily === 'string' && attrFamily !== ''
+      ? attrFamily
+      : code
+        ? CODE_TOPIC.fontFamily
+        : FONT_FAMILY
+  const spec: AutoSizeSpec = code
+    ? {
+        // コードは折り返さず、一番長い行に合わせて横へ広げる。行間は描画側
+        // （label/lineHeight = CODE_TOPIC.lineHeight em）と揃える
+        ...defaults,
+        maxWidth: CODE_TOPIC.maxWidth,
+        padX: CODE_TOPIC.padX,
+        padY: CODE_TOPIC.padY,
+        lineHeight: Math.ceil(fontSize * CODE_TOPIC.lineHeight),
+        noWrap: true
+      }
+    : {
+        ...defaults,
+        lineHeight: Math.round(fontSize * (defaults.lineHeight / defaultFontSize)),
+        // 分岐は図形（菱形 / 6 角形）によって文字を置ける幅が変わる
+        ...(kind === 'decision'
+          ? { widthFactor: DECISION_WIDTH_FACTOR[decisionShapeOf(node)] }
+          : {})
+      }
   const size = computeAutoSize(label, spec, domMeasurer(fontSize, fontFamily))
 
   const bbox = node.getBBox()

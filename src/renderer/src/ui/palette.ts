@@ -20,6 +20,7 @@ export interface PaletteActions {
   addChildTopic: () => void
   addSiblingTopic: () => void
   toggleCollapse: () => void
+  toggleCodeTopic: () => void
 }
 
 /** ライフラインに付属するテキストタイル（シーケンス図） */
@@ -259,6 +260,17 @@ function mindmapItems(a: PaletteActions): PaletteItem[] {
         `<circle cx="31" cy="15" r="6" fill="#ffffff" stroke="${C.gray}" stroke-width="1.3"/>` +
         `<path d="M 28 15 H 34" stroke="${C.gray}" stroke-width="1.6"/>`,
       onClick: a.toggleCollapse
+    },
+    {
+      label: 'コード',
+      title:
+        '選択中のトピックをコード表示に切り替える / 戻す（C）。' +
+        '等幅・左揃えで、行頭のインデントを保ちます',
+      icon:
+        `<rect x="3" y="4" width="38" height="22" rx="3" fill="#f6f8fa" stroke="${C.gray}" stroke-width="1.3"/>` +
+        `<path d="M 15 10 L 10 15 L 15 20 M 29 10 L 34 15 L 29 20" fill="none" stroke="${C.blue}" stroke-width="1.6"/>` +
+        `<path d="M 24 9 L 20 21" stroke="${C.gray}" stroke-width="1.4"/>`,
+      onClick: a.toggleCodeTopic
     },
     noteItem(a)
   ]

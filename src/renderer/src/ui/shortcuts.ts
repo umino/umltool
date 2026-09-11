@@ -68,6 +68,7 @@ export const MINDMAP_SHORTCUTS: ShortcutGroup = {
     { keys: ['1', '〜', '6'], label: '配色を変える' },
     { keys: ['0'], label: '配色を既定（深さの色）に戻す' },
     { keys: ['B'], label: '太字' },
+    { keys: ['C'], label: 'コード表示（等幅・左揃え・インデント保持）' },
     { keys: ['+', '-'], label: '文字サイズ' }
   ]
 }
