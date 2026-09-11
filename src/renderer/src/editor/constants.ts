@@ -391,6 +391,9 @@ export const MINDMAP_KIND_LABEL: Record<MindmapNodeKind | 'branch', string> = {
   branch: '枝'
 }
 
+/** 矢印の線の太さとして選べる範囲（issue #40: 交錯する線を太さで見分ける） */
+export const EDGE_WIDTH = { min: 0.5, max: 12, step: 0.5 } as const
+
 export type MessageKind = 'sync' | 'async' | 'return' | 'self'
 
 export const MESSAGE_KIND_LABEL: Record<MessageKind, string> = {

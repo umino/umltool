@@ -391,6 +391,27 @@ export class GraphEditor {
     this.normalizeBranchPorts()
   }
 
+  /**
+   * フローの経路を初期化する（issue #39）。経由点をすべて消し、手動で決めた
+   * 接続辺も「自動」へ戻す。消した経由点の数を返す。
+   */
+  resetFlowRoute(edge: Edge): number {
+    if (getCellKind(edge) !== 'flow') return 0
+    const removed = edge.getVertices().length
+    this.batch(() => {
+      edge.setVertices([])
+      for (const side of ['source', 'target'] as const) {
+        const cell = side === 'source' ? edge.getSourceCell() : edge.getTargetCell()
+        if (cell?.isNode()) {
+          this.withNormalizing(() => setFlowTerminalSide(edge, cell, side, 'auto'))
+        }
+      }
+    })
+    // 辺が空いたので、残りの枝も割り当て直す
+    this.normalizeBranchPorts()
+    return removed
+  }
+
   /** 図の作り直し後などに、フローの接続辺をまとめて割り当て直す */
   normalizeBranchPorts(): void {
     if (this.mode !== 'activity') return

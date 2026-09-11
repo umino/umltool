@@ -1097,8 +1097,9 @@ export function setMessageKind(edge: Edge, kind: MessageKind): void {
   const data = { ...(edge.getData<UmlCellData>() ?? { kind: 'message' }), msgKind: kind }
   edge.setData(data, { overwrite: true })
   edge.attr('line', messageLineAttrs(kind) as never)
-  // 種別ごとの矢印は自前の色を持っているので、選んである線色を塗り直す
+  // 種別ごとの矢印は自前の色と太さを持っているので、選んである値を塗り直す
   setEdgeStroke(edge, getEdgeStroke(edge))
+  setEdgeStrokeWidth(edge, getEdgeStrokeWidth(edge))
 
   // 別ノード間のメッセージを self へ切り替えたら、送信元への自己メッセージに付け替える
   const srcId = edge.getSourceCellId()
@@ -1425,9 +1426,49 @@ function edgeLabelStyle(edge: Edge): (typeof EDGE_LABEL_STYLE)[LabeledEdgeKind] 
   return EDGE_LABEL_STYLE[kind as LabeledEdgeKind] ?? EDGE_LABEL_STYLE.message
 }
 
+/**
+ * 種別ごとの既定の線の太さ（shape 登録時の値と揃える）。
+ * ユーザーが変えていなければ右パネルにはこの値が出る。
+ */
+const EDGE_LINE_WIDTH: Partial<Record<CellKind, number>> = {
+  message: 1.5,
+  flow: 1.5,
+  branch: 1.8,
+  attachLink: 1
+}
+
 export function getEdgeStroke(edge: Edge): string {
   const v = edge.attr('line/stroke')
   return typeof v === 'string' && v !== '' ? v : COLOR.stroke
+}
+
+/** 線の太さを変更できるエッジか（線色と同じ対象） */
+export function canSetEdgeStrokeWidth(edge: Edge): boolean {
+  return canSetEdgeStroke(edge)
+}
+
+export function getEdgeStrokeWidth(edge: Edge): number {
+  const v = Number(edge.attr('line/strokeWidth'))
+  if (Number.isFinite(v) && v > 0) return v
+  return EDGE_LINE_WIDTH[getCellKind(edge)] ?? 1.5
+}
+
+/**
+ * 線の太さを変える（issue #40: 交錯する線を太さで見分けられるように）。
+ *
+ * 開矢印は線と同じ太さで描く輪郭なので、線に合わせて太さを移す（塗り矢印は
+ * 輪郭を持たないので触らない）。当たり判定の帯は線より細くならないよう広げる。
+ */
+export function setEdgeStrokeWidth(edge: Edge, width: number): void {
+  edge.attr('line/strokeWidth', width)
+  for (const marker of ['targetMarker', 'sourceMarker'] as const) {
+    const current = edge.attr(`line/${marker}`)
+    if (current == null || typeof current !== 'object') continue
+    if (typeof (current as { strokeWidth?: unknown }).strokeWidth === 'number') {
+      edge.attr(`line/${marker}/strokeWidth`, width)
+    }
+  }
+  if (edge.attr('wrap') != null) edge.attr('wrap/strokeWidth', Math.max(12, width + 8))
 }
 
 /**

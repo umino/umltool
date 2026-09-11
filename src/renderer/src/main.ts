@@ -51,7 +51,9 @@ import {
   getNodeLabel,
   getTextBold,
   getTextFontSize,
+  getEdgeStrokeWidth,
   setEdgeStroke,
+  setEdgeStrokeWidth,
   setEdgeTextBold,
   setEdgeTextColor,
   setEdgeTextFontFamily,
@@ -653,6 +655,7 @@ A -> B : 通常`
             behavior['edgeStyle'] = 'ng(no message)'
           } else {
             setEdgeStroke(edge, '#c0392b')
+            setEdgeStrokeWidth(edge, 4)
             setEdgeTextColor(edge, '#2d6cdf')
             setEdgeTextFontSize(edge, 18)
             setEdgeTextFontFamily(edge, '\"Yu Mincho\", serif')
@@ -676,8 +679,15 @@ A -> B : 通常`
                   weight: String(textEl.getAttribute('font-weight'))
                 }
               : null
+            // 線の太さは実際に描かれている path にも乗る（当たり判定の帯とは別）
+            const drawnWidth = [...(view?.container.querySelectorAll('path') ?? [])].some(
+              (p) => p.getAttribute('stroke-width') === '4'
+            )
             const drawnOk =
-              drawn?.fill === '#2d6cdf' && drawn?.size === '18' && drawn?.weight === '700'
+              drawn?.fill === '#2d6cdf' &&
+              drawn?.size === '18' &&
+              drawn?.weight === '700' &&
+              drawnWidth
 
             // ラベル文字の変更でスタイルが飛ばないか
             setMessageLabel(edge, '書き換えた')
@@ -691,10 +701,13 @@ A -> B : 通常`
             // 種別変更（矢印の形が変わる）でも線色が残るか
             setMessageKind(edge, 'return')
             const openMarker = edge.attr('line/targetMarker') as { fill?: string; stroke?: string }
+            // 開矢印は線と同じ太さの輪郭なので、太さも一緒に戻っていること
             const keptOnKind =
               getEdgeStroke(edge) === '#c0392b' &&
               openMarker?.stroke === '#c0392b' &&
               openMarker?.fill === 'none' &&
+              getEdgeStrokeWidth(edge) === 4 &&
+              (openMarker as { strokeWidth?: number }).strokeWidth === 4 &&
               getEdgeTextColor(edge) === '#2d6cdf'
 
             // 右パネルに矢印用の外観欄が出るか（線の色 / フォント / 文字色）
@@ -705,9 +718,14 @@ A -> B : 通常`
             const captions = [...(body?.querySelectorAll('label') ?? [])].map(
               (el) => [...el.childNodes].find((n) => n.nodeType === 3)?.textContent ?? ''
             )
-            const panelOk = ['線の色', 'フォントサイズ', 'フォント', '太字', '文字色'].every((c) =>
-              captions.includes(c)
-            )
+            const panelOk = [
+              '線の色',
+              '線の太さ',
+              'フォントサイズ',
+              'フォント',
+              '太字',
+              '文字色'
+            ].every((c) => captions.includes(c))
             graph.cleanSelection()
 
             // 保存→読込で残るか
@@ -717,6 +735,7 @@ A -> B : 通常`
             const keptOnLoad =
               reloaded !== undefined &&
               getEdgeStroke(reloaded) === '#c0392b' &&
+              getEdgeStrokeWidth(reloaded) === 4 &&
               getEdgeTextColor(reloaded) === '#2d6cdf' &&
               getEdgeTextFontSize(reloaded) === 18
 
@@ -1733,6 +1752,40 @@ B --> A : 返す`
                 tool !== null && dragged === 'left' && manual === true && stillLeft === 'left'
                   ? 'ok'
                   : `ng(tool=${tool !== null}, port=${dragged}, manual=${manual}, kept=${stillLeft})`
+            }
+
+            // 経路の初期化（issue #39）: 右パネルのボタンで経由点が全部消え、
+            // 手で決めた接続辺も「自動」へ戻る
+            {
+              const box = top.getBBox()
+              back.setVertices([
+                { x: box.x - 60, y: box.center.y + 40 },
+                { x: box.x - 60, y: box.center.y }
+              ])
+              // 既に選択済みのセルを選び直しても選択イベントは起きないので、
+              // 一度外してパネルを描き直させる
+              graph.cleanSelection()
+              await new Promise((r) => setTimeout(r, 60))
+              graph.resetSelection(back)
+              await new Promise((r) => setTimeout(r, 200))
+              const button = [...document.querySelectorAll('#props-body button')].find((b) =>
+                (b.textContent ?? '').startsWith('中間ポイントを消す')
+              ) as HTMLButtonElement | undefined
+              const labelled = button?.textContent === '中間ポイントを消す（2 個）'
+              button?.click()
+              await new Promise((r) => setTimeout(r, 150))
+              const cleared = back.getVertices().length === 0
+              const auto =
+                (back.getData() as { manualTarget?: boolean } | undefined)?.manualTarget !== true
+              const port = (back.getTarget() as { port?: string }).port
+              const resetLabel =
+                [...document.querySelectorAll('#props-body button')].find((b) =>
+                  (b.textContent ?? '').startsWith('自動接続に戻す')
+                ) !== undefined
+              activity['flowRouteReset'] =
+                button !== undefined && labelled && cleared && auto && port === 'right' && resetLabel
+                  ? 'ok'
+                  : `ng(button=${button !== undefined}, label=${button?.textContent}, cleared=${cleared}, auto=${auto}, port=${port}, after=${resetLabel})`
             }
             graph.cleanSelection()
             graph.removeCells([top, bottom, init])
