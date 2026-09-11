@@ -41,6 +41,8 @@ import {
   getTextColor,
   getTextFontFamily,
   getTextFontSize,
+  isCodeTopic,
+  normalizeLabelFor,
   setDividerGuard,
   setEdgeStroke,
   setEdgeTextBold,
@@ -58,7 +60,8 @@ import {
   setTextBold,
   setTextColor,
   setTextFontFamily,
-  setTextFontSize
+  setTextFontSize,
+  setTopicCode
 } from '../editor/shapes'
 import {
   ALIGN_LABEL,
@@ -75,6 +78,7 @@ import {
 import {
   ACTIVITY_KIND_LABEL,
   ACTIVITY_MIN_SIZE,
+  CODE_TOPIC,
   COLOR_PRESETS,
   DIVIDABLE_OPERATORS,
   FONT_FAMILY_CHOICES,
@@ -314,10 +318,24 @@ export class PropertiesPanel {
 
     if (isMindmapNodeKind(kind)) {
       const node = cell as Node
+      const code = isCodeTopic(node)
       this.host.appendChild(
-        labelInput('トピック', getNodeLabel(node), (value) => {
-          setNodeLabel(node, value)
-          autoSizeNode(node, value)
+        labelInput(
+          code ? 'コード' : 'トピック',
+          getNodeLabel(node),
+          (value) => {
+            const label = normalizeLabelFor(node, value)
+            setNodeLabel(node, label)
+            autoSizeNode(node, label)
+          },
+          code
+        )
+      )
+      this.host.appendChild(
+        checkboxInput('コード表示（等幅・左揃え・インデント保持）', code, (checked) => {
+          setTopicCode(node, checked)
+          autoSizeNode(node, getNodeLabel(node))
+          this.render([node])
         })
       )
       if (childTopics(this.editor.graph, node).length > 0) {
@@ -762,16 +780,32 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
 function labelInput(
   caption: string,
   value: string,
-  onCommit: (value: string) => void
+  onCommit: (value: string) => void,
+  code = false
 ): HTMLElement {
   const wrap = document.createElement('label')
   wrap.textContent = caption
   const input = document.createElement('textarea')
   input.value = value
   const syncRows = (): void => {
-    input.rows = Math.min(6, Math.max(2, input.value.split('\n').length))
+    input.rows = Math.min(code ? 16 : 6, Math.max(2, input.value.split('\n').length))
   }
   syncRows()
+  if (code) {
+    // コードは折り返さずに等幅で見せ、Tab はフォーカス移動ではなく字下げに使う
+    input.className = 'code'
+    input.wrap = 'off'
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab' || e.isComposing) return
+      e.preventDefault()
+      input.setRangeText(
+        ' '.repeat(CODE_TOPIC.tabSize),
+        input.selectionStart,
+        input.selectionEnd,
+        'end'
+      )
+    })
+  }
   // Enter は改行（textarea の既定動作）。確定は欄外クリック等のフォーカス喪失時。
   input.addEventListener('input', syncRows)
   input.addEventListener('change', () => onCommit(input.value))

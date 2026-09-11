@@ -43,6 +43,9 @@ import {
   getMessageKind,
   getMessageLabel,
   getNodeLabel,
+  getTextFontSize,
+  isCodeTopic,
+  normalizeLabelFor,
   registerShapes,
   setDividerGuard,
   setFragmentGuard,
@@ -532,15 +535,25 @@ export class GraphEditor {
         : kind === 'swimlane'
           ? bbox.y + 15
           : bbox.y + bbox.height / 2
+    // コード表示のトピックは実際の文字サイズで、ノード幅いっぱいの編集欄にする
+    const code = isCodeTopic(node)
     openInlineEditor(graph, {
       x: bbox.x + bbox.width / 2,
       y,
       text: getNodeLabel(node),
-      fontSize: kind === 'decision' ? 12 : kind === 'rootTopic' ? 15 : 13,
-      minWidth: Math.min(bbox.width, 200),
+      fontSize: code
+        ? getTextFontSize(node)
+        : kind === 'decision'
+          ? 12
+          : kind === 'rootTopic'
+            ? 15
+            : 13,
+      minWidth: code ? bbox.width : Math.min(bbox.width, 200),
+      code,
       onCommit: (text) => {
-        setNodeLabel(node, text)
-        autoSizeNode(node, text)
+        const label = normalizeLabelFor(node, text)
+        setNodeLabel(node, label)
+        autoSizeNode(node, label)
       }
     })
   }

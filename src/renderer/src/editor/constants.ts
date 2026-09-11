@@ -75,11 +75,14 @@ export const TEXT_ALIGN_LABEL: Record<TextAlign, string> = {
 }
 
 /** 右パネルのフォント選択肢。value は SVG の font-family にそのまま入る */
+/** 等幅フォント。コード表示と「等幅」の選択肢で同じ値を使う（選択欄に「等幅」と出るように） */
+export const MONO_FONT_FAMILY = '"Consolas", "MS Gothic", monospace'
+
 export const FONT_FAMILY_CHOICES: { label: string; value: string }[] = [
   { label: '既定（ゴシック）', value: FONT_FAMILY },
   { label: '明朝', value: '"Yu Mincho", "MS Mincho", serif' },
   { label: 'メイリオ', value: '"Meiryo", sans-serif' },
-  { label: '等幅', value: '"Consolas", "MS Gothic", monospace' }
+  { label: '等幅', value: MONO_FONT_FAMILY }
 ]
 
 /**
@@ -364,6 +367,24 @@ export const MINDMAP_TOPIC_PALETTE: {
 /** キーで増減できる文字サイズの範囲 */
 export const MINDMAP_FONT_SIZE = { min: 9, max: 48, step: 1 } as const
 
+/**
+ * トピックのコード表示。ノードは普通のトピックのまま、文字の組み方だけを切り替える。
+ * 行間は複数行を読む前提で通常トピック（1em）より広げる。
+ */
+export const CODE_TOPIC = {
+  fontFamily: MONO_FONT_FAMILY,
+  /** 行の高さ（フォントサイズに対する倍率） */
+  lineHeight: 1.4,
+  /** タブを何桁ごとのタブ位置まで空白に展開するか */
+  tabSize: 4,
+  /** 左右の余白（片側） */
+  padX: 12,
+  /** 上下の余白（合計） */
+  padY: 18,
+  /** 自動サイズの上限幅。コードは折り返さないので広めに取る */
+  maxWidth: 1600
+} as const
+
 export const MINDMAP_KIND_LABEL: Record<MindmapNodeKind | 'branch', string> = {
   rootTopic: '中心トピック',
   topic: 'トピック',
@@ -457,4 +478,6 @@ export interface UmlCellData {
   operator?: FragmentOperator
   /** トピックのときのみ。true なら子孫を折りたたんで隠している */
   collapsed?: boolean
+  /** トピックのときのみ。true ならコード表示（等幅・左揃え・インデント保持・折り返し無し） */
+  code?: boolean
 }
