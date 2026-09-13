@@ -88,6 +88,7 @@ import { PropertiesPanel } from './ui/properties'
 import { buildToolbar, type ToolbarHandle } from './ui/toolbar'
 import { buildPalette, type PaletteHandle } from './ui/palette'
 import { buildShortcutOverlay } from './ui/shortcutOverlay'
+import { bindPaneResizer, type PaneResizer } from './ui/paneResizer'
 import { buildSequenceFromText } from './text/buildSequence'
 import { buildActivityFromText } from './text/buildActivity'
 import { buildMindmapFromText } from './text/buildMindmap'
@@ -193,6 +194,8 @@ class AppController {
   private readonly statusEl = document.getElementById('statusbar') as HTMLElement
   private readonly textInput = document.getElementById('text-input') as HTMLTextAreaElement
   private readonly textError = document.getElementById('text-error') as HTMLElement
+  /** 左ペインの幅を変える境界（issue #42）。要素が無い環境では null */
+  private paneResizer: PaneResizer | null = null
 
   constructor() {
     const container = document.getElementById('graph-container') as HTMLElement
@@ -244,6 +247,7 @@ class AppController {
       toggleCodeTopic: () => this.toggleCodeTopic()
     })
     this.bindSideTabs()
+    this.paneResizer = bindPaneResizer()
 
     this.editor.onModelChange(() => this.setDirty(true))
 
@@ -2445,6 +2449,107 @@ B --> A : 返す`
         mindmap['restore'] = (e as Error).message
       }
 
+      // 左ペインの幅変更（issue #42）: 境界のドラッグ / ダブルクリック / 矢印キーで
+      // 幅が変わり、キャンバスが追従し、幅が localStorage に残ること。
+      // 以降の座標テストに影響しないよう、最後に既定幅へ戻す。
+      const ui: Record<string, unknown> = {}
+      try {
+        const handle = document.getElementById('pane-resizer')
+        const pane = document.getElementById('text-pane')
+        // 列そのものは #canvas-pane。#graph-container は X6 が px 幅を持たせており、
+        // ResizeObserver 経由で少し遅れて追いつく
+        const canvas = document.getElementById('canvas-pane')
+        const inner = document.getElementById('graph-container')
+        const resizer = this.paneResizer
+        if (!handle || !pane || !canvas || !inner || !resizer) {
+          ui['leftPaneResize'] = `ng(handle=${handle !== null}, pane=${pane !== null}, api=${resizer !== null})`
+        } else {
+          const paneWidth = (): number => Math.round(pane.getBoundingClientRect().width)
+          const canvasWidth = (): number => Math.round(canvas.getBoundingClientRect().width)
+          const layout = (): string => {
+            const ws = document.getElementById('workspace') as HTMLElement
+            const props = document.getElementById('props-pane') as HTMLElement
+            const w = (el: HTMLElement | null): number =>
+              el === null ? -1 : Math.round(el.getBoundingClientRect().width)
+            return `win=${window.innerWidth} ws=${w(ws)} [pane=${w(pane)} bar=${w(handle)} canvas=${w(canvas)} inner=${w(inner)} props=${w(props)}]`
+          }
+          const startPane = paneWidth()
+          const startCanvas = canvasWidth()
+          const startLayout = layout()
+
+          // ドラッグ: 境界を右へ 120px 動かす
+          const box = handle.getBoundingClientRect()
+          const pointer = (type: string, x: number, target: EventTarget): void => {
+            target.dispatchEvent(
+              new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                pointerId: 1,
+                button: 0,
+                buttons: 1,
+                clientX: x,
+                clientY: box.top + box.height / 2
+              })
+            )
+          }
+          pointer('pointerdown', box.left + box.width / 2, handle)
+          pointer('pointermove', box.left + box.width / 2 + 120, document)
+          pointer('pointerup', box.left + box.width / 2 + 120, document)
+          await new Promise((r) => setTimeout(r, 150))
+          const dragged = paneWidth()
+          const draggedLayout = layout()
+          // キャンバスの列は広げた分だけ狭まる
+          const canvasFollowed =
+            Math.abs(startCanvas - canvasWidth() - (dragged - startPane)) < 2
+
+          // 描画領域の実体（X6 + Scroller の入れ子）がどう追従しているかを記録する
+          const describe = (el: Element, depth: number): string => {
+            const id = el.id !== '' ? `#${el.id}` : ''
+            const cls =
+              typeof el.className === 'string' && el.className !== ''
+                ? `.${el.className.split(' ')[0]}`
+                : ''
+            const self = `${el.tagName.toLowerCase()}${id}${cls}=${Math.round(el.getBoundingClientRect().width)}`
+            if (depth === 0 || el.children.length === 0) return self
+            return `${self}{${[...el.children].map((c) => describe(c, depth - 1)).join(', ')}}`
+          }
+          ui['canvasChain'] = describe(canvas, 3)
+          const dragOk = Math.abs(dragged - (startPane + 120)) < 2
+
+          // 矢印キー: → で広がり ← で戻る
+          const key = async (k: string): Promise<void> => {
+            handle.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
+            await new Promise((r) => setTimeout(r, 60))
+          }
+          await key('ArrowRight')
+          const wider = paneWidth()
+          await key('ArrowLeft')
+          const backAgain = paneWidth()
+          const keyOk = wider === dragged + 16 && backAgain === dragged
+
+          // 幅は localStorage に残る（次に開いたときも同じ幅で始まる）
+          const stored = Number(window.localStorage.getItem('umltool.leftPaneWidth'))
+          const storedOk = stored === resizer.getWidth()
+
+          // 上限・下限を超えて掴んでも、キャンバスの取り分は残る
+          resizer.setWidth(5000)
+          await new Promise((r) => setTimeout(r, 80))
+          const capped = paneWidth() < window.innerWidth - 500 && canvasWidth() > 300
+
+          // ダブルクリックで既定幅へ戻る
+          handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+          await new Promise((r) => setTimeout(r, 120))
+          const reset = paneWidth() === 280
+
+          ui['leftPaneResize'] =
+            dragOk && canvasFollowed && keyOk && storedOk && capped && reset
+              ? 'ok'
+              : `ng(drag=${dragged - startPane}, canvas=${startCanvas}→${canvasWidth()}, before[${startLayout}], after[${draggedLayout}], key=${wider - dragged}/${backAgain - dragged}, stored=${stored}/${resizer.getWidth()}, capped=${capped}, reset=${paneWidth()})`
+        }
+      } catch (e) {
+        ui['leftPaneResize'] = `error: ${(e as Error).message}`
+      }
+
       // main プロセスの sendInputEvent テスト用: ノードを選択して入力欄にフォーカス
       ;(window as unknown as Record<string, unknown>).__umlFocusPropsInput = async () => {
         const ll = graph
@@ -2499,6 +2604,11 @@ B --> A : 返す`
         (await exportGraphToSvg(graph)).svg
 
       // 右パネルの整列欄を見た目で確認するための状態づくり（スクリーンショット用）
+      // 左ペインを広げた状態を撮って、描画領域が追従しているか目視で確かめる
+      ;(window as unknown as Record<string, unknown>).__umlWidenLeftPane = () => {
+        this.paneResizer?.setWidth(520)
+        return String(this.paneResizer?.getWidth() ?? 0)
+      }
       ;(window as unknown as Record<string, unknown>).__umlShowArrangePanel = () => {
         const nodes = graph.getNodes().filter((n) => getCellKind(n) === 'action')
         if (nodes.length < 2) return 'no nodes'
@@ -2521,7 +2631,8 @@ B --> A : 返す`
         legacyVertexRepair,
         fragment,
         activity,
-        mindmap
+        mindmap,
+        ui
       }
     }
   }

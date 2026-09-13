@@ -80,8 +80,22 @@ body,
 #workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr 260px;
+  /* 1 列目は境界のドラッグで変わる（paneResizer が --left-pane-width を書き換える） */
+  grid-template-columns: var(--left-pane-width, 280px) 6px 1fr 260px;
   min-height: 0;
+}
+
+/* 左ペインと図の境界。掴みやすいよう線より太めに取る */
+.pane-resizer {
+  background: var(--border);
+  cursor: col-resize;
+  outline: none;
+}
+
+.pane-resizer:hover,
+.pane-resizer:focus-visible,
+.pane-resizer.dragging {
+  background: var(--accent);
 }
 
 #text-pane,

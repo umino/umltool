@@ -191,6 +191,20 @@ function createWindow(): void {
             await writeFile(outUi, shot.toPNG())
             console.log(`[DIAG-UI] ${outUi}`)
           }
+
+          // 左ペインを広げた状態（issue #42）。描画領域が新しい幅へ追従しているか見る
+          const widened = await wc.executeJavaScript(
+            'window.__umlWidenLeftPane ? window.__umlWidenLeftPane() : ""'
+          )
+          if (typeof widened === 'string' && widened !== '') {
+            await sleep(400)
+            const paneShot = await wc.capturePage()
+            if (!paneShot.isEmpty()) {
+              const outPane = join(process.cwd(), 'diag-output-pane.png')
+              await writeFile(outPane, paneShot.toPNG())
+              console.log(`[DIAG-PANE] ${outPane} width=${widened}`)
+            }
+          }
         } catch (err) {
           console.log(`[DIAG-ERROR] ${(err as Error).message}`)
         }
