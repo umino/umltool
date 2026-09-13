@@ -11,6 +11,22 @@ Visio のように要素を自由配置・自由配線できる WYSIWYG の UML 
 - 画像書き出し: PNG / JPEG / WebP（解像度を 72〜600dpi から選択。1 辺 8192px を超える場合は自動で下げます）
 - 未保存の変更があるまま新規・開く・図種別切替・終了をすると、**保存する / 保存しない / キャンセル**の確認が出る
 
+## 画面
+
+左ペインのテキストから図を生成し、あとは GUI で自由に調整します。
+
+### シーケンス図
+
+![シーケンス図の画面](docs/images/sequence.png)
+
+### アクティビティ図
+
+![アクティビティ図の画面](docs/images/activity.png)
+
+### マインドマップ
+
+![マインドマップの画面](docs/images/mindmap.png)
+
 ## 開発
 
 ```bash
@@ -31,6 +47,14 @@ $env:UMLTOOL_DIAG='1'; npx electron-vite preview
 図の生成・3 形式書き出し・保存⇄読込ラウンドトリップ・編集挙動を検証し、
 `diag-output.png`（アクティビティ図）/ `diag-output-seq.png`（シーケンス図）/
 `diag-output-mindmap.png`（マインドマップ）/ `diag-output-ui.png`・`diag-output-panel.png`（画面）を出力します。
+
+### README 用スクリーンショットの撮り直し
+
+```powershell
+$env:UMLTOOL_SHOTS='1'; npx electron-vite preview
+```
+
+3 図種をサンプルから作り直して撮影し、`docs/images/` に上書きします（見た目を変えたらこれで README も揃います）。
 
 ## 操作方法
 

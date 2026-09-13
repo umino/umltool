@@ -266,6 +266,29 @@ class AppController {
 
   /** 自動検証用フック（main の UMLTOOL_DIAG から呼ばれる） */
   private exposeDiagnostics(): void {
+    // README 用のスクリーンショット撮影（UMLTOOL_SHOTS=1 のとき main から呼ぶ）。
+    // 図種別を切り替えてサンプルから作り直し、テキストタブを開いて全体を映す。
+    // __umlDiag の中ではなくここで定義する（診断を走らせずに撮れるように）。
+    ;(window as unknown as Record<string, unknown>).__umlShowcase = async (
+      type: string
+    ): Promise<string> => {
+      const target = (['sequence', 'activity', 'mindmap'] as DiagramType[]).find(
+        (t) => t === type
+      )
+      if (target === undefined) return `unknown(${type})`
+      this.applyDiagramType(target)
+      this.textInput.value = SAMPLE_TEXT[target]
+      this.generate()
+      document.getElementById('tab-btn-text')?.click()
+      this.editor.graph.cleanSelection()
+      await new Promise((r) => setTimeout(r, 200))
+      this.editor.fit()
+      // 撮影用なので「未保存」の印は消しておく
+      this.setDirty(false)
+      await new Promise((r) => setTimeout(r, 200))
+      return target
+    }
+
     ;(window as unknown as Record<string, unknown>).__umlDiag = async () => {
       const graph = this.editor.graph
       const vertices = graph.getNodes().length
