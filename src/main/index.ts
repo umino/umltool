@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -39,7 +39,7 @@ function createWindow(): void {
   // 未保存のまま閉じられないよう、いったん止めて renderer に確認させる。
   // renderer が 'window:close-confirmed' を返してきたら改めて閉じる。
   mainWindow.on('close', (e) => {
-    if (allowClose || process.env['UMLTOOL_DIAG']) return
+    if (allowClose || process.env['UMLTOOL_DIAG'] || process.env['UMLTOOL_SHOTS']) return
     const wc = mainWindow?.webContents
     // renderer が応答できない状態なら閉じられなくなるので素通しする
     if (!wc || wc.isDestroyed() || wc.isCrashed()) return
@@ -207,6 +207,43 @@ function createWindow(): void {
           }
         } catch (err) {
           console.log(`[DIAG-ERROR] ${(err as Error).message}`)
+        }
+        app.quit()
+      }, 2000)
+    })
+  }
+
+  // README 用のスクリーンショット: UMLTOOL_SHOTS=1 のとき 3 図種を撮って終了。
+  // サンプルから作り直した状態を撮るので、図を変えたら撮り直せば README も揃う。
+  if (process.env['UMLTOOL_SHOTS']) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      setTimeout(async () => {
+        const wc = mainWindow!.webContents
+        const wait = (ms: number): Promise<void> =>
+          new Promise((resolve) => setTimeout(resolve, ms))
+        try {
+          const dir = join(process.cwd(), 'docs', 'images')
+          await mkdir(dir, { recursive: true })
+          // マインドマップは横長・低背なので、縦を詰めないと余白だらけの絵になる
+          const height: Record<string, number> = { sequence: 800, activity: 800, mindmap: 600 }
+          for (const type of ['sequence', 'activity', 'mindmap']) {
+            mainWindow!.setContentSize(1280, height[type] ?? 800)
+            await wait(400)
+            const done = await wc.executeJavaScript(
+              `window.__umlShowcase ? window.__umlShowcase(${JSON.stringify(type)}) : ""`
+            )
+            await wait(600)
+            const shot = await wc.capturePage()
+            if (shot.isEmpty()) {
+              console.log(`[SHOT-ERROR] ${type}: empty`)
+              continue
+            }
+            const out = join(dir, `${type}.png`)
+            await writeFile(out, shot.toPNG())
+            console.log(`[SHOT] ${out} (${done})`)
+          }
+        } catch (err) {
+          console.log(`[SHOT-ERROR] ${(err as Error).message}`)
         }
         app.quit()
       }, 2000)

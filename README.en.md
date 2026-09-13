@@ -11,6 +11,22 @@ Supports sequence diagrams, activity diagrams, and mind maps. A serverless Elect
 - Image export: PNG / JPEG / WebP
 - Discarding unsaved changes (New / Open / switching diagram type / quitting) prompts with **Save / Don't save / Cancel**
 
+## Screens
+
+Generate a diagram from the text in the left pane, then adjust it freely in the GUI.
+
+### Sequence diagram
+
+![The sequence diagram screen](docs/images/sequence.png)
+
+### Activity diagram
+
+![The activity diagram screen](docs/images/activity.png)
+
+### Mind map
+
+![The mind map screen](docs/images/mindmap.png)
+
 ## Development
 
 ```bash
@@ -31,6 +47,14 @@ $env:UMLTOOL_DIAG='1'; npx electron-vite preview
 Verifies diagram generation, export in all three formats, save⇄load round-trips, and editing behavior,
 then writes `diag-output.png` (activity diagram), `diag-output-seq.png` (sequence diagram),
 and `diag-output-mindmap.png` (mind map).
+
+### Retaking the README screenshots
+
+```powershell
+$env:UMLTOOL_SHOTS='1'; npx electron-vite preview
+```
+
+Rebuilds all three diagram types from their samples, captures them, and overwrites `docs/images/` — run it whenever the look changes and the README follows.
 
 ## Usage
 
