@@ -1,30 +1,35 @@
-// 左ペインの幅の決め方（DOM 非依存・純関数）。
+// 左右のペインの幅の決め方（DOM 非依存・純関数）。
 //
 // 幅は自由に変えられるが、図を描く場所まで潰れると操作できなくなるので、
-// キャンバスと右パネルの取り分を必ず残す。
+// 反対側のペインとキャンバスの取り分を必ず残す。
 
-export const LEFT_PANE = {
-  /** 既定の幅（従来の固定値と同じ） */
-  default: 280,
-  /** これ以上狭くしない（タブ 2 つとボタンが並ぶ幅） */
-  min: 200,
-  /** これ以上広げない */
-  max: 720,
-  /**
-   * 左ペイン以外に必ず残す幅。
-   * 右パネル 260 + キャンバス最低 320 + スプリッタ 6。
-   */
-  reserve: 586
+export type PaneSide = 'left' | 'right'
+
+export const PANE = {
+  /** 左ペイン（テキスト / 部品）。既定は従来の固定値 */
+  left: { default: 280, min: 200, max: 720 },
+  /** 右パネル（プロパティ）。下限は色見本が 1 行に 7 つ並ぶ幅 */
+  right: { default: 260, min: 220, max: 640 },
+  /** キャンバスに必ず残す幅 */
+  canvasMin: 320,
+  /** 境界 1 本の幅（左右で 2 本ある） */
+  bar: 6
 } as const
 
 /**
  * ドラッグ位置などから決めた幅を、実際に使える値へ丸める。
- * 数値でない場合は既定値に倒す。ウィンドウが狭いときは下限を優先する
- * （最低幅すら取れないほど狭ければ、左ペインは min のまま）。
+ * otherWidth は反対側のペインの今の幅。数値でない場合は既定値に倒す。
+ * ウィンドウが狭いときは下限を優先する（最低幅すら取れなければ min のまま）。
  */
-export function clampPaneWidth(width: number, workspaceWidth: number): number {
-  if (!Number.isFinite(width)) return LEFT_PANE.default
-  const room = workspaceWidth - LEFT_PANE.reserve
-  const max = Math.max(LEFT_PANE.min, Math.min(LEFT_PANE.max, room))
-  return Math.round(Math.min(Math.max(width, LEFT_PANE.min), max))
+export function clampPaneWidth(
+  side: PaneSide,
+  width: number,
+  workspaceWidth: number,
+  otherWidth: number
+): number {
+  const spec = PANE[side]
+  if (!Number.isFinite(width)) return spec.default
+  const room = workspaceWidth - otherWidth - PANE.canvasMin - PANE.bar * 2
+  const max = Math.max(spec.min, Math.min(spec.max, room))
+  return Math.round(Math.min(Math.max(width, spec.min), max))
 }

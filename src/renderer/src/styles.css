@@ -80,12 +80,13 @@ body,
 #workspace {
   flex: 1;
   display: grid;
-  /* 1 列目は境界のドラッグで変わる（paneResizer が --left-pane-width を書き換える） */
-  grid-template-columns: var(--left-pane-width, 280px) 6px 1fr 260px;
+  /* 両端の列は境界のドラッグで変わる（paneResizer が --left/right-pane-width を書き換える） */
+  grid-template-columns:
+    var(--left-pane-width, 280px) 6px 1fr 6px var(--right-pane-width, 260px);
   min-height: 0;
 }
 
-/* 左ペインと図の境界。掴みやすいよう線より太めに取る */
+/* ペインと図の境界。掴みやすいよう線より太めに取る */
 .pane-resizer {
   background: var(--border);
   cursor: col-resize;
@@ -375,7 +376,13 @@ body,
   outline: none;
 }
 
+/* 項目が多くてもウィンドウ全体ではなく、右パネルの中だけをスクロールさせる */
 #props-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* スクロールバーが入力欄に重ならないよう右に少し逃がす */
+  padding-right: 4px;
   display: flex;
   flex-direction: column;
   gap: 10px;
