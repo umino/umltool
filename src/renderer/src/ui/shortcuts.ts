@@ -31,6 +31,8 @@ export const COMMON_SHORTCUTS: ShortcutGroup = {
     { keys: ['Ctrl', '＋', 'C'], label: 'コピー' },
     { keys: ['Ctrl', '＋', 'V'], label: '貼り付け' },
     { keys: ['Ctrl', '＋', 'A'], label: 'すべて選択' },
+    { keys: ['Ctrl', '＋', 'F'], label: '図の中を検索（Enter で次、Shift+Enter で前）' },
+    { keys: ['F3'], label: '次の検索結果（Shift+F3 で前）' },
     { keys: ['Shift', '＋', '←→↑↓'], label: 'その向きにある要素をまとめて選択に追加' },
     { keys: ['Ctrl', '＋', '←→↑↓'], label: '選択した要素を動かす（Shift 併用で大きく）' },
     { keys: ['Delete'], label: '選択を削除' }

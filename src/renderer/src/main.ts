@@ -1,5 +1,5 @@
 import './styles.css'
-import type { Edge, EdgeView, Node } from '@antv/x6'
+import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
 import { GraphEditor } from './editor/GraphEditor'
 import {
   addActivation,
@@ -47,6 +47,9 @@ import {
   getEdgeTextColor,
   getEdgeTextFontFamily,
   getEdgeTextFontSize,
+  getDividerGuard,
+  getFragmentGuard,
+  getFragmentOperator,
   getMessageLabel,
   getNodeLabel,
   getTextBold,
@@ -89,6 +92,8 @@ import { buildToolbar, type ToolbarHandle } from './ui/toolbar'
 import { buildPalette, type PaletteHandle } from './ui/palette'
 import { buildShortcutOverlay } from './ui/shortcutOverlay'
 import { bindPaneResizer, type PaneResizer } from './ui/paneResizer'
+import { buildSearchBar, type SearchBar } from './ui/searchBar'
+import { findMatches, nextMatch, type SearchItem } from './editor/search'
 import { buildSequenceFromText } from './text/buildSequence'
 import { buildActivityFromText } from './text/buildActivity'
 import { buildMindmapFromText } from './text/buildMindmap'
@@ -196,6 +201,10 @@ class AppController {
   private readonly textError = document.getElementById('text-error') as HTMLElement
   /** 左ペインの幅を変える境界（issue #42）。要素が無い環境では null */
   private paneResizer: PaneResizer | null = null
+  /** 図の検索バー（issue #45） */
+  private readonly searchBar: SearchBar
+  /** いま表示している検索結果。次へ / 前へはここから数える */
+  private searchLastId: string | null = null
 
   constructor() {
     const container = document.getElementById('graph-container') as HTMLElement
@@ -226,6 +235,7 @@ class AppController {
         this.exportDpi = dpi
       },
       exportImage: (f) => this.exportImage(f),
+      openSearch: () => this.openSearch(),
       showShortcuts: () => this.shortcuts.toggle(this.diagramType)
     })
 
@@ -248,6 +258,17 @@ class AppController {
     })
     this.bindSideTabs()
     this.paneResizer = bindPaneResizer()
+    this.searchBar = buildSearchBar(document.getElementById('canvas-pane') as HTMLElement, {
+      onInput: () => {
+        // 語が変わったら先頭の一致から数え直す
+        this.searchLastId = null
+        this.stepSearch(1)
+      },
+      onStep: (dir) => this.stepSearch(dir),
+      onClose: () => {
+        this.searchLastId = null
+      }
+    })
 
     this.editor.onModelChange(() => this.setDirty(true))
 
@@ -1506,11 +1527,10 @@ B --> A : 返す`
             graph.removeCells([a])
           }
 
-          // 画面内の座標を作るための基準（elementFromPoint はビューポート内だけ有効）
-          const viewCenter = ((): { x: number; y: number } => {
-            const rect = graph.container.getBoundingClientRect()
-            return graph.clientToLocal(rect.left + rect.width / 2, rect.top + rect.height / 2)
-          })()
+          // 画面内の座標を作るための基準（elementFromPoint はビューポート内だけ有効）。
+          // graph.container は Scroller の中にある図の箱で、見えている範囲とは一致しない
+          // （ツールバーの折り返し等でずれると基準点が画面外に出る）ので、表示領域から取る
+          const viewCenter = this.editor.getVisibleCenter()
           const clientOf = (p: { x: number; y: number }): { x: number; y: number } =>
             graph.localToClient(p.x, p.y)
           const hitCellId = (p: { x: number; y: number }): string | null => {
@@ -2354,6 +2374,38 @@ B --> A : 返す`
                   : `ng(on=${on}, plain=${plain}, open=${stillOpen}, commit=${committed}, lines=${lineCount}, spaces=${keptSpaces}, indent=${Math.round(indent1)}/${Math.round(indent2)}, inside=${inside}, mono=${mono}, noWrap=${noWrap}, refit=${refit}, persisted=${persisted}, off=${off})`
             }
 
+            // 検索（issue #45）: 折りたたまれた枝の中の語は、親を開いてから選ぶ
+            {
+              const planning = graph
+                .getNodes()
+                .find((n) => mm.isTopic(n) && getNodeLabel(n) === '企画')
+              const hidden = graph
+                .getNodes()
+                .find((n) => mm.isTopic(n) && getNodeLabel(n) === '競合調査')
+              if (!planning || !hidden) {
+                mindmap['searchReveal'] = `ng(planning=${planning !== undefined}, target=${hidden !== undefined})`
+              } else {
+                mm.setCollapsed(planning, true)
+                mm.updateMindmapVisibility(graph)
+                const wasHidden = !hidden.isVisible()
+                this.openSearch()
+                const input = document.querySelector('.search-bar input') as HTMLInputElement | null
+                if (input) {
+                  input.value = '競合'
+                  input.dispatchEvent(new Event('input', { bubbles: true }))
+                }
+                await new Promise((r) => setTimeout(r, 350))
+                const picked = graph.getSelectedCells()[0]?.id === hidden.id
+                const shown = hidden.isVisible() && !mm.isCollapsed(planning)
+                this.searchBar.close()
+                graph.cleanSelection()
+                mindmap['searchReveal'] =
+                  wasHidden && picked && shown
+                    ? 'ok'
+                    : `ng(hiddenBefore=${wasHidden}, picked=${picked}, shown=${shown})`
+              }
+            }
+
             // サブツリーの切り取り / 貼り付け（トピックの付け替え）
             {
               const kids = mm.childTopics(graph, root)
@@ -2573,6 +2625,102 @@ B --> A : 返す`
         ui['leftPaneResize'] = `error: ${(e as Error).message}`
       }
 
+      // 図の検索（issue #45）: Ctrl+F で開き、打つと先頭の一致へ、Enter で次へ、
+      // 端を越えたら警告付きで反対側から続く。全角で打っても当たり、無ければそう出る
+      try {
+        const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+        const press = async (
+          target: EventTarget,
+          key: string,
+          mods: { ctrlKey?: boolean; shiftKey?: boolean } = {}
+        ): Promise<void> => {
+          target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...mods }))
+          await wait(80)
+        }
+        graph.cleanSelection()
+        await press(document, 'f', { ctrlKey: true })
+        const bar = document.querySelector('.search-bar') as HTMLElement | null
+        const input = bar?.querySelector('input') as HTMLInputElement | null
+        const count = (): string => bar?.querySelector('.search-count')?.textContent ?? ''
+        const notice = (): string => bar?.querySelector('.search-notice')?.textContent ?? ''
+        const opened = bar !== null && !bar.hidden && document.activeElement === input
+        if (!bar || !input) {
+          ui['search'] = `ng(bar=${bar !== null}, input=${input !== null})`
+        } else {
+          const type = async (text: string): Promise<void> => {
+            input.value = text
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            await wait(350)
+          }
+          const selected = (): Cell | undefined => graph.getSelectedCells()[0]
+          const selectedText = (): string => {
+            const c = selected()
+            if (!c) return ''
+            return c.isEdge() ? getMessageLabel(c) : getNodeLabel(c as Node)
+          }
+          // 一致した要素がキャンバスの中に見えているか
+          const inView = (): boolean => {
+            const c = selected()
+            const rect = c ? graph.findViewByCell(c)?.container.getBoundingClientRect() : undefined
+            const pane = document.getElementById('canvas-pane')?.getBoundingClientRect()
+            return (
+              rect !== undefined &&
+              pane !== undefined &&
+              rect.left >= pane.left &&
+              rect.right <= pane.right &&
+              rect.top >= pane.top &&
+              rect.bottom <= pane.bottom
+            )
+          }
+
+          await type('商品')
+          const first = selectedText()
+          const firstCount = count()
+          const firstInView = inView()
+          await press(input, 'Enter')
+          const second = selectedText()
+          const secondCount = count()
+          await press(input, 'Enter')
+          const wrapped = selectedText()
+          const wrapNotice = notice()
+          await press(input, 'Enter', { shiftKey: true })
+          const backward = selectedText()
+          const backNotice = notice()
+          const focusKept = document.activeElement === input
+
+          await type('ＹＥＳ')
+          const edgeHit = selected()?.isEdge() === true && selectedText() === 'yes'
+
+          await type('存在しない語')
+          const missing = count() === '見つかりません'
+
+          await press(input, 'Escape')
+          const closed = bar.hidden
+
+          const ok =
+            opened &&
+            first === '商品を引き当てる' &&
+            firstCount === '1 / 2' &&
+            firstInView &&
+            second === '商品を発送する' &&
+            secondCount === '2 / 2' &&
+            wrapped === '商品を引き当てる' &&
+            wrapNotice.includes('先頭から') &&
+            backward === '商品を発送する' &&
+            backNotice.includes('末尾から') &&
+            focusKept &&
+            edgeHit &&
+            missing &&
+            closed
+          ui['search'] = ok
+            ? 'ok'
+            : `ng(open=${opened}, first=${first}/${firstCount}/${firstInView}, second=${second}/${secondCount}, wrap=${wrapped}/${wrapNotice}, back=${backward}/${backNotice}, focus=${focusKept}, edge=${edgeHit}, missing=${missing}, closed=${closed})`
+          graph.cleanSelection()
+        }
+      } catch (e) {
+        ui['search'] = `error: ${(e as Error).message}`
+      }
+
       // main プロセスの sendInputEvent テスト用: ノードを選択して入力欄にフォーカス
       ;(window as unknown as Record<string, unknown>).__umlFocusPropsInput = async () => {
         const ll = graph
@@ -2627,6 +2775,22 @@ B --> A : 返す`
         (await exportGraphToSvg(graph)).svg
 
       // 右パネルの整列欄を見た目で確認するための状態づくり（スクリーンショット用）
+      // 検索バーを開いて 1 件目に飛んだ状態を撮る（見た目の確認用）
+      ;(window as unknown as Record<string, unknown>).__umlShowSearch = async (
+        query: string
+      ): Promise<string> => {
+        this.openSearch()
+        const input = document.querySelector('.search-bar input') as HTMLInputElement | null
+        if (!input) return ''
+        input.value = query
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await new Promise((r) => setTimeout(r, 350))
+        // 2 件目 → 先頭へ回り込ませ、一周の警告も写るようにする
+        this.stepSearch(1)
+        this.stepSearch(1)
+        return query
+      }
+
       // 左ペインを広げた状態を撮って、描画領域が追従しているか目視で確かめる
       ;(window as unknown as Record<string, unknown>).__umlWidenLeftPane = () => {
         this.paneResizer?.setWidth(520)
@@ -3569,6 +3733,7 @@ B --> A : 返す`
     window.uml.onMenu('menu:select-all', () =>
       isTextEditing() ? window.uml.nativeEdit('selectAll') : this.editor.selectAll()
     )
+    window.uml.onMenu('menu:find', () => this.openSearch())
   }
 
   private copySelection(): void {
@@ -3725,6 +3890,18 @@ B --> A : 返す`
 
   private bindKeys(): void {
     document.addEventListener('keydown', (e) => {
+      // 検索はテキスト欄に入力中でも開ける（ブラウザ標準の検索は Electron に無い）
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        this.openSearch()
+        return
+      }
+      if (e.key === 'F3' && this.searchBar.isOpen()) {
+        e.preventDefault()
+        this.stepSearch(e.shiftKey ? -1 : 1)
+        return
+      }
+
       const target = e.target as HTMLElement
       const inEditable =
         target &&
@@ -3774,6 +3951,9 @@ B --> A : 返す`
       } else if (e.ctrlKey && key === 'a') {
         e.preventDefault()
         this.editor.selectAll()
+      } else if (e.key === 'Escape' && this.searchBar.isOpen()) {
+        e.preventDefault()
+        this.searchBar.close()
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         // 選択があれば削除（キャンバスのフォーカス有無に依らない）
         if (!this.editor.isSelectionEmpty()) {
@@ -3801,6 +3981,96 @@ B --> A : 返す`
     const mark = this.dirty ? ' ●未保存' : ''
     this.statusEl.textContent = `${name}${mark}`
     document.title = `UmlTool — ${this.defaultBaseName()}${this.dirty ? ' *' : ''}`
+  }
+
+  // ---- 図の検索（issue #45） ----
+
+  private openSearch(): void {
+    this.searchBar.open()
+  }
+
+  /** 検索対象の文字列。種別ごとに持ち場所が違う */
+  private searchableText(cell: Cell): string {
+    if (cell.isEdge()) return getMessageLabel(cell)
+    const kind = getCellKind(cell)
+    if (kind === 'fragment') {
+      return `${getFragmentOperator(cell as Node)} ${getFragmentGuard(cell as Node)}`
+    }
+    if (kind === 'divider') return getDividerGuard(cell as Node)
+    return getNodeLabel(cell as Node)
+  }
+
+  private searchItems(): SearchItem[] {
+    return this.editor.graph.getCells().flatMap((cell) => {
+      const text = this.searchableText(cell)
+      if (text.trim() === '') return []
+      const box = cell.getBBox()
+      return [{ id: cell.id, text, x: box.x, y: box.y }]
+    })
+  }
+
+  /**
+   * 次（1）/ 前（-1）の一致へ移り、選択して画面中央に出す。
+   * 端を越えたら警告を出して反対側から続ける（一周しても止めない）。
+   */
+  private stepSearch(dir: 1 | -1): void {
+    const query = this.searchBar.getQuery()
+    this.searchBar.setNotice('')
+    if (query.trim() === '') {
+      this.searchLastId = null
+      this.searchBar.setResult(null)
+      return
+    }
+    const ids = findMatches(this.searchItems(), query).map((m) => m.id)
+    const { index, wrapped } = nextMatch(ids, this.searchLastId, dir)
+    const cell = index < 0 ? null : this.editor.graph.getCellById(ids[index])
+    if (!cell) {
+      this.searchLastId = null
+      this.searchBar.setResult({ index: -1, total: 0 })
+      this.setStatusMessage(`「${query}」は見つかりません。`)
+      return
+    }
+    this.searchLastId = cell.id
+    this.searchBar.setResult({ index, total: ids.length })
+    if (wrapped) {
+      const notice =
+        dir === 1
+          ? '末尾まで検索しました。先頭から続けます。'
+          : '先頭まで検索しました。末尾から続けます。'
+      this.searchBar.setNotice(notice)
+      this.setStatusMessage(notice)
+    } else {
+      this.setStatusMessage(`検索「${query}」: ${index + 1} / ${ids.length} 件目`)
+    }
+    this.focusSearchHit(cell)
+  }
+
+  private focusSearchHit(cell: Cell): void {
+    // 折りたたまれた枝の中にあれば、親を開いて見える状態にしてから選ぶ
+    if (this.diagramType === 'mindmap') {
+      const node = cell.isNode() ? cell : (cell as Edge).getTargetCell()
+      if (node?.isNode() && isTopic(node)) this.revealTopic(node)
+    }
+    this.editor.graph.resetSelection(cell)
+    this.editor.centerOnCell(cell)
+  }
+
+  /** 折りたたまれている祖先をすべて開く */
+  private revealTopic(node: Node): void {
+    const graph = this.editor.graph
+    const closed: Node[] = []
+    let parent = parentTopic(graph, node)
+    // 木は輪にならない（mindmapTree が除外する）が、念のため深さで打ち切る
+    for (let depth = 0; parent !== null && depth < 100; depth++) {
+      if (isCollapsed(parent)) closed.push(parent)
+      parent = parentTopic(graph, parent)
+    }
+    if (closed.length === 0) return
+    this.editor.batch(() => {
+      for (const p of closed) setCollapsed(p, false)
+      updateMindmapVisibility(graph)
+    })
+    this.setDirty(true)
   }
 
   private setStatusMessage(message: string): void {

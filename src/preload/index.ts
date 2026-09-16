@@ -73,6 +73,7 @@ export type MenuChannel =
   | 'menu:paste'
   | 'menu:delete'
   | 'menu:select-all'
+  | 'menu:find'
   | 'menu:close-request'
 
 export type UmlApi = typeof api
