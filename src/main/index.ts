@@ -161,6 +161,14 @@ function createWindow(): void {
             await writeFile(outCode, Buffer.from(codePng.split(',')[1], 'base64'))
             console.log(`[DIAG-PNG-CODE] ${outCode}`)
           }
+          const linkPng = await mainWindow!.webContents.executeJavaScript(
+            'window.__topicLinkPng ?? ""'
+          )
+          if (typeof linkPng === 'string' && linkPng.startsWith('data:image/png')) {
+            const outLink = join(process.cwd(), 'diag-output-link.png')
+            await writeFile(outLink, Buffer.from(linkPng.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-LINK] ${outLink}`)
+          }
           const svg = await mainWindow!.webContents.executeJavaScript(
             'window.__umlExportSvg ? window.__umlExportSvg() : ""'
           )

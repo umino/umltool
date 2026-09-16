@@ -63,6 +63,8 @@ export const MINDMAP_SHORTCUTS: ShortcutGroup = {
     { keys: ['Enter'], label: '兄弟トピックを追加' },
     { keys: ['F2'], label: '名前を編集' },
     { keys: ['Space'], label: '折りたたみ / 展開' },
+    { keys: ['L'], label: '選んだ 2 つをリンク（1 つ目 → 2 つ目）' },
+    { keys: ['J'], label: 'リンクを辿る（Shift+J で次の候補）' },
     { keys: ['Ctrl', '＋', 'X'], label: 'トピックを子ごと切り取り（親から外す）' },
     { keys: ['Ctrl', '＋', 'C'], label: 'トピックを子ごとコピー' },
     { keys: ['Ctrl', '＋', 'V'], label: '選択トピックの子として貼り付け' },

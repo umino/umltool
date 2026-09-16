@@ -23,6 +23,7 @@ import {
   NOTE,
   SHAPE,
   TEXT,
+  TOPIC_LINK_COLOR,
   DEFAULT_TEXT_ALIGN,
   Z,
   type CellKind,
@@ -134,7 +135,8 @@ const MARKER_OPEN = {
 const EDGE_LABEL_STYLE = {
   message: { fontSize: 12, fontFamily: FONT_FAMILY, fill: COLOR.stroke },
   flow: { fontSize: 12, fontFamily: FONT_FAMILY, fill: COLOR.stroke },
-  branch: { fontSize: 11, fontFamily: FONT_FAMILY, fill: COLOR.lifeline }
+  branch: { fontSize: 11, fontFamily: FONT_FAMILY, fill: COLOR.lifeline },
+  topicLink: { fontSize: 11, fontFamily: FONT_FAMILY, fill: TOPIC_LINK_COLOR }
 } as const
 
 type LabeledEdgeKind = keyof typeof EDGE_LABEL_STYLE
@@ -863,6 +865,66 @@ export function registerShapes(): void {
     true
   )
 
+  // ---- マインドマップのリンク（親子とは別の参照。issue #46） ----
+  // 枝（灰色の実線・曲線・矢印なし）と取り違えないよう、暖色の破線の直線に
+  // 矢印と起点の丸を付ける。矢じりと丸まで破線にならないよう、マーカーは実線に戻す。
+  Graph.registerEdge(
+    SHAPE.topicLink,
+    {
+      zIndex: Z.branch,
+      attrs: {
+        line: {
+          stroke: TOPIC_LINK_COLOR,
+          strokeWidth: 1.6,
+          strokeDasharray: '6 4',
+          targetMarker: {
+            name: 'block',
+            size: 9,
+            fill: TOPIC_LINK_COLOR,
+            stroke: TOPIC_LINK_COLOR,
+            strokeDasharray: 'none'
+          },
+          sourceMarker: {
+            name: 'ellipse',
+            rx: 3,
+            ry: 3,
+            fill: TOPIC_LINK_COLOR,
+            stroke: TOPIC_LINK_COLOR,
+            strokeDasharray: 'none'
+          }
+        },
+        wrap: {
+          strokeWidth: 12
+        }
+      },
+      defaultLabel: {
+        markup: [
+          { tagName: 'rect', selector: 'bg' },
+          { tagName: 'text', selector: 'text' }
+        ],
+        attrs: {
+          text: {
+            ...EDGE_LABEL_STYLE.topicLink,
+            textAnchor: 'middle',
+            textVerticalAnchor: 'middle',
+            pointerEvents: 'none'
+          },
+          bg: {
+            ref: 'text',
+            fill: '#fbfbfd',
+            opacity: 0.85,
+            refWidth: '100%',
+            refHeight: '100%',
+            refX: 0,
+            refY: 0
+          }
+        },
+        position: { distance: 0.5 }
+      }
+    },
+    true
+  )
+
   // ---- マインドマップの枝（矢印なし。配置に応じて曲線 / L 字を切り替える） ----
   Graph.registerEdge(
     SHAPE.branch,
@@ -1413,7 +1475,13 @@ export function normalizeLabelFor(node: Node, text: string): string {
 /** 線色を変更できるエッジか */
 export function canSetEdgeStroke(edge: Edge): boolean {
   const kind = getCellKind(edge)
-  return kind === 'message' || kind === 'flow' || kind === 'branch' || kind === 'attachLink'
+  return (
+    kind === 'message' ||
+    kind === 'flow' ||
+    kind === 'branch' ||
+    kind === 'topicLink' ||
+    kind === 'attachLink'
+  )
 }
 
 /** ラベルの文字スタイルを変更できるエッジか */
@@ -1434,6 +1502,7 @@ const EDGE_LINE_WIDTH: Partial<Record<CellKind, number>> = {
   message: 1.5,
   flow: 1.5,
   branch: 1.8,
+  topicLink: 1.6,
   attachLink: 1
 }
 

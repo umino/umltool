@@ -35,8 +35,12 @@ import {
   parentTopic,
   setCollapsed,
   topicDepth,
-  updateMindmapVisibility
+  topicLinkPeers,
+  updateMindmapVisibility,
+  addTopicLink,
+  checkTopicLink
 } from './editor/mindmap'
+import { nextPeerIndex } from './text/mindmapLinks'
 import { addNoteNode } from './editor/note'
 import { resolveConnectionEndpoints } from './editor/connect'
 import { DIRECTION_LABEL, type Direction } from './editor/arrange'
@@ -205,6 +209,11 @@ class AppController {
   private readonly searchBar: SearchBar
   /** いま表示している検索結果。次へ / 前へはここから数える */
   private searchLastId: string | null = null
+  /**
+   * 直前に J で辿ったリンク（issue #46）。Shift+J はここから同じ起点の
+   * 次の候補へ進む。
+   */
+  private linkJump: { originId: string; lastId: string } | null = null
 
   constructor() {
     const container = document.getElementById('graph-container') as HTMLElement
@@ -254,7 +263,8 @@ class AppController {
       addChildTopic: () => this.addRelatedTopic('child'),
       addSiblingTopic: () => this.addRelatedTopic('sibling'),
       toggleCollapse: () => this.toggleCollapse(),
-      toggleCodeTopic: () => this.toggleCodeTopic()
+      toggleCodeTopic: () => this.toggleCodeTopic(),
+      addTopicLink: () => this.linkSelectedTopics()
     })
     this.bindSideTabs()
     this.paneResizer = bindPaneResizer()
@@ -268,6 +278,10 @@ class AppController {
       onClose: () => {
         this.searchLastId = null
       }
+    })
+    // リンク線のダブルクリックはラベル編集ではなくリンク先への移動（issue #46）
+    this.editor.graph.on('edge:dblclick', ({ edge }: { edge: Edge }) => {
+      if (getCellKind(edge) === 'topicLink') this.followLink(edge)
     })
 
     this.editor.onModelChange(() => this.setDirty(true))
@@ -2406,6 +2420,138 @@ B --> A : 返す`
               }
             }
 
+            // リンク（issue #46）: L で「1 つ目 → 2 つ目」の破線矢印ができ、木（枝）には
+            // 数えられない。J で辿り、Shift+J で同じ起点の次の候補、逆向きにも戻れる。
+            // 重複は断り、端が折りたたみで隠れると線も隠れ、隠れた先へ飛ぶと親が開く
+            {
+              const s = await import('./editor/shapes')
+              const { TOPIC_LINK_COLOR } = await import('./editor/constants')
+              const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+              const byLabel = (label: string): Node | undefined =>
+                graph.getNodes().find((n) => mm.isTopic(n) && getNodeLabel(n) === label)
+              const links = (): Edge[] => graph.getEdges().filter((e) => mm.isTopicLink(e))
+              const branchCount = (): number =>
+                graph.getEdges().filter((e) => getCellKind(e) === 'branch').length
+              const selectedId = (): string => graph.getSelectedCells()[0]?.id ?? ''
+              const a = byLabel('設計')
+              const b = byLabel('競合調査')
+              const c = byLabel('運用')
+              const planning = byLabel('企画')
+              if (!a || !b || !c || !planning) {
+                mindmap['topicLink'] = `ng(missing a=${!!a}, b=${!!b}, c=${!!c}, planning=${!!planning})`
+              } else {
+                const parentsBefore = mm.mindmapTree(graph).parentOf.size
+                const branchesBefore = branchCount()
+
+                graph.resetSelection([a, b])
+                await key('l')
+                const first = links()[0] as Edge | undefined
+                const created =
+                  links().length === 1 &&
+                  first?.getSourceCellId() === a.id &&
+                  first?.getTargetCellId() === b.id
+                if (!first || !created) {
+                  mindmap['topicLink'] = `ng(created=${created}, links=${links().length})`
+                } else {
+                  // 同じ向きの重複は断る
+                  graph.resetSelection([a, b])
+                  await key('l')
+                  const noDuplicate = links().length === 1
+                  graph.resetSelection([a, c])
+                  await key('l')
+                  const twoLinks = links().length === 2
+                  // 木の形（親子）は変わらない
+                  const treeKept =
+                    mm.mindmapTree(graph).parentOf.size === parentsBefore &&
+                    branchCount() === branchesBefore
+                  // 枝と見分けられる見た目（破線・暖色・矢印）
+                  const looks =
+                    first.attr('line/strokeDasharray') === '6 4' &&
+                    s.getEdgeStroke(first) === TOPIC_LINK_COLOR &&
+                    first.attr('line/targetMarker') != null
+
+                  // J で辿る → Shift+J で次の候補 → さらに Shift+J で先頭へ
+                  graph.resetSelection(a)
+                  await key('j')
+                  const toB = selectedId() === b.id
+                  await key('J', { shiftKey: true })
+                  const toC = selectedId() === c.id
+                  await key('J', { shiftKey: true })
+                  const cycled = selectedId() === b.id
+                  // 張られた側からは元へ戻れる
+                  graph.resetSelection(c)
+                  await key('j')
+                  const backToA = selectedId() === a.id
+
+                  // 端が折りたたみで隠れると線も隠れ、隠れた先へ飛ぶと親が開く
+                  mm.setCollapsed(planning, true)
+                  mm.updateMindmapVisibility(graph)
+                  const hiddenWithEnd = !first.isVisible()
+                  graph.resetSelection(a)
+                  await key('j')
+                  const revealed =
+                    selectedId() === b.id &&
+                    b.isVisible() &&
+                    !mm.isCollapsed(planning) &&
+                    first.isVisible()
+
+                  // 右パネルに一覧が出て、押すとその相手へ移動する
+                  graph.cleanSelection()
+                  await wait(60)
+                  graph.resetSelection(a)
+                  await wait(150)
+                  const jumpButtons = [
+                    ...document.querySelectorAll('#props-body button.link-jump')
+                  ] as HTMLButtonElement[]
+                  jumpButtons[1]?.click()
+                  await wait(150)
+                  const panelJump = jumpButtons.length === 2 && selectedId() === c.id
+
+                  // リンク線のダブルクリックでリンク先へ
+                  graph.cleanSelection()
+                  graph.trigger('edge:dblclick', { edge: first, e: new MouseEvent('dblclick') })
+                  await wait(80)
+                  const dblJump = selectedId() === b.id
+
+                  // 保存形式に種別と形が残る
+                  const saved = graph
+                    .toJSON()
+                    .cells.filter(
+                      (cell) => (cell.data as { kind?: string } | undefined)?.kind === 'topicLink'
+                    )
+                  const persisted =
+                    saved.length === 2 && saved.every((cell) => cell.shape === 'uml-topic-link')
+
+                  // リンク先のトピックを消すとリンクも消える（宙に浮いた線を残さない）
+                  const temp = mm.addTopic(graph, '一時トピック', {
+                    centerX: a.getBBox().center.x,
+                    centerY: a.getBBox().bottom + 80
+                  })
+                  graph.resetSelection([a, temp])
+                  await key('l')
+                  const withTemp = links().length === 3
+                  graph.resetSelection(temp)
+                  this.editor.deleteSelection()
+                  await wait(60)
+                  const cleaned = withTemp && links().length === 2
+
+                  const ok =
+                    noDuplicate && twoLinks && treeKept && looks && toB && toC && cycled &&
+                    backToA && hiddenWithEnd && revealed && panelJump && dblJump && persisted &&
+                    cleaned
+                  mindmap['topicLink'] = ok
+                    ? 'ok'
+                    : `ng(dup=${noDuplicate}, two=${twoLinks}, tree=${treeKept}, looks=${looks}, j=${toB}/${toC}/${cycled}, back=${backToA}, hide=${hiddenWithEnd}, reveal=${revealed}, panel=${panelJump}(${jumpButtons.length}), dbl=${dblJump}, saved=${persisted}, cleaned=${cleaned})`
+
+                  // 見た目の確認用に、リンクを張った状態の画像を残す
+                  ;(window as unknown as Record<string, unknown>).__topicLinkPng =
+                    await exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
+                }
+                graph.removeCells(links())
+                graph.cleanSelection()
+              }
+            }
+
             // サブツリーの切り取り / 貼り付け（トピックの付け替え）
             {
               const kids = mm.childTopics(graph, root)
@@ -3838,6 +3984,16 @@ B --> A : 返す`
         e.preventDefault()
         this.toggleCodeTopic()
         return true
+      case 'l':
+      case 'L':
+        e.preventDefault()
+        this.linkSelectedTopics()
+        return true
+      case 'j':
+      case 'J':
+        e.preventDefault()
+        this.jumpAlongLink(e.shiftKey)
+        return true
       case '+':
       case '=':
         e.preventDefault()
@@ -3983,6 +4139,83 @@ B --> A : 返す`
     document.title = `UmlTool — ${this.defaultBaseName()}${this.dirty ? ' *' : ''}`
   }
 
+  // ---- マインドマップのリンク（issue #46） ----
+
+  /** 選んだ 2 つのトピックを「1 つ目 → 2 つ目」の向きにリンクする（L） */
+  private linkSelectedTopics(): void {
+    const topics = this.selectedTopics()
+    if (topics.length !== 2) {
+      this.setStatusMessage(
+        'リンク元 → リンク先の順にトピックを 2 つ選んでから L を押してください（Shift+クリックで複数選択）。'
+      )
+      return
+    }
+    const [from, to] = topics
+    const graph = this.editor.graph
+    const check = checkTopicLink(graph, from, to)
+    if (!check.ok) {
+      this.setStatusMessage(check.reason)
+      return
+    }
+    this.editor.batch(() => {
+      addTopicLink(graph, from, to)
+    })
+    // リンク元を選んでおけば、そのまま J で辿って確かめられる
+    graph.resetSelection(from)
+    this.linkJump = null
+    this.setDirty(true)
+    this.setStatusMessage(
+      `「${getNodeLabel(from)}」から「${getNodeLabel(to)}」へリンクしました。J でリンク先へ移動できます。`
+    )
+  }
+
+  /**
+   * 選択中のトピックからリンクを辿る（J）。
+   * Shift+J は、直前に J で飛んできたところなら同じ起点の次の候補へ進む
+   * （そうでなければ J と同じ）。張られたリンクも逆向きに辿れるので、
+   * リンク先で J を押せば元の場所へ戻れる。
+   */
+  private jumpAlongLink(nextCandidate: boolean): void {
+    const current = this.selectedTopic()
+    if (!current) {
+      this.setStatusMessage('リンクを辿るトピックを選択してください。')
+      return
+    }
+    const graph = this.editor.graph
+    const previous = this.linkJump
+    const continuing = nextCandidate && previous !== null && previous.lastId === current.id
+    const originCell = continuing && previous ? graph.getCellById(previous.originId) : current
+    const origin = originCell?.isNode() ? originCell : current
+
+    const peers = topicLinkPeers(graph, origin)
+    if (peers.length === 0) {
+      this.linkJump = null
+      this.setStatusMessage(
+        `「${getNodeLabel(origin)}」にはリンクがありません。2 つ選んで L でリンクを作れます。`
+      )
+      return
+    }
+    const index = continuing ? nextPeerIndex(peers, current.id) : 0
+    const peer = peers[index]
+    const target = graph.getCellById(peer.id)
+    if (!target?.isNode()) return
+
+    if (this.editor.focusCell(target)) this.setDirty(true)
+    this.linkJump = { originId: origin.id, lastId: target.id }
+    const where = peer.direction === 'out' ? 'リンク先' : 'リンク元'
+    const more = peers.length > 1 ? `（${index + 1} / ${peers.length}。Shift+J で次の候補）` : ''
+    this.setStatusMessage(`${where}「${getNodeLabel(target)}」へ移動しました${more}`)
+  }
+
+  /** リンク線のダブルクリック: リンク先へ移動する */
+  private followLink(edge: Edge): void {
+    const target = edge.getTargetCell()
+    if (!target?.isNode()) return
+    if (this.editor.focusCell(target)) this.setDirty(true)
+    this.linkJump = null
+    this.setStatusMessage(`リンク先「${getNodeLabel(target)}」へ移動しました。`)
+  }
+
   // ---- 図の検索（issue #45） ----
 
   private openSearch(): void {
@@ -4047,30 +4280,7 @@ B --> A : 返す`
 
   private focusSearchHit(cell: Cell): void {
     // 折りたたまれた枝の中にあれば、親を開いて見える状態にしてから選ぶ
-    if (this.diagramType === 'mindmap') {
-      const node = cell.isNode() ? cell : (cell as Edge).getTargetCell()
-      if (node?.isNode() && isTopic(node)) this.revealTopic(node)
-    }
-    this.editor.graph.resetSelection(cell)
-    this.editor.centerOnCell(cell)
-  }
-
-  /** 折りたたまれている祖先をすべて開く */
-  private revealTopic(node: Node): void {
-    const graph = this.editor.graph
-    const closed: Node[] = []
-    let parent = parentTopic(graph, node)
-    // 木は輪にならない（mindmapTree が除外する）が、念のため深さで打ち切る
-    for (let depth = 0; parent !== null && depth < 100; depth++) {
-      if (isCollapsed(parent)) closed.push(parent)
-      parent = parentTopic(graph, parent)
-    }
-    if (closed.length === 0) return
-    this.editor.batch(() => {
-      for (const p of closed) setCollapsed(p, false)
-      updateMindmapVisibility(graph)
-    })
-    this.setDirty(true)
+    if (this.editor.focusCell(cell)) this.setDirty(true)
   }
 
   private setStatusMessage(message: string): void {

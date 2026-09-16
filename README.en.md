@@ -137,6 +137,8 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
 | Enter | Add a sibling topic |
 | F2 | Rename |
 | Space | Collapse / expand |
+| L | **Link** the two selected topics (first → second) |
+| J | **Follow a link** from the selected topic (Shift+J moves to the next candidate from the same origin) |
 | Ctrl + X | Cut the topic **together with its descendants** (detaches the branch to its parent; the nodes stay on the canvas) |
 | Ctrl + C | Copy the topic **together with its descendants** |
 | Ctrl + V | Paste what was cut or copied **as a child of the selected topic** |
@@ -160,6 +162,11 @@ Labels wrap automatically to fit their node, and node width adjusts automaticall
   - To **insert a topic between a topic and its parent**: Ctrl+X on the topic, select the parent, Tab for a new topic, Ctrl+V
   - Ctrl+C duplicates a sub-tree instead of moving it (colours and collapsed state included)
 - **Collapsing** only hides descendants; nothing moves. Press "整列" to close the gap
+- **Links (references)**: besides parent/child, two distant topics can be tied together as "see also". Links are drawn as **orange dashed arrows** with a dot at the origin, so they are never mistaken for the grey, solid branches
+  - To create one, select the **origin, then the destination** and press **L** (or the "リンク" palette item). Links to a parent or child are allowed; duplicates in the same direction and links to the topic itself are refused
+  - To follow one, select a topic and press **J**. With several links, **Shift+J** moves to the next candidate. Pressing J at the destination follows the incoming link back to where you came from. **Double-clicking** a link line also jumps to its destination, and the "リンク" section of the right panel lists every link as a button
+  - Jumping into a collapsed branch expands its ancestors first; while an end is hidden by collapsing, the link line is hidden too
+  - Links do not affect the tree, so arranging and re-parenting (Ctrl+X → Ctrl+V) leave them alone. Their label, colour and width are set in the right panel; select one and press Delete to remove it
 - **Quoting code**: select a topic and press **C** (or tick "コード表示" in the right panel, or use the "コード" palette item). The topic stays the same node but switches to **monospace, left-aligned, no wrapping**; press again to turn it back into a normal topic
   - Leading indentation is kept as typed. Tabs expand to spaces on 4-column stops; trailing spaces and blank lines at either end are dropped
   - While editing (double-click / F2), **Enter inserts a newline and Ctrl+Enter commits**; Tab inserts 4 spaces. The "コード" box in the right panel behaves the same way
