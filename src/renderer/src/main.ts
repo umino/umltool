@@ -277,8 +277,25 @@ class AppController {
       onStep: (dir) => this.stepSearch(dir),
       onClose: () => {
         this.searchLastId = null
+        this.editor.clearSearchHighlights()
       }
     })
+    // 検索中に図が変わったら（文字の書き換え・追加・削除・折りたたみ）強調を付け直す。
+    // 1 回の操作で続けて発火するので、少し待ってからまとめて行う
+    {
+      const graph = this.editor.graph
+      let timer: number | undefined
+      const schedule = (): void => {
+        if (!this.searchBar.isOpen()) return
+        window.clearTimeout(timer)
+        timer = window.setTimeout(() => this.refreshSearchHighlights(), 120)
+      }
+      graph.on('cell:added', schedule)
+      graph.on('cell:removed', schedule)
+      graph.on('cell:change:attrs', schedule)
+      graph.on('cell:change:labels', schedule)
+      graph.on('cell:change:visible', schedule)
+    }
     // リンク線のダブルクリックはラベル編集ではなくリンク先への移動（issue #46）
     this.editor.graph.on('edge:dblclick', ({ edge }: { edge: Edge }) => {
       if (getCellKind(edge) === 'topicLink') this.followLink(edge)
@@ -2931,9 +2948,16 @@ B --> A : 返す`
           const first = selectedText()
           const firstCount = count()
           const firstInView = inView()
+          // 強調（issue #50）: 一致はすべて光り、今の一致だけ別色
+          const hits = (): number => document.querySelectorAll('.x6-cell.search-hit').length
+          const currentId = (): string | null =>
+            document.querySelector('.x6-cell.search-current')?.getAttribute('data-cell-id') ?? null
+          const marks = (): number => hits() + (currentId() === null ? 0 : 1)
+          const firstMarks = hits() === 1 && currentId() === (selected()?.id ?? '')
           await press(input, 'Enter')
           const second = selectedText()
           const secondCount = count()
+          const secondMarks = hits() === 1 && currentId() === (selected()?.id ?? '')
           await press(input, 'Enter')
           const wrapped = selectedText()
           const wrapNotice = notice()
@@ -2942,14 +2966,32 @@ B --> A : 返す`
           const backNotice = notice()
           const focusKept = document.activeElement === input
 
+          // 検索中に文字が変わって当たらなくなったら強調が外れ、戻せば付き直す
+          const shipping = graph.getNodes().find((n) => getNodeLabel(n) === '商品を発送する')
+          shipping?.attr('label/text', '発送する')
+          await wait(300)
+          const refreshed = marks() === 1 && count() === '- / 1'
+          shipping?.attr('label/text', '商品を発送する')
+          await wait(300)
+          const restored = marks() === 2
+          // 書き出す画像には強調を含めない
+          const { exportGraphToSvg } = await import('./export/raster')
+          const svgText = (await exportGraphToSvg(graph)).svg
+          const exportClean = !svgText.includes('search-hit') && !svgText.includes('search-current')
+
           await type('ＹＥＳ')
           const edgeHit = selected()?.isEdge() === true && selectedText() === 'yes'
 
           await type('存在しない語')
           const missing = count() === '見つかりません'
+          const missingClear = marks() === 0
 
+          // 閉じる前に一致がある状態へ戻し、閉じたら強調が消えることを見る
+          await type('商品')
+          const reopenedMarks = marks() === 2
           await press(input, 'Escape')
           const closed = bar.hidden
+          const closedClear = marks() === 0
 
           const ok =
             opened &&
@@ -2965,10 +3007,18 @@ B --> A : 返す`
             focusKept &&
             edgeHit &&
             missing &&
-            closed
+            closed &&
+            firstMarks &&
+            secondMarks &&
+            refreshed &&
+            restored &&
+            exportClean &&
+            missingClear &&
+            reopenedMarks &&
+            closedClear
           ui['search'] = ok
             ? 'ok'
-            : `ng(open=${opened}, first=${first}/${firstCount}/${firstInView}, second=${second}/${secondCount}, wrap=${wrapped}/${wrapNotice}, back=${backward}/${backNotice}, focus=${focusKept}, edge=${edgeHit}, missing=${missing}, closed=${closed})`
+            : `ng(open=${opened}, first=${first}/${firstCount}/${firstInView}, second=${second}/${secondCount}, wrap=${wrapped}/${wrapNotice}, back=${backward}/${backNotice}, focus=${focusKept}, edge=${edgeHit}, missing=${missing}, closed=${closed}, marks=${firstMarks}/${secondMarks}, refresh=${refreshed}/${restored}, export=${exportClean}, clear=${missingClear}/${reopenedMarks}/${closedClear})`
           graph.cleanSelection()
         }
       } catch (e) {
@@ -4365,6 +4415,7 @@ B --> A : 返す`
     if (query.trim() === '') {
       this.searchLastId = null
       this.searchBar.setResult(null)
+      this.editor.clearSearchHighlights()
       return
     }
     const ids = findMatches(this.searchItems(), query).map((m) => m.id)
@@ -4373,11 +4424,14 @@ B --> A : 返す`
     if (!cell) {
       this.searchLastId = null
       this.searchBar.setResult({ index: -1, total: 0 })
+      this.editor.clearSearchHighlights()
       this.setStatusMessage(`「${query}」は見つかりません。`)
       return
     }
     this.searchLastId = cell.id
     this.searchBar.setResult({ index, total: ids.length })
+    // 先に強調を付ける（折りたたみを開くと表示が変わるので、移動後にもう一度付け直す）
+    this.editor.setSearchHighlights(ids, cell.id)
     if (wrapped) {
       const notice =
         dir === 1
@@ -4392,8 +4446,29 @@ B --> A : 返す`
   }
 
   private focusSearchHit(cell: Cell): void {
-    // 折りたたまれた枝の中にあれば、親を開いて見える状態にしてから選ぶ
-    if (this.editor.focusCell(cell)) this.setDirty(true)
+    // 折りたたまれた枝の中にあれば、親を開いて見える状態にしてから選ぶ。
+    // 開いた場合は、見えるようになった一致も光らせる
+    if (this.editor.focusCell(cell)) {
+      this.setDirty(true)
+      this.refreshSearchHighlights()
+    }
+  }
+
+  /**
+   * 今の検索語で強調を付け直す（図が変わったとき用）。選択や表示位置は動かさない。
+   * 今の一致が当たらなくなっていたら、次へで先頭から数え直す。
+   */
+  private refreshSearchHighlights(): void {
+    const query = this.searchBar.getQuery()
+    if (!this.searchBar.isOpen() || query.trim() === '') {
+      this.editor.clearSearchHighlights()
+      return
+    }
+    const ids = findMatches(this.searchItems(), query).map((m) => m.id)
+    const index = this.searchLastId === null ? -1 : ids.indexOf(this.searchLastId)
+    if (index < 0) this.searchLastId = null
+    this.searchBar.setResult({ index, total: ids.length })
+    this.editor.setSearchHighlights(ids, this.searchLastId)
   }
 
   private setStatusMessage(message: string): void {

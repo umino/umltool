@@ -546,8 +546,7 @@ body,
   right: 16px;
   z-index: 20;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
   max-width: calc(100% - 32px);
   padding: 6px 8px;
@@ -561,8 +560,16 @@ body,
   display: none;
 }
 
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .search-bar input {
+  flex: 0 1 200px;
   width: 200px;
+  min-width: 72px;
   padding: 4px 6px;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -577,6 +584,7 @@ body,
 }
 
 .search-bar button {
+  flex: 0 0 auto;
   min-width: 28px;
   padding: 3px 6px;
   border: 1px solid var(--border);
@@ -592,7 +600,8 @@ body,
 }
 
 .search-count {
-  min-width: 72px;
+  flex: 0 0 auto;
+  min-width: 56px;
   font-size: 12px;
   color: var(--muted);
   text-align: center;
@@ -603,11 +612,20 @@ body,
 }
 
 .search-notice {
-  flex-basis: 100%;
   font-size: 12px;
   color: #9a6400;
 }
 
 .search-notice:empty {
   display: none;
+}
+
+/* 検索中の強調（issue #50）。一致はすべて黄色、今の一致はオレンジの光彩で囲む。
+   書き出しはスタイルを持ち出さないので画像には写らない */
+.x6-cell.search-hit {
+  filter: drop-shadow(0 0 2px #f5c518) drop-shadow(0 0 3px #f5c518) drop-shadow(0 0 5px #f5c518);
+}
+
+.x6-cell.search-current {
+  filter: drop-shadow(0 0 2px #ff7a00) drop-shadow(0 0 4px #ff7a00) drop-shadow(0 0 7px #ff7a00);
 }

@@ -1283,6 +1283,38 @@ export class GraphEditor {
     this.scroller.centerCell(cell)
   }
 
+  // ---- 検索の強調表示（issue #50） ----
+  //
+  // X6 の highlighter は枠をその時点の形で描いてセルの要素へ差し込むため、
+  // 経路が変わる矢印に追従せず、書き出し画像にも写り込む。ここではセルの要素に
+  // クラスを付けて CSS の光彩で強調する（位置は要素ごと動き、書き出しは
+  // スタイルを持ち出さないので写らない）。
+
+  private searchMarked = new Set<string>()
+
+  /** 一致したセルを強調する。currentId は今表示している一致（別色） */
+  setSearchHighlights(ids: Iterable<string>, currentId: string | null): void {
+    this.clearSearchHighlights()
+    for (const id of ids) {
+      const cell = this.graph.getCellById(id)
+      // 折りたたみで隠れているものは光らせない（場所が無い）
+      if (!cell || !cell.isVisible()) continue
+      const container = this.graph.findViewByCell(cell)?.container
+      if (!container) continue
+      container.classList.add(id === currentId ? 'search-current' : 'search-hit')
+      this.searchMarked.add(id)
+    }
+  }
+
+  clearSearchHighlights(): void {
+    for (const id of this.searchMarked) {
+      const cell = this.graph.getCellById(id)
+      const container = cell ? this.graph.findViewByCell(cell)?.container : undefined
+      container?.classList.remove('search-hit', 'search-current')
+    }
+    this.searchMarked.clear()
+  }
+
   /**
    * セルを選んで画面中央に出す（検索・リンクのジャンプ用）。マインドマップでは
    * 折りたたまれた祖先を先に開く。祖先を開いた（図が変わった）ら true。
