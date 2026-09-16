@@ -205,6 +205,20 @@ function createWindow(): void {
               console.log(`[DIAG-PANE] ${outPane} width=${widened}`)
             }
           }
+
+          // 検索バー（issue #45）を開いて一周した状態
+          const searched = await wc.executeJavaScript(
+            'window.__umlShowSearch ? window.__umlShowSearch("商品") : ""'
+          )
+          if (typeof searched === 'string' && searched !== '') {
+            await sleep(400)
+            const searchShot = await wc.capturePage()
+            if (!searchShot.isEmpty()) {
+              const outSearch = join(process.cwd(), 'diag-output-search.png')
+              await writeFile(outSearch, searchShot.toPNG())
+              console.log(`[DIAG-SEARCH] ${outSearch}`)
+            }
+          }
         } catch (err) {
           console.log(`[DIAG-ERROR] ${(err as Error).message}`)
         }
@@ -301,7 +315,9 @@ function buildMenu(): void {
         { label: '貼り付け', accelerator: 'CmdOrCtrl+V', registerAccelerator: false, click: send('menu:paste') },
         { label: '削除', accelerator: 'Delete', registerAccelerator: false, click: send('menu:delete') },
         { type: 'separator' },
-        { label: 'すべて選択', accelerator: 'CmdOrCtrl+A', registerAccelerator: false, click: send('menu:select-all') }
+        { label: 'すべて選択', accelerator: 'CmdOrCtrl+A', registerAccelerator: false, click: send('menu:select-all') },
+        { type: 'separator' },
+        { label: '検索…', accelerator: 'CmdOrCtrl+F', registerAccelerator: false, click: send('menu:find') }
       ]
     },
     {

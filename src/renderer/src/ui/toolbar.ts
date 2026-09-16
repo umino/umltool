@@ -18,6 +18,7 @@ export interface ToolbarActions {
   setMindmapLayout: (layout: MindmapLayout) => void
   arrangeMindmap: () => void
   deleteSelection: () => void
+  openSearch: () => void
   zoomIn: () => void
   zoomOut: () => void
   zoomReset: () => void
@@ -123,7 +124,12 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
   )
   host.appendChild(mindmapGroup)
 
-  host.appendChild(group(button('🗑 削除', '選択を削除 (Delete)', actions.deleteSelection)))
+  host.appendChild(
+    group(
+      button('🗑 削除', '選択を削除 (Delete)', actions.deleteSelection),
+      button('🔍 検索', '図の中の文字を検索 (Ctrl+F)', actions.openSearch)
+    )
+  )
 
   // 倍率のボタンは記号だけで意味が通るのでラベルを置かない
   // （「表示:」はマインドマップの表示スタイルで使っており、紛らわしい）

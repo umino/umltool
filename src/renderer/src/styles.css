@@ -531,3 +531,76 @@ body,
   background: var(--panel);
   border-top: 1px solid var(--border);
 }
+
+/* 図の検索バー（キャンバスの右上に重ねる） */
+.search-bar {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 32px);
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+
+.search-bar[hidden] {
+  display: none;
+}
+
+.search-bar input {
+  width: 200px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search-bar button {
+  min-width: 28px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.search-bar button:hover {
+  background: #eef2fb;
+  border-color: var(--accent);
+}
+
+.search-count {
+  min-width: 72px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.search-count.none {
+  color: #c0392b;
+}
+
+.search-notice {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #9a6400;
+}
+
+.search-notice:empty {
+  display: none;
+}

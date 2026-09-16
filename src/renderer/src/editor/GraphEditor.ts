@@ -1278,6 +1278,11 @@ export class GraphEditor {
     if (!this.scroller.isCellVisible(cell)) this.scroller.scrollToCell(cell)
   }
 
+  /** セルを表示領域の中央へ持ってくる（検索のジャンプ用） */
+  centerOnCell(cell: Cell): void {
+    this.scroller.centerCell(cell)
+  }
+
   onSelectionChange(handler: (cells: Cell[]) => void): void {
     this.graph.on('selection:changed', ({ selected }: { selected: Cell[] }) => {
       handler(selected)
