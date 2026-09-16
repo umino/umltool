@@ -95,7 +95,7 @@ import { PropertiesPanel } from './ui/properties'
 import { buildToolbar, type ToolbarHandle } from './ui/toolbar'
 import { buildPalette, type PaletteHandle } from './ui/palette'
 import { buildShortcutOverlay } from './ui/shortcutOverlay'
-import { bindPaneResizer, type PaneResizer } from './ui/paneResizer'
+import { bindPaneResizers, type PaneResizers } from './ui/paneResizer'
 import { buildSearchBar, type SearchBar } from './ui/searchBar'
 import { findMatches, nextMatch, type SearchItem } from './editor/search'
 import { buildSequenceFromText } from './text/buildSequence'
@@ -203,8 +203,8 @@ class AppController {
   private readonly statusEl = document.getElementById('statusbar') as HTMLElement
   private readonly textInput = document.getElementById('text-input') as HTMLTextAreaElement
   private readonly textError = document.getElementById('text-error') as HTMLElement
-  /** 左ペインの幅を変える境界（issue #42）。要素が無い環境では null */
-  private paneResizer: PaneResizer | null = null
+  /** 左右のペインの幅を変える境界（issue #42）。要素が無い環境では null */
+  private panes: PaneResizers | null = null
   /** 図の検索バー（issue #45） */
   private readonly searchBar: SearchBar
   /** いま表示している検索結果。次へ / 前へはここから数える */
@@ -267,7 +267,7 @@ class AppController {
       addTopicLink: () => this.linkSelectedTopics()
     })
     this.bindSideTabs()
-    this.paneResizer = bindPaneResizer()
+    this.panes = bindPaneResizers()
     this.searchBar = buildSearchBar(document.getElementById('canvas-pane') as HTMLElement, {
       onInput: () => {
         // 語が変わったら先頭の一致から数え直す
@@ -2361,11 +2361,17 @@ B --> A : 返す`
               const json = target.toJSON()
               delete (json as { id?: string }).id
               const copy = graph.addNode(json as never)
-              await wait(30)
-              const copyView = graph.findViewByCell(copy)
-              const copyLines = copyView?.container.querySelectorAll('text tspan.v-line').length
-              const persisted =
-                s.isCodeTopic(copy) && copy.attr('label/textWrap') === false && copyLines === lineCount
+              // 描画は非同期なので、行が出揃うまで待つ（固定の待ち時間だと取りこぼす）
+              let copyLines = 0
+              for (let i = 0; i < 25 && copyLines !== lineCount; i++) {
+                await wait(20)
+                copyLines =
+                  graph.findViewByCell(copy)?.container.querySelectorAll('text tspan.v-line')
+                    .length ?? 0
+              }
+              const copyIsCode = s.isCodeTopic(copy)
+              const copyNoWrap = copy.attr('label/textWrap') === false
+              const persisted = copyIsCode && copyNoWrap && copyLines === lineCount
               graph.removeCell(copy)
               ;(window as unknown as Record<string, unknown>).__codeTopicPng =
                 await exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
@@ -2385,7 +2391,7 @@ B --> A : 返す`
                 on && plain && stillOpen && committed && lineCount === 6 && keptSpaces &&
                 indented && inside && mono && noWrap && refit && persisted && off
                   ? 'ok'
-                  : `ng(on=${on}, plain=${plain}, open=${stillOpen}, commit=${committed}, lines=${lineCount}, spaces=${keptSpaces}, indent=${Math.round(indent1)}/${Math.round(indent2)}, inside=${inside}, mono=${mono}, noWrap=${noWrap}, refit=${refit}, persisted=${persisted}, off=${off})`
+                  : `ng(on=${on}, plain=${plain}, open=${stillOpen}, commit=${committed}, lines=${lineCount}, spaces=${keptSpaces}, indent=${Math.round(indent1)}/${Math.round(indent2)}, inside=${inside}, mono=${mono}, noWrap=${noWrap}, refit=${refit}, persisted=${persisted}(code=${copyIsCode}, noWrap=${copyNoWrap}, lines=${copyLines}), off=${off})`
             }
 
             // 検索（issue #45）: 折りたたまれた枝の中の語は、親を開いてから選ぶ
@@ -2670,6 +2676,14 @@ B --> A : 返す`
         mindmap['restore'] = (e as Error).message
       }
 
+      // 幅の検証は既定の幅から始める。診断は普段と同じ保存領域で動くので、
+      // 利用者が決めた幅は控えておき、検証のあとで書き戻す
+      const storedPaneWidths = ['umltool.leftPaneWidth', 'umltool.rightPaneWidth'].map(
+        (key) => [key, window.localStorage.getItem(key)] as const
+      )
+      this.panes?.left.setWidth(280, false)
+      this.panes?.right.setWidth(260, false)
+
       // 左ペインの幅変更（issue #42）: 境界のドラッグ / ダブルクリック / 矢印キーで
       // 幅が変わり、キャンバスが追従し、幅が localStorage に残ること。
       // 以降の座標テストに影響しないよう、最後に既定幅へ戻す。
@@ -2681,7 +2695,7 @@ B --> A : 返す`
         // ResizeObserver 経由で少し遅れて追いつく
         const canvas = document.getElementById('canvas-pane')
         const inner = document.getElementById('graph-container')
-        const resizer = this.paneResizer
+        const resizer = this.panes?.left ?? null
         if (!handle || !pane || !canvas || !inner || !resizer) {
           ui['leftPaneResize'] = `ng(handle=${handle !== null}, pane=${pane !== null}, api=${resizer !== null})`
         } else {
@@ -2769,6 +2783,100 @@ B --> A : 返す`
         }
       } catch (e) {
         ui['leftPaneResize'] = `error: ${(e as Error).message}`
+      }
+
+      // 右パネルの幅変更（左と同じ操作。← で広がる）と、項目が多くても
+      // ウィンドウ全体ではなく右パネルの中だけがスクロールすること
+      try {
+        const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+        const handle = document.getElementById('pane-resizer-right')
+        const props = document.getElementById('props-pane')
+        const body = document.getElementById('props-body')
+        const canvas = document.getElementById('canvas-pane')
+        const panes = this.panes
+        if (!handle || !props || !body || !canvas || !panes) {
+          ui['rightPaneResize'] = `ng(handle=${handle !== null}, props=${props !== null}, api=${panes !== null})`
+        } else {
+          const width = (el: HTMLElement): number => Math.round(el.getBoundingClientRect().width)
+          const startProps = width(props)
+          const startCanvas = width(canvas)
+
+          // ドラッグ: 境界を左へ 100px 動かすと右パネルが 100px 広がる
+          const box = handle.getBoundingClientRect()
+          const pointer = (type: string, x: number, target: EventTarget): void => {
+            target.dispatchEvent(
+              new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                pointerId: 1,
+                button: 0,
+                buttons: 1,
+                clientX: x,
+                clientY: box.top + box.height / 2
+              })
+            )
+          }
+          const grabX = box.left + box.width / 2
+          pointer('pointerdown', grabX, handle)
+          pointer('pointermove', grabX - 100, document)
+          pointer('pointerup', grabX - 100, document)
+          await wait(150)
+          const dragged = width(props)
+          const dragOk = dragged === startProps + 100
+          const canvasFollowed = Math.abs(startCanvas - width(canvas) - 100) < 2
+
+          // 矢印キー: ← で広がり → で戻る（境界が押した向きへ動く）
+          const press = async (key: string): Promise<void> => {
+            handle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+            await wait(60)
+          }
+          await press('ArrowLeft')
+          const wider = width(props)
+          await press('ArrowRight')
+          const back = width(props)
+          const keyOk = wider === dragged + 16 && back === dragged
+
+          const stored = Number(window.localStorage.getItem('umltool.rightPaneWidth'))
+          const storedOk = stored === panes.right.getWidth()
+
+          // 左右とも目一杯広げても、キャンバスの最低幅は残る
+          panes.left.setWidth(5000)
+          panes.right.setWidth(5000)
+          await wait(100)
+          const capped = width(canvas) >= 318
+          panes.left.setWidth(280)
+
+          // ダブルクリックで既定幅へ戻る
+          handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+          await wait(120)
+          const reset = width(props) === 260
+
+          // 右パネルの中身が長くても、スクロールするのはパネルの中だけ
+          const tall = addActivityNode(graph, 'action', 'スクロール確認', {
+            centerX: this.editor.getVisibleCenter().x,
+            centerY: this.editor.getVisibleCenter().y
+          })
+          graph.resetSelection(tall)
+          await wait(200)
+          const panelOverflows = body.scrollHeight > body.clientHeight
+          const pageFits = document.documentElement.scrollHeight <= window.innerHeight + 1
+          const scrollable = getComputedStyle(body).overflowY === 'auto'
+          graph.cleanSelection()
+          graph.removeCells([tall])
+
+          const ok =
+            dragOk && canvasFollowed && keyOk && storedOk && capped && reset &&
+            panelOverflows && pageFits && scrollable
+          ui['rightPaneResize'] = ok
+            ? 'ok'
+            : `ng(drag=${dragged - startProps}, canvas=${canvasFollowed}, key=${wider - dragged}/${back - dragged}, stored=${stored}, capped=${capped}, reset=${width(props)}, overflow=${panelOverflows}(${body.scrollHeight}/${body.clientHeight}), page=${pageFits}(${document.documentElement.scrollHeight}/${window.innerHeight}), scroll=${scrollable})`
+        }
+      } catch (e) {
+        ui['rightPaneResize'] = `error: ${(e as Error).message}`
+      }
+      for (const [key, value] of storedPaneWidths) {
+        if (value === null) window.localStorage.removeItem(key)
+        else window.localStorage.setItem(key, value)
       }
 
       // 図の検索（issue #45）: Ctrl+F で開き、打つと先頭の一致へ、Enter で次へ、
@@ -2939,8 +3047,13 @@ B --> A : 返す`
 
       // 左ペインを広げた状態を撮って、描画領域が追従しているか目視で確かめる
       ;(window as unknown as Record<string, unknown>).__umlWidenLeftPane = () => {
-        this.paneResizer?.setWidth(520)
-        return String(this.paneResizer?.getWidth() ?? 0)
+        // 撮影用なので保存はしない（利用者の幅の設定を変えない）
+        this.panes?.left.setWidth(520, false)
+        // 右パネルも広げ、項目の多いアクションを選んでパネル内スクロールを写す
+        this.panes?.right.setWidth(360, false)
+        const action = this.editor.graph.getNodes().find((n) => getCellKind(n) === 'action')
+        if (action) this.editor.graph.resetSelection(action)
+        return `${this.panes?.left.getWidth() ?? 0}/${this.panes?.right.getWidth() ?? 0}`
       }
       ;(window as unknown as Record<string, unknown>).__umlShowArrangePanel = () => {
         const nodes = graph.getNodes().filter((n) => getCellKind(n) === 'action')
