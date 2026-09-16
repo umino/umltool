@@ -112,14 +112,17 @@ export function buildSearchBar(host: HTMLElement, actions: SearchBarActions): Se
     }
   })
 
-  bar.append(
+  // 入力欄とボタンは 1 行に保つ（キャンバスが狭いときは入力欄の方を縮める）
+  const row = document.createElement('div')
+  row.className = 'search-row'
+  row.append(
     input,
     count,
     iconButton('↑', '前へ (Shift+Enter)', () => step(-1)),
     iconButton('↓', '次へ (Enter)', () => step(1)),
-    iconButton('×', '閉じる (Esc)', close),
-    notice
+    iconButton('×', '閉じる (Esc)', close)
   )
+  bar.append(row, notice)
   host.appendChild(bar)
 
   return {
@@ -135,6 +138,8 @@ export function buildSearchBar(host: HTMLElement, actions: SearchBarActions): Se
       count.classList.toggle('none', result !== null && result.total === 0)
       if (result === null) count.textContent = ''
       else if (result.total === 0) count.textContent = '見つかりません'
+      // 今の一致が図の変更で当たらなくなった（次へで先頭から数え直す）
+      else if (result.index < 0) count.textContent = `- / ${result.total}`
       else count.textContent = `${result.index + 1} / ${result.total}`
     },
     setNotice: (message) => {

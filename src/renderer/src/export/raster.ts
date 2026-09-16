@@ -121,6 +121,10 @@ export async function exportGraphToSvg(
       svgEl.querySelectorAll('.x6-port').forEach((el) => el.remove())
       // 選択中のセルに出ている編集ハンドル（vertex / 端点付け替え）も画像には含めない
       svgEl.querySelectorAll('.x6-cell-tools').forEach((el) => el.remove())
+      // 検索中の強調（CSS クラス）も持ち出さない
+      svgEl
+        .querySelectorAll('.search-hit, .search-current')
+        .forEach((el) => el.classList.remove('search-hit', 'search-current'))
     }
   })
   return { svg, width, height }
