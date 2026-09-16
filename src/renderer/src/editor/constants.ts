@@ -55,6 +55,7 @@ export const Z_BY_KIND: Partial<Record<CellKind, number>> = {
   rootTopic: Z.node,
   topic: Z.node,
   branch: Z.branch,
+  topicLink: Z.branch,
   activation: Z.activation,
   message: Z.message,
   flow: Z.message,
@@ -74,10 +75,10 @@ export const TEXT_ALIGN_LABEL: Record<TextAlign, string> = {
   right: '右揃え'
 }
 
-/** 右パネルのフォント選択肢。value は SVG の font-family にそのまま入る */
 /** 等幅フォント。コード表示と「等幅」の選択肢で同じ値を使う（選択欄に「等幅」と出るように） */
 export const MONO_FONT_FAMILY = '"Consolas", "MS Gothic", monospace'
 
+/** 右パネルのフォント選択肢。value は SVG の font-family にそのまま入る */
 export const FONT_FAMILY_CHOICES: { label: string; value: string }[] = [
   { label: '既定（ゴシック）', value: FONT_FAMILY },
   { label: '明朝', value: '"Yu Mincho", "MS Mincho", serif' },
@@ -181,7 +182,8 @@ export const SHAPE = {
   flow: 'uml-flow',
   rootTopic: 'uml-root-topic',
   topic: 'uml-topic',
-  branch: 'uml-branch'
+  branch: 'uml-branch',
+  topicLink: 'uml-topic-link'
 } as const
 
 // アクティビティ図のレイアウト定数
@@ -385,11 +387,18 @@ export const CODE_TOPIC = {
   maxWidth: 1600
 } as const
 
-export const MINDMAP_KIND_LABEL: Record<MindmapNodeKind | 'branch', string> = {
+export const MINDMAP_KIND_LABEL: Record<MindmapNodeKind | 'branch' | 'topicLink', string> = {
   rootTopic: '中心トピック',
   topic: 'トピック',
-  branch: '枝'
+  branch: '枝',
+  topicLink: 'リンク'
 }
+
+/**
+ * マインドマップのリンク（親子とは別の参照）の色。枝（灰色の実線）と
+ * ひと目で見分けられるよう、暖色の破線 + 矢印で描く。
+ */
+export const TOPIC_LINK_COLOR = '#d9822b'
 
 /** 矢印の線の太さとして選べる範囲（issue #40: 交錯する線を太さで見分ける） */
 export const EDGE_WIDTH = { min: 0.5, max: 12, step: 0.5 } as const
@@ -455,6 +464,7 @@ export type CellKind =
   | 'flow'
   | MindmapNodeKind
   | 'branch'
+  | 'topicLink'
   | 'unknown'
 
 export const ACTIVITY_KIND_LABEL: Record<

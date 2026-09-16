@@ -64,7 +64,7 @@ import {
   setFlowTerminalSide
 } from './activity'
 import { droppedSide, type Side } from './branchPorts'
-import { applyBranchStyle, arrangeMindmap, checkBranch } from './mindmap'
+import { applyBranchStyle, arrangeMindmap, checkBranch, revealTopic } from './mindmap'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
 import {
@@ -1281,6 +1281,25 @@ export class GraphEditor {
   /** セルを表示領域の中央へ持ってくる（検索のジャンプ用） */
   centerOnCell(cell: Cell): void {
     this.scroller.centerCell(cell)
+  }
+
+  /**
+   * セルを選んで画面中央に出す（検索・リンクのジャンプ用）。マインドマップでは
+   * 折りたたまれた祖先を先に開く。祖先を開いた（図が変わった）ら true。
+   */
+  focusCell(cell: Cell): boolean {
+    let revealed = false
+    if (this.mode === 'mindmap') {
+      const node = cell.isNode() ? cell : (cell as Edge).getTargetCell()
+      if (node?.isNode() && isMindmapNodeKind(getCellKind(node))) {
+        this.batch(() => {
+          revealed = revealTopic(this.graph, node)
+        })
+      }
+    }
+    this.graph.resetSelection(cell)
+    this.centerOnCell(cell)
+    return revealed
   }
 
   onSelectionChange(handler: (cells: Cell[]) => void): void {

@@ -27,6 +27,13 @@ import {
 } from '../text/mindmapLayout'
 import { subtreeIds, canReparent, type ReparentCheck } from '../text/mindmapTree'
 import type { NavNode } from '../text/mindmapNav'
+import {
+  checkLink,
+  linkPeers,
+  type LinkCheck,
+  type LinkPeer,
+  type LinkRef
+} from '../text/mindmapLinks'
 
 export interface TopicOptions {
   centerX: number
@@ -269,6 +276,7 @@ export function updateMindmapVisibility(graph: Graph): void {
     if (hidden.has(childId)) edge.hide()
     else edge.show()
   }
+  syncLinkVisibility(graph)
 }
 
 // ---- 整列 ----
@@ -351,6 +359,7 @@ export function arrangeMindmap(
     edge.show()
     applyBranchStyle(edge, layout, placementOf.get(childId)?.side ?? 'right')
   }
+  syncLinkVisibility(graph)
 }
 
 // ---- サブツリーの切り取り / 貼り付け ----
@@ -486,4 +495,80 @@ export function checkBranch(
     }
   }
   return canReparent(tree.childrenOf, child.id, parent.id)
+}
+
+/**
+ * 折りたたまれている祖先をすべて開く（検索やリンクで、隠れたトピックへ飛ぶとき）。
+ * 何か開いたら true。
+ */
+export function revealTopic(graph: Graph, node: Node): boolean {
+  const tree = mindmapTree(graph)
+  let changed = false
+  let cursor = tree.parentOf.get(node.id)
+  // 木は輪にならない（mindmapTree が除外する）が、念のため深さで打ち切る
+  for (let depth = 0; cursor !== undefined && depth < 100; depth++) {
+    const parent = tree.nodes.get(cursor)
+    if (parent && isCollapsed(parent)) {
+      setCollapsed(parent, false)
+      changed = true
+    }
+    cursor = tree.parentOf.get(cursor)
+  }
+  if (changed) updateMindmapVisibility(graph)
+  return changed
+}
+
+// ---- リンク（親子とは別の参照。issue #46） ----
+//
+// リンクは木の形に関わらない（mindmapTree は枝しか見ない）ので、整列や
+// 切り取り＆貼り付けでは動かない。端のトピックが隠れたら線も隠す。
+
+export function isTopicLink(edge: Edge): boolean {
+  return getCellKind(edge) === 'topicLink'
+}
+
+/** 両端がトピックにつながっているリンク */
+export function topicLinks(graph: Graph): LinkRef[] {
+  const out: LinkRef[] = []
+  for (const edge of graph.getEdges()) {
+    if (!isTopicLink(edge)) continue
+    const source = edge.getSourceCellId()
+    const target = edge.getTargetCellId()
+    if (source && target) out.push({ id: edge.id, source, target })
+  }
+  return out
+}
+
+/** from → to のリンクを張ってよいか（自分自身・同じ向きの重複は不可） */
+export function checkTopicLink(graph: Graph, from: Node, to: Node): LinkCheck {
+  return checkLink(topicLinks(graph), from.id, to.id)
+}
+
+/** from → to のリンクを張る。端はトピックの中心から輪郭で止める */
+export function addTopicLink(graph: Graph, from: Node, to: Node): Edge {
+  const edge = graph.addEdge({
+    shape: SHAPE.topicLink,
+    source: { cell: from.id, anchor: { name: 'center' }, connectionPoint: { name: 'boundary' } },
+    target: { cell: to.id, anchor: { name: 'center' }, connectionPoint: { name: 'boundary' } },
+    data: { kind: 'topicLink' },
+    zIndex: Z.branch
+  })
+  syncLinkVisibility(graph)
+  return edge
+}
+
+/** node から辿れる相手（張ったリンクの先 → 張られたリンクの元の順） */
+export function topicLinkPeers(graph: Graph, node: Node): LinkPeer[] {
+  return linkPeers(topicLinks(graph), node.id)
+}
+
+/** 端のどちらかが隠れているリンクは隠す */
+export function syncLinkVisibility(graph: Graph): void {
+  for (const edge of graph.getEdges()) {
+    if (!isTopicLink(edge)) continue
+    const visible =
+      edge.getSourceCell()?.isVisible() === true && edge.getTargetCell()?.isVisible() === true
+    if (visible) edge.show()
+    else edge.hide()
+  }
 }

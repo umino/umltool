@@ -76,6 +76,7 @@ import {
   childTopics,
   isCollapsed,
   setCollapsed,
+  topicLinkPeers,
   updateMindmapVisibility
 } from '../editor/mindmap'
 import {
@@ -360,9 +361,35 @@ export class PropertiesPanel {
           })
         )
       }
+      this.appendTopicLinkSection(node)
       this.appendSizeSection(node)
       this.host.appendChild(
         hint('ドラッグで自由に移動できます。位置を揃え直すにはツールバーの「整列」を押します。')
+      )
+      return true
+    }
+
+    if (kind === 'topicLink') {
+      const edge = cell as Edge
+      this.host.appendChild(
+        labelInput('リンクのラベル', getMessageLabel(edge), (value) => {
+          setMessageLabel(edge, value)
+        })
+      )
+      for (const side of ['target', 'source'] as const) {
+        const end = side === 'target' ? edge.getTargetCell() : edge.getSourceCell()
+        if (!end?.isNode()) continue
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.textContent = `${side === 'target' ? 'リンク先' : 'リンク元'}へ移動（${getNodeLabel(end) || '名称未設定'}）`
+        btn.addEventListener('click', () => this.editor.focusCell(end))
+        this.host.appendChild(btn)
+      }
+      this.host.appendChild(
+        hint(
+          '親子とは別の参照です（整列や付け替えには影響しません）。' +
+            'ダブルクリックでリンク先へ移動、Delete で削除できます。'
+        )
       )
       return true
     }
@@ -379,6 +406,38 @@ export class PropertiesPanel {
     }
 
     return false
+  }
+
+  /**
+   * トピックのリンク一覧（issue #46）。押すとその相手へ移動する。
+   * 複数のリンク先から選ぶのはキー（Shift+J）より一覧の方が早い。
+   */
+  private appendTopicLinkSection(node: Node): void {
+    const graph = this.editor.graph
+    const peers = topicLinkPeers(graph, node)
+    this.host.appendChild(sectionTitle('リンク'))
+    if (peers.length === 0) {
+      this.host.appendChild(
+        hint(
+          'リンクはありません。リンク元 → リンク先の順に 2 つ選んで L' +
+            '（または部品パレットの「リンク」）で作れます。'
+        )
+      )
+      return
+    }
+    for (const peer of peers) {
+      const target = graph.getCellById(peer.id)
+      if (!target?.isNode()) continue
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'link-jump'
+      btn.textContent = `${peer.direction === 'out' ? '→' : '←'} ${getNodeLabel(target) || '（名称未設定）'}`
+      btn.title =
+        peer.direction === 'out' ? 'リンク先へ移動' : 'このトピックを指しているリンク元へ移動'
+      btn.addEventListener('click', () => this.editor.focusCell(target))
+      this.host.appendChild(btn)
+    }
+    this.host.appendChild(hint('→ はリンク先、← はここを指しているリンク元。J でも辿れます。'))
   }
 
   /**
@@ -817,6 +876,7 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
     case 'rootTopic':
     case 'topic':
     case 'branch':
+    case 'topicLink':
       text = MINDMAP_KIND_LABEL[kind]
       break
     default:

@@ -1,7 +1,7 @@
 // 部品パレット: ツールバーの追加系コントロールをアイコン＋ラベルのタイルで
 // フロー配置する。クリックでツールバーのボタンと同じ追加動作を行う。
 
-import type { ActivityNodeKind } from '../editor/constants'
+import { TOPIC_LINK_COLOR, type ActivityNodeKind } from '../editor/constants'
 import { MINDMAP_SHORTCUTS, renderShortcutGroup } from './shortcuts'
 import type { ToolbarDiagramType } from './toolbar'
 
@@ -21,6 +21,7 @@ export interface PaletteActions {
   addSiblingTopic: () => void
   toggleCollapse: () => void
   toggleCodeTopic: () => void
+  addTopicLink: () => void
 }
 
 /** ライフラインに付属するテキストタイル（シーケンス図） */
@@ -251,6 +252,19 @@ function mindmapItems(a: PaletteActions): PaletteItem[] {
         `<circle cx="6" cy="24" r="3" fill="${C.gray}"/>` +
         `<circle cx="32" cy="8" r="3" fill="${C.gray}"/>`,
       onClick: a.addConnection
+    },
+    {
+      label: 'リンク',
+      title:
+        '親子とは別の参照（破線の矢印）を張る。' +
+        'リンク元 → リンク先の順に 2 つ選んでから押します（L）。J で辿れます',
+      icon:
+        `<rect x="2" y="3" width="16" height="10" rx="3" fill="${C.blueFill}" stroke="${C.blue}" stroke-width="1.2"/>` +
+        `<rect x="26" y="17" width="16" height="10" rx="3" fill="${C.blueFill}" stroke="${C.blue}" stroke-width="1.2"/>` +
+        `<circle cx="16" cy="13" r="1.6" fill="${TOPIC_LINK_COLOR}"/>` +
+        `<path d="M 16 13 L 26 17" stroke="${TOPIC_LINK_COLOR}" stroke-width="1.6" stroke-dasharray="3 2"/>` +
+        `<path d="M 27 17.4 L 21.6 18.3 L 23.4 14 Z" fill="${TOPIC_LINK_COLOR}"/>`,
+      onClick: a.addTopicLink
     },
     {
       label: '折りたたみ',
