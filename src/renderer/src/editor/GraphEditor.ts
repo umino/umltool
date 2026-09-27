@@ -103,6 +103,19 @@ const CONNECTABLE_KINDS = new Set([
   'topic'
 ])
 
+/**
+ * 作図用の矢印の端点ハンドル（半径 5 の丸）。矢じりの先が隠れきらないよう
+ * 塗りは半透明にする
+ */
+const DRAW_ARROW_HANDLE = {
+  d: 'M -5 0 A 5 5 0 1 0 5 0 A 5 5 0 1 0 -5 0 Z',
+  fill: '#ffffff',
+  'fill-opacity': 0.7,
+  stroke: '#2d6cdf',
+  'stroke-width': 2,
+  cursor: 'move'
+}
+
 /** 上下左右のポートを持つ（＝辺を指定して繋げる）ノードか */
 function hasFlowPorts(node: Node): boolean {
   const ids = new Set(node.getPorts().map((port) => port.id))
@@ -631,11 +644,13 @@ export class GraphEditor {
         // 枝は親子の付け替えだけできれば十分（形は整列が決める）
         edge.addTools([{ name: 'source-arrowhead' }, { name: 'target-arrowhead' }])
       } else if (kind === 'drawArrow') {
-        // 作図用の矢印: 端点は好きな位置へ、線をドラッグすると折れ点が増える
+        // 作図用の矢印: 端点は好きな位置へ、線をドラッグすると折れ点が増える。
+        // 端点のハンドルは既定だと矢じり形で、両端が矢に見えてしまう（issue #56）。
+        // 矢じりの向きと取り違えないよう丸にする
         edge.addTools([
           { name: 'vertices' },
-          { name: 'source-arrowhead' },
-          { name: 'target-arrowhead' }
+          { name: 'source-arrowhead', args: { attrs: DRAW_ARROW_HANDLE } },
+          { name: 'target-arrowhead', args: { attrs: DRAW_ARROW_HANDLE } }
         ])
       }
     })

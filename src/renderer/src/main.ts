@@ -1398,6 +1398,15 @@ B --> A : 返す`
               '.x6-edge-tool-target-arrowhead'
             ) as SVGElement | null
             const toolRect = tool?.getBoundingClientRect()
+            // 端点のハンドルは両端とも丸（矢じり形だと両端が矢に見える。issue #56）
+            const handles = [
+              ...document.querySelectorAll(
+                '.x6-edge-tool-source-arrowhead, .x6-edge-tool-target-arrowhead'
+              )
+            ]
+            const round =
+              handles.length === 2 &&
+              handles.every((h) => (h.getAttribute('d') ?? '').includes(' A 5 5 '))
             const dropLocal = { x: ab.center.x + 10, y: ab.center.y + 5 }
             const drop = graph.localToClient(dropLocal.x, dropLocal.y)
             if (tool && toolRect) {
@@ -1548,6 +1557,7 @@ B --> A : 返す`
             activity['drawing'] =
               inPalette &&
               kinds === 'drawRect,drawArrow,drawText' &&
+              round &&
               zOk &&
               domOk &&
               reloadZ &&
@@ -1563,7 +1573,7 @@ B --> A : 返す`
               arrowPanel &&
               rectPanel
                 ? 'ok'
-                : `ng(palette=${inPalette}, kinds=${kinds}, z=${zOk}, dom=${domOk}, reloadZ=${reloadZ}, unattached=${unattached}(${JSON.stringify(t)}), rules=${rules}, noFollow=${noFollow}, nudged=${nudged}, styled=${styled}(${dash1}|${dash2}|${dash3}|${both}|${markerColored}|${none}|${solid}), persisted=${persisted}, grown=${grown}, kept=${kept}, edited=${edited}, panel=${arrowPanel}/${rectPanel}(${captions().join(',')}))`
+                : `ng(palette=${inPalette}, kinds=${kinds}, round=${round}, z=${zOk}, dom=${domOk}, reloadZ=${reloadZ}, unattached=${unattached}(${JSON.stringify(t)}), rules=${rules}, noFollow=${noFollow}, nudged=${nudged}, styled=${styled}(${dash1}|${dash2}|${dash3}|${both}|${markerColored}|${none}|${solid}), persisted=${persisted}, grown=${grown}, kept=${kept}, edited=${edited}, panel=${arrowPanel}/${rectPanel}(${captions().join(',')}))`
           } catch (e) {
             activity['drawing'] = `ng(error: ${(e as Error).message})`
           }
