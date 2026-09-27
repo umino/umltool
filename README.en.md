@@ -79,7 +79,7 @@ Rebuilds all three diagram types from their samples, captures them, and overwrit
 | Drawing parts | The "作図" section of the palette (sequence and activity diagrams): a **rounded rectangle, an arrow and free text** to draw on top of the diagram. They connect to nothing, follow nothing, and are **always drawn in front of the diagram elements**. Drag an arrow's end handles anywhere (dropping one on an element does not attach it); drag the line to add bend points. The right panel sets fill, line color, **line width, line style (solid / dashed / dotted)**, text style and alignment, and for arrows the **arrowheads (end / both / none)** and a label |
 | Edit properties | Select an element → edit name, label, and kind in the right panel |
 | Edit labels in place | **Double-click** a node or message to edit it inline |
-| Change appearance | Select an element → set background colour, line colour, font size, font, bold, and text colour under "外観" in the right panel |
+| Change appearance | Select an element → set background colour, line colour, font size, font, bold, and text colour under "外観" in the right panel. Every colour has an **opacity** slider (0–100%) for translucent fills and lines |
 
 Labels wrap automatically to fit their node, and node width adjusts automatically to the label (up to a limit). Changing the font size or font re-runs that auto-sizing against the new metrics.
 

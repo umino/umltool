@@ -1,6 +1,7 @@
 import type { Cell, Edge, Node } from '@antv/x6'
 import type { GraphEditor } from '../editor/GraphEditor'
 import type { Side } from '../editor/branchPorts'
+import { alphaPercent, formatColor, parseColor } from '../editor/color'
 import {
   autoSizeNode,
   clearManualSize,
@@ -1097,13 +1098,51 @@ function colorInput(
   const wrap = document.createElement('label')
   wrap.textContent = caption
 
+  // 色（#rrggbb）と不透明度を分けて持ち、変えるたびに #rrggbbaa へ組み直す（issue #59）
+  const parts = parseColor(value, fallback)
+
   const row = document.createElement('div')
   row.className = 'color-row'
 
   const input = document.createElement('input')
   input.type = 'color'
-  input.value = toHexColor(value, fallback)
-  input.addEventListener('input', () => onChange(input.value))
+  input.value = parts.hex
+
+  const alphaRow = document.createElement('div')
+  alphaRow.className = 'alpha-row'
+  const alphaCaption = document.createElement('span')
+  alphaCaption.textContent = '不透明度'
+  const alpha = document.createElement('input')
+  alpha.type = 'range'
+  alpha.min = '0'
+  alpha.max = '100'
+  alpha.step = '5'
+  alpha.setAttribute('aria-label', `${caption}の不透明度`)
+  const alphaValue = document.createElement('span')
+  alphaValue.className = 'alpha-value'
+  const showAlpha = (): void => {
+    alpha.value = String(alphaPercent(parts.alpha))
+    alphaValue.textContent = `${alphaPercent(parts.alpha)}%`
+  }
+  showAlpha()
+  alphaRow.append(alphaCaption, alpha, alphaValue)
+
+  const emit = (): void => onChange(formatColor(parts.hex, parts.alpha))
+  // 色を選び直したら見えるようにする（透明のままでは選んだ色が分からない）
+  const pickHex = (hex: string): void => {
+    parts.hex = hex
+    if (parts.alpha === 0) {
+      parts.alpha = 1
+      showAlpha()
+    }
+    emit()
+  }
+  input.addEventListener('input', () => pickHex(input.value))
+  alpha.addEventListener('input', () => {
+    parts.alpha = Number(alpha.value) / 100
+    alphaValue.textContent = `${alpha.value}%`
+    emit()
+  })
   row.appendChild(input)
 
   const swatches = document.createElement('div')
@@ -1117,19 +1156,14 @@ function colorInput(
     btn.setAttribute('aria-label', preset.label)
     btn.addEventListener('click', () => {
       input.value = preset.value
-      onChange(preset.value)
+      pickHex(preset.value)
     })
     swatches.appendChild(btn)
   }
   row.appendChild(swatches)
 
-  wrap.appendChild(row)
+  wrap.append(row, alphaRow)
   return wrap
-}
-
-/** input[type=color] は #rrggbb しか受け付けないため整形する */
-function toHexColor(value: string, fallback = '#1d2330'): string {
-  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback
 }
 
 function operatorSelect(
