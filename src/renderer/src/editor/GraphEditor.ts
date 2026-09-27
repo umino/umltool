@@ -15,6 +15,7 @@ import {
   ACTIVATION,
   ACTIVITY_MIN_SIZE,
   DEFAULT_DECISION_SHAPE,
+  DRAW,
   FRAGMENT,
   FRAME,
   LIFELINE,
@@ -138,7 +139,8 @@ export class GraphEditor {
       },
       connecting: {
         snap: { radius: 24 },
-        allowBlank: false,
+        // 何もない所へ端点を落とせるのは作図用の矢印だけ（他の線は必ず要素を結ぶ）
+        allowBlank: ({ edge }) => getCellKind(edge) === 'drawArrow',
         allowNode: true,
         allowEdge: false,
         allowLoop: true,
@@ -159,6 +161,8 @@ export class GraphEditor {
           })
         },
         validateConnection: ({ edge, sourceCell, targetCell }) => {
+          // 作図用の矢印は要素に繋がない（端点は落とした位置の点になる）
+          if (getCellKind(edge) === 'drawArrow') return false
           const ok = (c: Cell | null | undefined): boolean =>
             CONNECTABLE_KINDS.has(getCellKind(c))
           if (!ok(sourceCell) || !ok(targetCell)) return false
@@ -211,6 +215,8 @@ export class GraphEditor {
               kind === 'frame' ||
               kind === 'text' ||
               kind === 'note' ||
+              kind === 'drawRect' ||
+              kind === 'drawText' ||
               isActivityNodeKind(kind) ||
               isMindmapNodeKind(kind)
             )
@@ -225,6 +231,8 @@ export class GraphEditor {
             if (kind === 'frame') return FRAME.minWidth
             if (kind === 'text') return TEXT.minWidth
             if (kind === 'note') return NOTE.minWidth
+            if (kind === 'drawRect') return DRAW.rect.minWidth
+            if (kind === 'drawText') return TEXT.minWidth
             return 60
           },
           minHeight: (node: Node) => {
@@ -237,6 +245,8 @@ export class GraphEditor {
             if (kind === 'frame') return FRAME.minHeight
             if (kind === 'text') return TEXT.minHeight
             if (kind === 'note') return NOTE.minHeight
+            if (kind === 'drawRect') return DRAW.rect.minHeight
+            if (kind === 'drawText') return TEXT.minHeight
             return LIFELINE.headHeight + 60
           },
           // 開始/終了は真円で描かれる（refR は 50%）ので縦横比を保つ
@@ -466,7 +476,9 @@ export class GraphEditor {
       'edge:dblclick',
       ({ edge, e }: { edge: Edge; e: { clientX: number; clientY: number } }) => {
         const kind = getCellKind(edge)
-        if (kind !== 'message' && kind !== 'flow' && kind !== 'branch') return
+        if (kind !== 'message' && kind !== 'flow' && kind !== 'branch' && kind !== 'drawArrow') {
+          return
+        }
         const p = graph.clientToLocal(e.clientX, e.clientY)
         openInlineEditor(graph, {
           x: p.x,
@@ -522,10 +534,15 @@ export class GraphEditor {
       })
       return
     }
-    // テキスト/ノートは内容を編集し、確定時に高さを追従させる
-    if (kind === 'text' || kind === 'note') {
+    // テキスト/ノート/作図用の四角は内容を編集し、確定時に高さを追従させる
+    if (kind === 'text' || kind === 'note' || kind === 'drawText' || kind === 'drawRect') {
       const bbox = node.getBBox()
-      const fallback = kind === 'note' ? NOTE.defaultFontSize : TEXT.defaultFontSize
+      const fallback =
+        kind === 'note'
+          ? NOTE.defaultFontSize
+          : kind === 'drawRect'
+            ? DRAW.rect.fontSize
+            : TEXT.defaultFontSize
       const fontSize = Number(node.attr('label/fontSize')) || fallback
       openInlineEditor(graph, {
         x: bbox.x + bbox.width / 2,
@@ -613,6 +630,13 @@ export class GraphEditor {
       } else if (kind === 'branch') {
         // 枝は親子の付け替えだけできれば十分（形は整列が決める）
         edge.addTools([{ name: 'source-arrowhead' }, { name: 'target-arrowhead' }])
+      } else if (kind === 'drawArrow') {
+        // 作図用の矢印: 端点は好きな位置へ、線をドラッグすると折れ点が増える
+        edge.addTools([
+          { name: 'vertices' },
+          { name: 'source-arrowhead' },
+          { name: 'target-arrowhead' }
+        ])
       }
     })
     graph.on('edge:unselected', ({ edge }: { edge: Edge }) => {
@@ -738,8 +762,9 @@ export class GraphEditor {
       } else if (kind === 'frame') {
         // タブ幅の上限（幅の 70%）が変わるため再計算する
         this.withNormalizing(() => applyFrameHeader(node, getNodeLabel(node)))
-      } else if (kind === 'text') {
+      } else if (kind === 'text' || kind === 'drawText' || kind === 'drawRect') {
         // 幅リサイズに合わせて折り返し行数から高さを再計算する
+        // （作図用の四角は文字がはみ出すときだけ伸ばす）
         this.withNormalizing(() => fitTextHeight(node))
       } else if (kind === 'note') {
         // 付箋の path を新サイズに合わせ、折り返しで高さを追従させる
@@ -1234,13 +1259,19 @@ export class GraphEditor {
   /** 選択中のノードを direction へ step だけずらす。動かした数を返す */
   nudgeSelection(direction: Direction, step: number): number {
     const nodes = this.selectedMovableNodes()
-    if (nodes.length === 0) return 0
+    // 作図用の矢印は端点が点なので、ノードとは別に自分で動かす
+    const arrows = this.graph
+      .getSelectedCells()
+      .filter((c): c is Edge => c.isEdge() && getCellKind(c) === 'drawArrow')
+    const first = nodes[0] ?? arrows[0]
+    if (first === undefined) return 0
     const { dx, dy } = directionDelta(direction, step)
     this.batch(() => {
       for (const node of nodes) node.translate(dx, dy)
+      for (const edge of arrows) edge.translate(dx, dy)
     })
-    this.ensureCellVisible(nodes[0])
-    return nodes.length
+    this.ensureCellVisible(first)
+    return nodes.length + arrows.length
   }
 
   /** 選択中のノードを揃える（基準は選択全体の外接矩形）。揃えた数を返す */

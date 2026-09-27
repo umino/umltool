@@ -42,6 +42,7 @@ import {
 } from './editor/mindmap'
 import { nextPeerIndex } from './text/mindmapLinks'
 import { addNoteNode } from './editor/note'
+import { addDrawArrow, addDrawRect, addDrawText } from './editor/drawing'
 import { resolveConnectionEndpoints } from './editor/connect'
 import { DIRECTION_LABEL, type Direction } from './editor/arrange'
 import {
@@ -88,6 +89,8 @@ import {
   NOTE,
   SHAPE,
   TEXT,
+  Z,
+  isDrawingKind,
   type ActivityNodeKind,
   type MindmapLayout
 } from './editor/constants'
@@ -264,7 +267,10 @@ class AppController {
       addSiblingTopic: () => this.addRelatedTopic('sibling'),
       toggleCollapse: () => this.toggleCollapse(),
       toggleCodeTopic: () => this.toggleCodeTopic(),
-      addTopicLink: () => this.linkSelectedTopics()
+      addTopicLink: () => this.linkSelectedTopics(),
+      addDrawRect: () => this.addDrawing('drawRect'),
+      addDrawArrow: () => this.addDrawing('drawArrow'),
+      addDrawText: () => this.addDrawing('drawText')
     })
     this.bindSideTabs()
     this.panes = bindPaneResizers()
@@ -1330,6 +1336,239 @@ B --> A : 返す`
           graph.removeCells([n])
         }
 
+        // 作図用の部品（issue #53）: 角丸四角 / 矢印 / テキストは図の要素より常に手前に
+        // 描かれ、何にも繋がらず追従もしない。線・文字・背景は他の要素と同様に変えられる
+        {
+          const s = await import('./editor/shapes')
+          const { fitTextHeight: fitDraw } = await import('./editor/autosize')
+          const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+          const action = graph.getNodes().find((x) => getCellKind(x) === 'action')
+          try {
+            if (!action) throw new Error('アクションがありません')
+            const ab = action.getBBox()
+            const tiles = [...document.querySelectorAll('#palette-body .palette-label')].map(
+              (e) => e.textContent
+            )
+            // シーケンス図とアクティビティ図の両方のパレットにある
+            const inPalette = ['角丸四角', '矢印', 'テキスト'].every(
+              (label) => tiles.filter((t) => t === label).length === 2
+            )
+
+            const selected = (): Cell => graph.getSelectedCells()[0]
+            this.addDrawing('drawRect')
+            const rect = selected() as Node
+            this.addDrawing('drawArrow')
+            const arrow = selected() as Edge
+            this.addDrawing('drawText')
+            const text = selected() as Node
+            const kinds = [rect, arrow, text].map((c) => getCellKind(c)).join(',')
+
+            // アクションに重ねる
+            rect.position(ab.x - 12, ab.y - 12)
+            rect.resize(ab.width + 24, ab.height + 24)
+            text.position(ab.x, ab.y + ab.height + 4)
+            arrow.setSource({ x: ab.x - 50, y: ab.center.y })
+            arrow.setTarget({ x: ab.x + ab.width + 50, y: ab.center.y })
+            await wait(50)
+
+            // 重なり順: 図の要素すべてより手前（数値と、実際の描画順の両方）
+            const others = graph.getCells().filter((c) => !isDrawingKind(getCellKind(c)))
+            const maxOther = Math.max(...others.map((c) => c.getZIndex() ?? 0))
+            const zOk = [rect, arrow, text].every((c) => (c.getZIndex() ?? 0) > maxOther)
+            const after = (a: Cell, b: Cell): boolean => {
+              const va = graph.findViewByCell(a)?.container
+              const vb = graph.findViewByCell(b)?.container
+              return (
+                va !== undefined &&
+                vb !== undefined &&
+                (va.compareDocumentPosition(vb) & window.Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+              )
+            }
+            const domOk = [rect, arrow, text].every((c) => after(action, c))
+            // 読込時の並べ直しでも最前面のまま
+            rect.setZIndex(0)
+            this.editor.normalizeLoadedCells()
+            const reloadZ = rect.getZIndex() === Z.drawing
+
+            // 矢印の端をアクションの上へドラッグしても繋がらず、落とした点になる
+            graph.cleanSelection()
+            graph.resetSelection(arrow)
+            await wait(150)
+            const tool = document.querySelector(
+              '.x6-edge-tool-target-arrowhead'
+            ) as SVGElement | null
+            const toolRect = tool?.getBoundingClientRect()
+            const dropLocal = { x: ab.center.x + 10, y: ab.center.y + 5 }
+            const drop = graph.localToClient(dropLocal.x, dropLocal.y)
+            if (tool && toolRect) {
+              const fire = (t: string, target: EventTarget, x: number, y: number): void => {
+                target.dispatchEvent(
+                  new MouseEvent(t, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    button: 0,
+                    buttons: 1
+                  })
+                )
+              }
+              fire('mousedown', tool, toolRect.left + toolRect.width / 2, toolRect.top + toolRect.height / 2)
+              fire('mousemove', document, drop.x, drop.y)
+              fire('mouseup', document, drop.x, drop.y)
+              await wait(200)
+            }
+            const t = arrow.getTarget() as { cell?: string; x?: number; y?: number }
+            const unattached =
+              tool !== null &&
+              t.cell === undefined &&
+              // 端点はグリッド（8px）に吸着する
+              Math.abs((t.x ?? NaN) - dropLocal.x) <= 4 &&
+              Math.abs((t.y ?? NaN) - dropLocal.y) <= 4 &&
+              arrow.getSourceCellId() == null
+            const rules =
+              graph.options.connecting.validateConnection.call(graph, {
+                edge: arrow,
+                sourceCell: action,
+                targetCell: action
+              } as never) === false
+
+            // 追従しない: アクションを動かしても作図用の部品はそのまま
+            const snap = (): string =>
+              JSON.stringify([
+                rect.getPosition(),
+                text.getPosition(),
+                arrow.getSource(),
+                arrow.getTarget()
+              ])
+            const before = snap()
+            action.translate(0, 30)
+            await wait(30)
+            const noFollow = snap() === before
+            action.translate(0, -30)
+            // 選択ごとのキー移動では矢印も一緒に動く
+            graph.resetSelection([rect, arrow])
+            this.editor.nudgeSelection('right', 10)
+            const nudged =
+              (arrow.getSource() as { x?: number }).x === ab.x - 50 + 10 &&
+              rect.getPosition().x === ab.x - 12 + 10
+            this.editor.nudgeSelection('left', 10)
+
+            // 線の種類・太さ（破線の間隔は太さに比例）と矢じり
+            s.setLineStyle(rect, 'dashed')
+            const dash1 = String(rect.attr('body/strokeDasharray'))
+            s.setNodeStrokeWidth(rect, 3)
+            const dash2 = String(rect.attr('body/strokeDasharray'))
+            s.setLineStyle(arrow, 'dotted')
+            s.setEdgeStrokeWidth(arrow, 2)
+            const dash3 = String(arrow.attr('line/strokeDasharray'))
+            s.setArrowHeads(arrow, 'both')
+            const both = s.getArrowHeads(arrow)
+            s.setEdgeStroke(arrow, '#c0392b')
+            const markerColored =
+              (arrow.attr('line/sourceMarker') as { fill?: string }).fill === '#c0392b'
+            s.setArrowHeads(arrow, 'none')
+            const none = s.getArrowHeads(arrow)
+            s.setLineStyle(rect, 'solid')
+            const solid = rect.attr('body/strokeDasharray') == null
+            const styled =
+              dash1 === '6 4.5' &&
+              dash2 === '12 9' &&
+              dash3 === '2 4' &&
+              both === 'both' &&
+              markerColored &&
+              none === 'none' &&
+              solid
+
+            // 保存形式から作り直しても矢じり無し・点線・点の端点のまま
+            const json = arrow.toJSON()
+            delete (json as { id?: string }).id
+            const copy = graph.addEdge(json as never)
+            const persisted =
+              s.getArrowHeads(copy) === 'none' &&
+              s.getLineStyle(copy) === 'dotted' &&
+              copy.getTargetCellId() == null &&
+              copy.getZIndex() === Z.drawing
+            graph.removeCells([copy])
+
+            // 四角は文字が収まらないときだけ高さが伸び、縮めはしない
+            const h0 = rect.getSize().height
+            s.setNodeLabel(rect, 'とても長い説明文を入れて四角の中で何行にも折り返させる')
+            fitDraw(rect)
+            const grown = rect.getSize().height > h0
+            const h1 = rect.getSize().height
+            s.setNodeLabel(rect, '短い')
+            fitDraw(rect)
+            const kept = rect.getSize().height === h1
+            rect.resize(ab.width + 24, ab.height + 24)
+
+            // ダブルクリック相当の編集で文字が入る
+            this.editor.startLabelEdit(text)
+            await wait(30)
+            const box = document.querySelector('div[contenteditable]') as HTMLElement | null
+            if (box) box.innerText = 'メモ'
+            box?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+            await wait(30)
+            const edited = s.getNodeLabel(text) === 'メモ'
+
+            // 右パネル: 矢印には矢じり・線の種類、四角には線の太さ・線の種類・背景色
+            graph.cleanSelection()
+            graph.resetSelection(arrow)
+            await wait(60)
+            const captions = (): string[] =>
+              [...document.querySelectorAll('#props-body label')].map(
+                (l) => l.firstChild?.textContent ?? ''
+              )
+            const arrowPanel = ['矢じり', '線の種類', '線の色', '線の太さ', 'ラベル'].every((c) =>
+              captions().includes(c)
+            )
+            graph.cleanSelection()
+            graph.resetSelection(rect)
+            await wait(60)
+            const rectPanel = ['文字', '背景色', '線の色', '線の太さ', '線の種類'].every((c) =>
+              captions().includes(c)
+            )
+            graph.cleanSelection()
+
+            // 書き出し画像で見た目を確認する
+            s.setArrowHeads(arrow, 'end')
+            s.setLineStyle(arrow, 'solid')
+            s.setEdgeStroke(arrow, '#c0392b')
+            s.setMessageLabel(arrow, 'ここに注目')
+            s.setNodeLabel(rect, '')
+            s.setNodeFill(rect, 'transparent')
+            s.setNodeStroke(rect, '#c0392b')
+            s.setLineStyle(rect, 'dashed')
+            s.setTextColor(text, '#c0392b')
+            await wait(50)
+            ;(window as unknown as Record<string, unknown>).__drawingPng =
+              await exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
+            graph.removeCells([rect, arrow, text])
+
+            activity['drawing'] =
+              inPalette &&
+              kinds === 'drawRect,drawArrow,drawText' &&
+              zOk &&
+              domOk &&
+              reloadZ &&
+              unattached &&
+              rules &&
+              noFollow &&
+              nudged &&
+              styled &&
+              persisted &&
+              grown &&
+              kept &&
+              edited &&
+              arrowPanel &&
+              rectPanel
+                ? 'ok'
+                : `ng(palette=${inPalette}, kinds=${kinds}, z=${zOk}, dom=${domOk}, reloadZ=${reloadZ}, unattached=${unattached}(${JSON.stringify(t)}), rules=${rules}, noFollow=${noFollow}, nudged=${nudged}, styled=${styled}(${dash1}|${dash2}|${dash3}|${both}|${markerColored}|${none}|${solid}), persisted=${persisted}, grown=${grown}, kept=${kept}, edited=${edited}, panel=${arrowPanel}/${rectPanel}(${captions().join(',')}))`
+          } catch (e) {
+            activity['drawing'] = `ng(error: ${(e as Error).message})`
+          }
+        }
+
         // コンテナ（レーン/フレーム）は中身を隠さないよう常に背面
         {
           const lane = addSwimlane(graph, '背面レーン', { x: 40, y: 40, width: 300, height: 400 })
@@ -1438,7 +1677,9 @@ B --> A : 返す`
         // 部品パレット: アクティビティ用タイルのクリックでノードが追加されるか
         {
           const grids = document.querySelectorAll('#palette-body .palette-grid')
-          const items = grids[1]?.querySelectorAll('.palette-item') ?? []
+          // 作図用のグリッドも並ぶので、アクティビティ図の部品が入ったグリッドを探す
+          const actGrid = [...grids].find((g) => g.textContent?.includes('アクション'))
+          const items = actGrid?.querySelectorAll('.palette-item') ?? []
           const before = graph.getNodes().length
           const tile = [...items].find((b) => b.textContent?.includes('アクション'))
           ;(tile as HTMLButtonElement | undefined)?.click()
@@ -3541,6 +3782,31 @@ B --> A : 返す`
         'ノートを追加しました。内容はダブルクリック、フォント等は右パネルで設定できます。'
       )
     }
+  }
+
+  // ---- 作図用の部品（issue #53） ----
+
+  /** 角丸四角 / 矢印 / テキストを表示範囲の中央に追加して選択する */
+  private addDrawing(kind: 'drawRect' | 'drawArrow' | 'drawText'): void {
+    const graph = this.editor.graph
+    const c = this.editor.getVisibleCenter()
+    let created: Cell | null = null
+    this.editor.batch(() => {
+      created =
+        kind === 'drawArrow'
+          ? addDrawArrow(graph, c)
+          : kind === 'drawRect'
+            ? addDrawRect(graph, '', c)
+            : addDrawText(graph, 'テキスト', c)
+    })
+    if (!created) return
+    graph.resetSelection(created)
+    this.editor.ensureCellVisible(created)
+    this.setStatusMessage(
+      kind === 'drawArrow'
+        ? '矢印を追加しました。端をドラッグして好きな位置へ伸ばせます（要素には繋がりません）。'
+        : '追加しました。文字はダブルクリック、色・線・フォントは右パネルで設定できます。'
+    )
   }
 
   // ---- マインドマップ ----

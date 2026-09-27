@@ -14,6 +14,8 @@ import {
   CODE_TOPIC,
   DECISION_SHAPE_POINTS,
   DEFAULT_DECISION_SHAPE,
+  DRAW,
+  LINE_STYLE_DASH,
   FONT_FAMILY,
   FRAGMENT,
   FRAME,
@@ -26,7 +28,9 @@ import {
   TOPIC_LINK_COLOR,
   DEFAULT_TEXT_ALIGN,
   Z,
+  type ArrowHeads,
   type CellKind,
+  type LineStyle,
   type DecisionShape,
   type TextAlign,
   type FragmentOperator,
@@ -53,7 +57,14 @@ export { FONT_FAMILY }
  * すべて到達不可と判定されて経路探索が必ず失敗し、orth へフォールバックしつつ
  * `Unable to execute manhattan algorithm` が毎回コンソールに出る。
  */
-const ROUTER_TRANSPARENT_SHAPES = [SHAPE.swimlane, SHAPE.frame, SHAPE.note, SHAPE.text]
+const ROUTER_TRANSPARENT_SHAPES = [
+  SHAPE.swimlane,
+  SHAPE.frame,
+  SHAPE.note,
+  SHAPE.text,
+  SHAPE.drawRect,
+  SHAPE.drawText
+]
 
 /** フロー用のルータ名（manhattan を包んだもの） */
 export const FLOW_ROUTER = 'uml-manhattan'
@@ -136,7 +147,8 @@ const EDGE_LABEL_STYLE = {
   message: { fontSize: 12, fontFamily: FONT_FAMILY, fill: COLOR.stroke },
   flow: { fontSize: 12, fontFamily: FONT_FAMILY, fill: COLOR.stroke },
   branch: { fontSize: 11, fontFamily: FONT_FAMILY, fill: COLOR.lifeline },
-  topicLink: { fontSize: 11, fontFamily: FONT_FAMILY, fill: TOPIC_LINK_COLOR }
+  topicLink: { fontSize: 11, fontFamily: FONT_FAMILY, fill: TOPIC_LINK_COLOR },
+  drawArrow: { fontSize: 12, fontFamily: FONT_FAMILY, fill: COLOR.stroke }
 } as const
 
 type LabeledEdgeKind = keyof typeof EDGE_LABEL_STYLE
@@ -760,6 +772,122 @@ export function registerShapes(): void {
     true
   )
 
+  // ---- 作図用の部品（issue #53） ----
+  // 図の意味を持たない描き足し用の図形。どれも最前面（Z.drawing）に置く。
+
+  // 角丸四角: 枠と塗りの中に文字を置く（幅に合わせて折り返す）
+  Graph.registerNode(
+    SHAPE.drawRect,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          rx: DRAW.rect.radius,
+          ry: DRAW.rect.radius,
+          fill: '#ffffff',
+          stroke: COLOR.stroke,
+          strokeWidth: DRAW.rect.strokeWidth,
+          cursor: 'move'
+        },
+        label: {
+          refX: '50%',
+          refY: '50%',
+          textAnchor: 'middle',
+          textVerticalAnchor: 'middle',
+          fontSize: DRAW.rect.fontSize,
+          fontFamily: FONT_FAMILY,
+          fill: TEXT.defaultColor,
+          textWrap: { width: -DRAW.rect.padX * 2, breakWord: true },
+          pointerEvents: 'none'
+        }
+      }
+    },
+    true
+  )
+
+  // テキスト: 付属テキストと同じ見た目で、何にも付属しない
+  Graph.registerNode(
+    SHAPE.drawText,
+    {
+      markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: {
+        body: {
+          refWidth: '100%',
+          refHeight: '100%',
+          fill: 'transparent',
+          stroke: 'none',
+          cursor: 'move'
+        },
+        label: {
+          refX: '50%',
+          refY: '50%',
+          textAnchor: 'middle',
+          textVerticalAnchor: 'middle',
+          fontSize: TEXT.defaultFontSize,
+          fontFamily: FONT_FAMILY,
+          fill: TEXT.defaultColor,
+          textWrap: { width: -TEXT.padX * 2, breakWord: true },
+          pointerEvents: 'none'
+        }
+      }
+    },
+    true
+  )
+
+  // 矢印: 端点は点のまま（どのセルにも繋がない）。矢じりは作成時にセルへ
+  // 明示して付ける（既定に持たせると、外した矢じりが読み込み時に戻ってしまう）
+  Graph.registerEdge(
+    SHAPE.drawArrow,
+    {
+      zIndex: Z.drawing,
+      attrs: {
+        line: {
+          stroke: COLOR.stroke,
+          strokeWidth: DRAW.arrow.strokeWidth,
+          strokeLinejoin: 'round',
+          targetMarker: null,
+          sourceMarker: null
+        },
+        wrap: {
+          strokeWidth: 12
+        }
+      },
+      defaultLabel: {
+        markup: [
+          { tagName: 'rect', selector: 'bg' },
+          { tagName: 'text', selector: 'text' }
+        ],
+        attrs: {
+          text: {
+            ...EDGE_LABEL_STYLE.drawArrow,
+            textAnchor: 'middle',
+            textVerticalAnchor: 'middle',
+            pointerEvents: 'none'
+          },
+          bg: {
+            ref: 'text',
+            fill: '#fbfbfd',
+            opacity: 0.85,
+            refWidth: '100%',
+            refHeight: '100%',
+            refX: 0,
+            refY: 0
+          }
+        },
+        position: { distance: 0.5 }
+      }
+    },
+    true
+  )
+
   // ---- フロー（アクティビティ図のエッジ: 直交ルーティング） ----
   Graph.registerEdge(
     SHAPE.flow,
@@ -1270,6 +1398,8 @@ const STYLE_TARGETS: Partial<Record<CellKind, StyleTargets>> = {
   swimlane: { fill: ['body'], stroke: ['body', 'header'], label: 'label' },
   frame: { fill: ['body'], stroke: ['body', 'tab'], label: 'label' },
   text: { fill: [], stroke: [], label: 'label' },
+  drawRect: { fill: ['body'], stroke: ['body'], label: 'label' },
+  drawText: { fill: [], stroke: [], label: 'label' },
   note: { fill: ['body'], stroke: ['body', 'fold'], label: 'label' },
   rootTopic: { fill: ['body'], stroke: ['body'], label: 'label' },
   topic: { fill: ['body'], stroke: ['body'], label: 'label' }
@@ -1375,7 +1505,7 @@ export function setTextColor(node: Node, color: string): void {
  */
 export function canSetTextAlign(node: Node): boolean {
   const kind = getCellKind(node)
-  return kind === 'text' || kind === 'note'
+  return kind === 'text' || kind === 'note' || kind === 'drawRect' || kind === 'drawText'
 }
 
 /** 揃えに応じた label の基準位置。padX 分だけ内側に寄せる */
@@ -1400,7 +1530,8 @@ export function getTextAlign(node: Node): TextAlign {
 
 export function setTextAlign(node: Node, align: TextAlign): void {
   if (!canSetTextAlign(node)) return
-  const padX = getCellKind(node) === 'note' ? NOTE.padX : TEXT.padX
+  const kind = getCellKind(node)
+  const padX = kind === 'note' ? NOTE.padX : kind === 'drawRect' ? DRAW.rect.padX : TEXT.padX
   for (const [name, value] of Object.entries(alignAttrs(align, padX))) {
     node.attr(`label/${name}`, value)
   }
@@ -1480,7 +1611,8 @@ export function canSetEdgeStroke(edge: Edge): boolean {
     kind === 'flow' ||
     kind === 'branch' ||
     kind === 'topicLink' ||
-    kind === 'attachLink'
+    kind === 'attachLink' ||
+    kind === 'drawArrow'
   )
 }
 
@@ -1503,7 +1635,8 @@ const EDGE_LINE_WIDTH: Partial<Record<CellKind, number>> = {
   flow: 1.5,
   branch: 1.8,
   topicLink: 1.6,
-  attachLink: 1
+  attachLink: 1,
+  drawArrow: DRAW.arrow.strokeWidth
 }
 
 export function getEdgeStroke(edge: Edge): string {
@@ -1538,6 +1671,7 @@ export function setEdgeStrokeWidth(edge: Edge, width: number): void {
     }
   }
   if (edge.attr('wrap') != null) edge.attr('wrap/strokeWidth', Math.max(12, width + 8))
+  if (canSetLineStyle(edge)) applyLineDash(edge)
 }
 
 /**
@@ -1669,3 +1803,76 @@ export function setDividerGuard(node: Node, guard: string): void {
 }
 
 export { ACTIVATION, LIFELINE, MESSAGE }
+
+// ---- 作図用の部品（issue #53）: 線の種類・線の太さ・矢じり ----
+
+/** 矢じりの形。線と同じ色で塗る（破線にしても矢じりは実線のまま） */
+function drawArrowMarker(color: string): { [key: string]: string | number } {
+  return { name: 'block', size: 10, fill: color, stroke: color, strokeDasharray: 'none' }
+}
+
+/** 線の種類を選べる要素か（作図用の四角と矢印） */
+export function canSetLineStyle(cell: Cell): boolean {
+  const kind = getCellKind(cell)
+  return kind === 'drawRect' || kind === 'drawArrow'
+}
+
+export function getLineStyle(cell: Cell): LineStyle {
+  const v = (cell.getData() as { lineStyle?: unknown } | undefined)?.lineStyle
+  return v === 'dashed' || v === 'dotted' ? v : 'solid'
+}
+
+/** 線を描くセレクタ（四角は body、矢印は line） */
+function linePath(cell: Cell, name: string): string {
+  return `${cell.isEdge() ? 'line' : 'body'}/${name}`
+}
+
+/** 線の種類と太さから破線パターンを当て直す（太さを変えても点の粗さが揃うように） */
+function applyLineDash(cell: Cell): void {
+  const dash = LINE_STYLE_DASH[getLineStyle(cell)]
+  const path = linePath(cell, 'strokeDasharray')
+  if (dash === null) {
+    if (cell.attr(path) != null) cell.attr(path, null)
+    return
+  }
+  const width = Number(cell.attr(linePath(cell, 'strokeWidth'))) || 1
+  cell.attr(path, `${dash[0] * width} ${dash[1] * width}`)
+}
+
+export function setLineStyle(cell: Cell, style: LineStyle): void {
+  if (!canSetLineStyle(cell)) return
+  // setData は深くマージするので、実線に戻すときも undefined ではなく値で上書きする
+  cell.setData({ lineStyle: style })
+  applyLineDash(cell)
+}
+
+/** 線の太さを変えられるノードか（作図用の四角だけ。他の図形は UML の見た目を保つ） */
+export function canSetNodeStrokeWidth(node: Node): boolean {
+  return getCellKind(node) === 'drawRect'
+}
+
+export function getNodeStrokeWidth(node: Node): number {
+  const v = Number(node.attr('body/strokeWidth'))
+  return Number.isFinite(v) && v > 0 ? v : DRAW.rect.strokeWidth
+}
+
+export function setNodeStrokeWidth(node: Node, width: number): void {
+  if (!canSetNodeStrokeWidth(node)) return
+  node.attr('body/strokeWidth', width)
+  applyLineDash(node)
+}
+
+/** 矢印の矢じりの付き方 */
+export function getArrowHeads(edge: Edge): ArrowHeads {
+  const has = (name: 'targetMarker' | 'sourceMarker'): boolean =>
+    edge.attr(`line/${name}`) != null
+  if (has('sourceMarker') && has('targetMarker')) return 'both'
+  return has('targetMarker') ? 'end' : 'none'
+}
+
+export function setArrowHeads(edge: Edge, heads: ArrowHeads): void {
+  if (getCellKind(edge) !== 'drawArrow') return
+  const marker = drawArrowMarker(getEdgeStroke(edge))
+  edge.attr('line/targetMarker', heads === 'none' ? null : marker)
+  edge.attr('line/sourceMarker', heads === 'both' ? marker : null)
+}
