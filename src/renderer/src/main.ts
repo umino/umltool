@@ -1558,7 +1558,8 @@ B --> A : 返す`
             s.setEdgeStroke(arrow, '#c0392b')
             s.setMessageLabel(arrow, 'ここに注目')
             s.setNodeLabel(rect, '')
-            s.setNodeFill(rect, 'transparent')
+            // 半透明の塗り（issue #59）で下のアクションが透けて見える
+            s.setNodeFill(rect, '#2d6cdf33')
             s.setNodeStroke(rect, '#c0392b')
             s.setLineStyle(rect, 'dashed')
             s.setTextColor(text, '#c0392b')
@@ -1589,6 +1590,73 @@ B --> A : 返す`
                 : `ng(palette=${inPalette}, kinds=${kinds}, round=${round}, z=${zOk}, dom=${domOk}, reloadZ=${reloadZ}, unattached=${unattached}(${JSON.stringify(t)}), rules=${rules}, noFollow=${noFollow}, nudged=${nudged}, styled=${styled}(${dash1}|${dash2}|${dash3}|${both}|${markerColored}|${none}|${solid}), persisted=${persisted}, grown=${grown}, kept=${kept}, edited=${edited}, panel=${arrowPanel}/${rectPanel}(${captions().join(',')}))`
           } catch (e) {
             activity['drawing'] = `ng(error: ${(e as Error).message})`
+          }
+        }
+
+        // 色の不透明度（issue #59）: 右パネルのスライダーで背景色・線の色に透明度が付き、
+        // 実際の描画にも効く。色を選び直しても不透明度は保たれ、100% なら従来の #rrggbb
+        {
+          const s = await import('./editor/shapes')
+          const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+          const action = graph.getNodes().find((x) => getCellKind(x) === 'action')
+          const flow = graph.getEdges().find((x) => getCellKind(x) === 'flow')
+          try {
+            if (!action || !flow) throw new Error('アクション/フローがありません')
+            const originalFill = s.getNodeFill(action)
+            const originalStroke = s.getEdgeStroke(flow)
+            const field = (caption: string): HTMLElement | undefined =>
+              [...document.querySelectorAll('#props-body label')].find(
+                (l) => l.firstChild?.textContent === caption
+              ) as HTMLElement | undefined
+            const slide = (label: HTMLElement | undefined, percent: number): void => {
+              const range = label?.querySelector('input[type="range"]') as HTMLInputElement | null
+              if (!range) return
+              range.value = String(percent)
+              range.dispatchEvent(new Event('input', { bubbles: true }))
+            }
+
+            graph.cleanSelection()
+            graph.resetSelection(action)
+            await wait(60)
+            const fillField = field('背景色')
+            const startPercent = (fillField?.querySelector('input[type="range"]') as HTMLInputElement | null)?.value
+            slide(fillField, 50)
+            const fill = s.getNodeFill(action)
+            const translucent = /^#[0-9a-f]{6}80$/.test(fill)
+            // 描画にも半透明が効いている
+            await wait(30)
+            const body = graph.findViewByCell(action)?.container.querySelector('rect')
+            const computed = body ? getComputedStyle(body).fill : ''
+            const drawn = /rgba\(.*0\.5\d*\)/.test(computed)
+            // 色を選び直しても不透明度はそのまま
+            const picker = fillField?.querySelector('input[type="color"]') as HTMLInputElement | null
+            if (picker) {
+              picker.value = '#e8f5e9'
+              picker.dispatchEvent(new Event('input', { bubbles: true }))
+            }
+            const keptAlpha = s.getNodeFill(action) === '#e8f5e980'
+            // 100% に戻すと従来どおりの 6 桁
+            slide(field('背景色'), 100)
+            const opaque = s.getNodeFill(action) === '#e8f5e9'
+
+            // 線（矢印）にも付き、矢じりも同じ色になる
+            graph.cleanSelection()
+            graph.resetSelection(flow)
+            await wait(60)
+            slide(field('線の色'), 30)
+            const stroke = s.getEdgeStroke(flow)
+            const marker = flow.attr('line/targetMarker') as { stroke?: string } | null
+            const edgeOk = /^#[0-9a-f]{6}4d$/.test(stroke) && marker?.stroke === stroke
+
+            s.setNodeFill(action, originalFill)
+            s.setEdgeStroke(flow, originalStroke)
+            graph.cleanSelection()
+            activity['colorAlpha'] =
+              startPercent === '100' && translucent && drawn && keptAlpha && opaque && edgeOk
+                ? 'ok'
+                : `ng(start=${startPercent}, fill=${fill}, drawn=${computed}, kept=${keptAlpha}, opaque=${opaque}, stroke=${stroke}, marker=${marker?.stroke})`
+          } catch (e) {
+            activity['colorAlpha'] = `ng(error: ${(e as Error).message})`
           }
         }
 

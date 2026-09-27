@@ -491,6 +491,26 @@ body,
   gap: 8px;
 }
 
+/* 不透明度: 見出し・スライダー・値を 1 行に */
+#props-body .alpha-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#props-body .alpha-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+}
+
+#props-body .alpha-value {
+  width: 3.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 #props-body .swatches {
   display: flex;
   flex-wrap: wrap;
