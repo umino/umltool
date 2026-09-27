@@ -1394,19 +1394,32 @@ B --> A : 返す`
             graph.cleanSelection()
             graph.resetSelection(arrow)
             await wait(150)
+            // 端点のハンドルは両端とも丸（矢じり形だと、選択中に両端とも矢に見える。issue #56）
+            const roundHandles = (): boolean => {
+              const found = [
+                ...document.querySelectorAll(
+                  '.x6-edge-tool-source-arrowhead, .x6-edge-tool-target-arrowhead'
+                )
+              ]
+              return (
+                found.length === 2 &&
+                found.every((h) => (h.getAttribute('d') ?? '').includes(' A 5 5 '))
+              )
+            }
+            let round = roundHandles()
+            // メッセージ・フローなど図の矢印でも同じ丸
+            const flowEdge = graph.getEdges().find((e) => getCellKind(e) === 'flow')
+            if (flowEdge) {
+              graph.resetSelection(flowEdge)
+              await wait(100)
+              round = round && roundHandles()
+              graph.resetSelection(arrow)
+              await wait(150)
+            }
             const tool = document.querySelector(
               '.x6-edge-tool-target-arrowhead'
             ) as SVGElement | null
             const toolRect = tool?.getBoundingClientRect()
-            // 端点のハンドルは両端とも丸（矢じり形だと両端が矢に見える。issue #56）
-            const handles = [
-              ...document.querySelectorAll(
-                '.x6-edge-tool-source-arrowhead, .x6-edge-tool-target-arrowhead'
-              )
-            ]
-            const round =
-              handles.length === 2 &&
-              handles.every((h) => (h.getAttribute('d') ?? '').includes(' A 5 5 '))
             const dropLocal = { x: ab.center.x + 10, y: ab.center.y + 5 }
             const drop = graph.localToClient(dropLocal.x, dropLocal.y)
             if (tool && toolRect) {

@@ -104,10 +104,13 @@ const CONNECTABLE_KINDS = new Set([
 ])
 
 /**
- * 作図用の矢印の端点ハンドル（半径 5 の丸）。矢じりの先が隠れきらないよう
- * 塗りは半透明にする
+ * 線の端点を付け替えるハンドル（半径 5 の丸）。
+ *
+ * X6 既定のハンドルは矢じり形で、選択すると始点側まで矢が付いたように見える
+ * （issue #56）。どの線でも「つまむ所」と分かる丸にし、下の矢じりが隠れきら
+ * ないよう塗りは半透明にする。
  */
-const DRAW_ARROW_HANDLE = {
+const END_HANDLE_ATTRS = {
   d: 'M -5 0 A 5 5 0 1 0 5 0 A 5 5 0 1 0 -5 0 Z',
   fill: '#ffffff',
   'fill-opacity': 0.7,
@@ -115,6 +118,12 @@ const DRAW_ARROW_HANDLE = {
   'stroke-width': 2,
   cursor: 'move'
 }
+
+/** 始点・終点の付け替えハンドル（丸） */
+const END_HANDLES = [
+  { name: 'source-arrowhead', args: { attrs: END_HANDLE_ATTRS } },
+  { name: 'target-arrowhead', args: { attrs: END_HANDLE_ATTRS } }
+]
 
 /** 上下左右のポートを持つ（＝辺を指定して繋げる）ノードか */
 function hasFlowPorts(node: Node): boolean {
@@ -630,28 +639,17 @@ export class GraphEditor {
             name: 'vertices',
             args: { addable: false, removable: false, removeRedundancies: false, snapRadius: 0 }
           },
-          { name: 'source-arrowhead' },
-          { name: 'target-arrowhead' }
+          ...END_HANDLES
         ])
       } else if (kind === 'flow') {
         // フローは経由点の追加/削除も自由（直交ルーティングの調整用）
-        edge.addTools([
-          { name: 'vertices' },
-          { name: 'source-arrowhead' },
-          { name: 'target-arrowhead' }
-        ])
+        edge.addTools([{ name: 'vertices' }, ...END_HANDLES])
       } else if (kind === 'branch') {
         // 枝は親子の付け替えだけできれば十分（形は整列が決める）
-        edge.addTools([{ name: 'source-arrowhead' }, { name: 'target-arrowhead' }])
+        edge.addTools(END_HANDLES)
       } else if (kind === 'drawArrow') {
-        // 作図用の矢印: 端点は好きな位置へ、線をドラッグすると折れ点が増える。
-        // 端点のハンドルは既定だと矢じり形で、両端が矢に見えてしまう（issue #56）。
-        // 矢じりの向きと取り違えないよう丸にする
-        edge.addTools([
-          { name: 'vertices' },
-          { name: 'source-arrowhead', args: { attrs: DRAW_ARROW_HANDLE } },
-          { name: 'target-arrowhead', args: { attrs: DRAW_ARROW_HANDLE } }
-        ])
+        // 作図用の矢印: 端点は好きな位置へ、線をドラッグすると折れ点が増える
+        edge.addTools([{ name: 'vertices' }, ...END_HANDLES])
       }
     })
     graph.on('edge:unselected', ({ edge }: { edge: Edge }) => {
