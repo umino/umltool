@@ -21,7 +21,6 @@ import {
   canSetEdgeTextStyle,
   canSetFill,
   canSetStroke,
-  canSetTextAlign,
   canSetTextStyle,
   getCellKind,
   getDividerGuard,
@@ -280,6 +279,13 @@ export class PropertiesPanel {
         labelInput(caption, getNodeLabel(node), (value) => {
           setNodeLabel(node, value)
           fitTextHeight(node)
+        })
+      )
+      // 行揃え（issue #52）。外観欄の奥だと見つけにくいので本文のすぐ下に置く
+      this.host.appendChild(
+        textAlignButtons(getTextAlign(node), (value) => {
+          setTextAlign(node, value)
+          this.render([node])
         })
       )
       if (kind === 'text') {
@@ -622,11 +628,6 @@ export class PropertiesPanel {
           refit()
         })
       )
-      if (canSetTextAlign(node)) {
-        this.host.appendChild(
-          textAlignSelect(getTextAlign(node), (value) => setTextAlign(node, value))
-        )
-      }
       this.host.appendChild(
         colorInput('文字色', getTextColor(node), (value) => setTextColor(node, value))
       )
@@ -751,22 +752,31 @@ function sectionTitle(text: string): HTMLElement {
   return el
 }
 
-function textAlignSelect(
+/** 行揃えの切替ボタン（左 / 中央 / 右）。押されている揃えを強調する */
+function textAlignButtons(
   value: TextAlign,
   onChange: (value: TextAlign) => void
 ): HTMLElement {
-  const wrap = document.createElement('label')
-  wrap.textContent = '行揃え'
-  const select = document.createElement('select')
+  const wrap = document.createElement('div')
+  wrap.className = 'field'
+  const caption = document.createElement('span')
+  caption.textContent = '行揃え'
+  const row = document.createElement('div')
+  row.className = 'button-row align-buttons'
+  row.setAttribute('role', 'group')
+  row.setAttribute('aria-label', '行揃え')
   for (const align of ['left', 'center', 'right'] as const) {
-    const opt = document.createElement('option')
-    opt.value = align
-    opt.textContent = TEXT_ALIGN_LABEL[align]
-    select.appendChild(opt)
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.dataset['align'] = align
+    b.textContent = TEXT_ALIGN_LABEL[align]
+    b.setAttribute('aria-pressed', String(align === value))
+    b.addEventListener('click', () => {
+      if (align !== value) onChange(align)
+    })
+    row.appendChild(b)
   }
-  select.value = value
-  select.addEventListener('change', () => onChange(select.value as TextAlign))
-  wrap.appendChild(select)
+  wrap.append(caption, row)
   return wrap
 }
 
