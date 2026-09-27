@@ -468,6 +468,22 @@ body,
   padding: 5px 0;
 }
 
+/* ラベル付きのボタン列（label 要素と同じ見出しの並び） */
+#props-body .field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 行揃え: 選ばれている揃えだけ塗る */
+#props-body .align-buttons button[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
 /* カラー入力: 自由入力（左）とプリセットのスウォッチ（右・折返し）を併置 */
 #props-body .color-row {
   display: flex;

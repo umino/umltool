@@ -161,6 +161,14 @@ function createWindow(): void {
             await writeFile(outCode, Buffer.from(codePng.split(',')[1], 'base64'))
             console.log(`[DIAG-PNG-CODE] ${outCode}`)
           }
+          const notePng = await mainWindow!.webContents.executeJavaScript(
+            'window.__notePng ?? ""'
+          )
+          if (typeof notePng === 'string' && notePng.startsWith('data:image/png')) {
+            const outNote = join(process.cwd(), 'diag-output-note.png')
+            await writeFile(outNote, Buffer.from(notePng.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-NOTE] ${outNote}`)
+          }
           const linkPng = await mainWindow!.webContents.executeJavaScript(
             'window.__topicLinkPng ?? ""'
           )

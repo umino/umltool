@@ -43,6 +43,7 @@ import {
   getMessageKind,
   getMessageLabel,
   getNodeLabel,
+  getTextAlign,
   getTextFontSize,
   isCodeTopic,
   normalizeLabelFor,
@@ -532,6 +533,7 @@ export class GraphEditor {
         text: getNodeLabel(node),
         fontSize,
         minWidth: Math.min(bbox.width, 200),
+        align: getTextAlign(node),
         onCommit: (text) => {
           setNodeLabel(node, text)
           this.withNormalizing(() => fitTextHeight(node))

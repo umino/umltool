@@ -3,7 +3,7 @@
 // 複数エディタが同時に開いて空文字をコミットする事故が起きるため使わない。
 
 import type { Graph } from '@antv/x6'
-import { CODE_TOPIC, FONT_FAMILY } from './constants'
+import { CODE_TOPIC, FONT_FAMILY, type TextAlign } from './constants'
 
 export interface InlineEditorOptions {
   /** 編集欄の中心位置（ローカル座標） */
@@ -17,6 +17,11 @@ export interface InlineEditorOptions {
    * Enter は改行（確定は Ctrl+Enter / 欄外クリック）、Tab は空白を入れる。
    */
   code?: boolean
+  /**
+   * 編集欄の行揃え（既定は中央、コードは左）。ノートを左揃えにしているときは
+   * 編集中も同じ並びで見せ、行頭の字下げを削らずに確定する。
+   */
+  align?: TextAlign
   onCommit: (text: string) => void
 }
 
@@ -34,6 +39,9 @@ export function openInlineEditor(graph: Graph, opts: InlineEditorOptions): void 
   const pos = graph.localToGraph(opts.x, opts.y)
   const scale = graph.scale()
   const code = opts.code === true
+  const align: TextAlign = opts.align ?? (code ? 'left' : 'center')
+  // 左揃えでは行頭の空白も本文（字下げ）なので残す
+  const keepIndent = code || align === 'left'
 
   const div = document.createElement('div')
   // コードは貼り付けた書式（HTML）を持ち込まないよう素のテキストだけを受け付ける
@@ -57,7 +65,7 @@ export function openInlineEditor(graph: Graph, opts: InlineEditorOptions): void 
     boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
     outline: 'none',
     whiteSpace: 'pre',
-    textAlign: code ? 'left' : 'center',
+    textAlign: align,
     zIndex: '100'
   } satisfies Partial<CSSStyleDeclaration>)
   if (code) div.textContent = opts.text
@@ -67,9 +75,9 @@ export function openInlineEditor(graph: Graph, opts: InlineEditorOptions): void 
   const finish = (commit: boolean): void => {
     if (done) return
     done = true
-    // コードは行頭のインデントが本文なので、末尾の改行だけを落とす
-    const value = code
-      ? div.innerText.replace(/\n+$/, '')
+    // コード / 左揃えは行頭のインデントが本文なので、前後の空行と行末の空白だけを落とす
+    const value = keepIndent
+      ? div.innerText.replace(/\s+$/, '').replace(/^(?:[ \t ]*\n)+/, '')
       : div.innerText.replace(/\n+$/, '').trim()
     div.remove()
     if (active?.dispose === dispose) active = null

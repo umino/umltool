@@ -1231,6 +1231,89 @@ B --> A : 返す`
           const leftAnchor = String(n.attr('label/textAnchor'))
           s.setTextAlign(n, 'right')
           const rightAnchor = String(n.attr('label/textAnchor'))
+          // ノートの左揃え（issue #52）: 右パネルのボタンで切り替わり、行頭の字下げを
+          // 保ったまま枠の左端に揃って描かれる。ダブルクリックの編集欄も左揃えで、
+          // 確定しても字下げが残る。保存形式から作り直しても左揃えのまま
+          let noteLeft = 'ng(未実行)'
+          {
+            const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+            const { fitTextHeight: fitNote } = await import('./editor/autosize')
+            s.setTextAlign(n, 'center')
+            s.setNodeLabel(n, 'if (ready) {\n    start();\n        log();\n}')
+            fitNote(n)
+            graph.cleanSelection()
+            graph.resetSelection(n)
+            await wait(50)
+            const pressed = (): string =>
+              document
+                .querySelector('#props-body .align-buttons button[aria-pressed="true"]')
+                ?.getAttribute('data-align') ?? 'none'
+            const before = pressed()
+            ;(
+              document.querySelector(
+                '#props-body .align-buttons button[data-align="left"]'
+              ) as HTMLButtonElement | null
+            )?.click()
+            await wait(80)
+            const clicked = s.getTextAlign(n) === 'left' && pressed() === 'left'
+
+            // 描画: 1 行目は枠の左端から padX の位置、字下げ行はその右
+            const spans = (cell: Node): SVGTextContentElement[] =>
+              [
+                ...(graph.findViewByCell(cell)?.container.querySelectorAll('text tspan.v-line') ??
+                  [])
+              ] as SVGTextContentElement[]
+            // 描画は非同期なので、4 行が文字入りで出揃うまで待つ
+            let rows = spans(n)
+            const ready = (): boolean =>
+              rows.length === 4 && rows.every((r) => r.getNumberOfChars() > 0)
+            for (let i = 0; i < 25 && !ready(); i++) {
+              await wait(20)
+              rows = spans(n)
+            }
+            const at = (i: number, ch: number): number => {
+              const row = rows[i]
+              return row !== undefined && ch < row.getNumberOfChars()
+                ? row.getStartPositionOfChar(ch).x
+                : NaN
+            }
+            // 字下げは text 内の座標、左端の位置は枠との画面上の差（倍率で割り戻す）で見る
+            const xs = [at(0, 0), at(1, 4), at(2, 8), at(3, 0)]
+            const bodyLeft =
+              graph.findViewByCell(n)?.container.querySelector('path')?.getBoundingClientRect()
+                .left ?? NaN
+            const pad = ((rows[0]?.getBoundingClientRect().left ?? NaN) - bodyLeft) / graph.scale().sx
+            const indentKept =
+              rows.length === 4 &&
+              Math.abs(pad - NOTE.padX) < 1.5 &&
+              xs[1] - xs[0] > 8 &&
+              xs[2] - xs[1] > 8 &&
+              Math.abs(xs[3] - xs[0]) < 1
+            const indentInfo = `rows=${rows.length}, pad=${pad.toFixed(1)}, x=${xs.map((x) => Math.round(x)).join('/')}`
+            ;(window as unknown as Record<string, unknown>).__notePng =
+              await exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
+
+            // インライン編集: 欄も左揃えで、1 行目の字下げも削らない
+            this.editor.startLabelEdit(n)
+            await wait(30)
+            const box = document.querySelector('div[contenteditable]') as HTMLElement | null
+            const editorLeft = box?.style.textAlign === 'left'
+            if (box) box.innerText = '  a();\n    b();\n'
+            box?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+            await wait(50)
+            const editKept = s.getNodeLabel(n) === '  a();\n    b();'
+
+            const json = n.toJSON()
+            delete (json as { id?: string }).id
+            const copy = graph.addNode(json as never)
+            const persisted = s.getTextAlign(copy) === 'left'
+            graph.removeCells([copy])
+            graph.cleanSelection()
+            noteLeft =
+              before === 'center' && clicked && indentKept && editorLeft && editKept && persisted
+                ? 'ok'
+                : `ng(before=${before}, clicked=${clicked}, indent=${indentKept}(${indentInfo}), editor=${editorLeft}, edit=${editKept}(${JSON.stringify(s.getNodeLabel(n))}), persisted=${persisted})`
+          }
           // ラベル位置が固定のライフラインなどは対象外
           const lifeline = graph.getNodes().find((x) => getCellKind(x) === 'lifeline')
           const action = graph.getNodes().find((x) => getCellKind(x) === 'action')
@@ -1240,9 +1323,10 @@ B --> A : 返す`
             rightAnchor === 'end' &&
             s.canSetTextAlign(n) &&
             (lifeline === undefined || !s.canSetTextAlign(lifeline)) &&
-            (action === undefined || !s.canSetTextAlign(action))
+            (action === undefined || !s.canSetTextAlign(action)) &&
+            noteLeft === 'ok'
               ? 'ok'
-              : `ng(seen=${seen.join(',')}, left=${leftAnchor}, right=${rightAnchor})`
+              : `ng(seen=${seen.join(',')}, left=${leftAnchor}, right=${rightAnchor}, note=${noteLeft})`
           graph.removeCells([n])
         }
 
