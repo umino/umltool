@@ -22,13 +22,18 @@ export interface PaletteActions {
   toggleCollapse: () => void
   toggleCodeTopic: () => void
   addTopicLink: () => void
+  addDrawRect: () => void
+  addDrawArrow: () => void
+  addDrawText: () => void
 }
 
 /** ライフラインに付属するテキストタイル（シーケンス図） */
 function textItem(a: PaletteActions): PaletteItem {
   return {
-    label: 'テキスト',
-    title: '選択中のライフラインに付属テキストを追加（フォント・色・太字は右パネルで設定）',
+    label: '付属テキスト',
+    title:
+      '選択中のライフラインに付属テキストを追加（ライフラインの移動に追従）。' +
+      'フォント・色・太字は右パネルで設定',
     icon:
       `<line x1="8" y1="8" x2="36" y2="8" stroke="${C.gray}" stroke-width="1.6"/>` +
       `<line x1="8" y1="15" x2="30" y2="15" stroke="${C.gray}" stroke-width="1.6"/>` +
@@ -47,6 +52,49 @@ function noteItem(a: PaletteActions): PaletteItem {
       `<path d="M 14 4 V 10 H 8 Z" fill="#f2e4b8" stroke="#d9b441" stroke-width="1.2"/>`,
     onClick: a.addNote
   }
+}
+
+/**
+ * 作図用の部品（issue #53）。図の意味を持たず、何にも追従しない描き足し用の図形。
+ * 常に図の要素より手前に描かれる。
+ */
+function drawingItems(a: PaletteActions): PaletteItem[] {
+  return [
+    {
+      label: '角丸四角',
+      title: '角丸四角を追加（中に文字を書けます）。何にも追従せず、常に最前面に描かれます',
+      icon: `<rect x="5" y="5" width="34" height="20" rx="5" fill="#ffffff" stroke="${C.stroke}" stroke-width="1.5"/>`,
+      onClick: a.addDrawRect
+    },
+    {
+      label: '矢印',
+      title:
+        '矢印を追加。端をドラッグして好きな位置へ伸ばせます（要素には繋がりません）。' +
+        '常に最前面に描かれます',
+      icon:
+        `<line x1="5" y1="23" x2="33" y2="9" stroke="${C.stroke}" stroke-width="1.8"/>` +
+        `<path d="M 39 6 L 30.6 6.8 L 34.2 14 Z" fill="${C.stroke}"/>`,
+      onClick: a.addDrawArrow
+    },
+    {
+      label: 'テキスト',
+      title: '自由に置けるテキストを追加。何にも追従せず、常に最前面に描かれます',
+      icon: `<text x="22" y="21" text-anchor="middle" font-size="17" font-weight="700" font-family="serif" fill="${C.stroke}">A</text>`,
+      onClick: a.addDrawText
+    }
+  ]
+}
+
+/** 図の部品のタイル群の下に「作図」の見出しと作図用の部品を並べる */
+function withDrawingItems(items: PaletteItem[], a: PaletteActions): HTMLElement {
+  const pane = document.createElement('div')
+  pane.appendChild(renderGrid(items))
+  const heading = document.createElement('div')
+  heading.className = 'palette-heading'
+  heading.textContent = '作図'
+  pane.appendChild(heading)
+  pane.appendChild(renderGrid(drawingItems(a)))
+  return pane
 }
 
 export interface PaletteHandle {
@@ -307,8 +355,8 @@ function renderKeyHelp(): HTMLElement {
 
 /** パレットを構築する */
 export function buildPalette(host: HTMLElement, actions: PaletteActions): PaletteHandle {
-  const seqGrid = renderGrid(sequenceItems(actions))
-  const actGrid = renderGrid(activityItems(actions))
+  const seqGrid = withDrawingItems(sequenceItems(actions), actions)
+  const actGrid = withDrawingItems(activityItems(actions), actions)
   const mindPane = document.createElement('div')
   mindPane.appendChild(renderGrid(mindmapItems(actions)))
   mindPane.appendChild(renderKeyHelp())

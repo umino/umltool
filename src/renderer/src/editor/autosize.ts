@@ -9,6 +9,7 @@ import {
   DECISION_SHAPE_POINTS,
   DECISION_WIDTH_FACTOR,
   DEFAULT_DECISION_SHAPE,
+  DRAW,
   FONT_FAMILY,
   LIFELINE,
   MINDMAP,
@@ -218,14 +219,31 @@ export function autoSizeNode(node: Node, label: string): void {
   })
 }
 
+/** 高さを文字に合わせる図形ごとの寸法（作図用の四角は TEXT と同じ行の高さで組む） */
+const FIT_SPEC = {
+  text: TEXT,
+  note: NOTE,
+  drawText: TEXT,
+  drawRect: {
+    ...TEXT,
+    padX: DRAW.rect.padX,
+    padY: DRAW.rect.padY,
+    minHeight: DRAW.rect.minHeight,
+    defaultFontSize: DRAW.rect.fontSize
+  }
+} as const
+
 /**
  * テキスト/ノートの高さを、現在の幅での折り返し行数に合わせる（幅・位置は維持）。
  * 幅リサイズ・内容/フォント変更のたびに呼ぶ。
+ *
+ * 作図用の角丸四角は大きさを自由に決める図形なので、文字が収まらないときに
+ * 伸ばすだけで縮めない。
  */
 export function fitTextHeight(node: Node): void {
   const kind = (node.getData() as { kind?: string } | undefined)?.kind
-  if (kind !== 'text' && kind !== 'note') return
-  const spec = kind === 'note' ? NOTE : TEXT
+  if (kind === undefined || !(kind in FIT_SPEC)) return
+  const spec = FIT_SPEC[kind as keyof typeof FIT_SPEC]
 
   const fontSize = Number(node.attr('label/fontSize')) || spec.defaultFontSize
   const text = String(node.attr('label/text') ?? '')
@@ -240,7 +258,8 @@ export function fitTextHeight(node: Node): void {
           .reduce((sum, line) => sum + Math.max(1, Math.ceil(measure(line) / innerAvail)), 0)
 
   const lineH = Math.round(fontSize * spec.lineHeight)
-  const height = Math.max(spec.minHeight, lines * lineH + spec.padY * 2)
+  const needed = Math.max(spec.minHeight, lines * lineH + spec.padY * 2)
+  const height = kind === 'drawRect' ? Math.max(needed, node.getSize().height) : needed
   if (Math.abs(height - node.getSize().height) < 1) return
   node.resize(width, height)
 }

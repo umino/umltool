@@ -16,6 +16,8 @@ import {
 } from '../editor/sequence'
 import {
   applyFrameHeader,
+  canSetLineStyle,
+  canSetNodeStrokeWidth,
   canSetEdgeStroke,
   canSetEdgeStrokeWidth,
   canSetEdgeTextStyle,
@@ -34,9 +36,12 @@ import {
   getFragmentOperator,
   getMessageKind,
   getMessageLabel,
+  getArrowHeads,
+  getLineStyle,
   getNodeFill,
   getNodeLabel,
   getNodeStroke,
+  getNodeStrokeWidth,
   getTextAlign,
   getTextBold,
   getTextColor,
@@ -55,9 +60,12 @@ import {
   setFragmentOperator,
   setMessageKind,
   setMessageLabel,
+  setArrowHeads,
+  setLineStyle,
   setNodeFill,
   setNodeLabel,
   setNodeStroke,
+  setNodeStrokeWidth,
   setTextAlign,
   setTextBold,
   setTextColor,
@@ -81,6 +89,9 @@ import {
 import {
   ACTIVITY_KIND_LABEL,
   ACTIVITY_MIN_SIZE,
+  ARROW_HEADS_LABEL,
+  DRAWING_KIND_LABEL,
+  LINE_STYLE_LABEL,
   CODE_TOPIC,
   COLOR_PRESETS,
   DIVIDABLE_OPERATORS,
@@ -94,8 +105,10 @@ import {
   TEXT_ALIGN_LABEL,
   isActivityNodeKind,
   isMindmapNodeKind,
+  type ArrowHeads,
   type CellKind,
   type FragmentOperator,
+  type LineStyle,
   type MessageKind,
   type TextAlign
 } from '../editor/constants'
@@ -272,9 +285,52 @@ export class PropertiesPanel {
       return true
     }
 
+    if (kind === 'drawRect' || kind === 'drawText') {
+      const node = cell as Node
+      this.host.appendChild(
+        labelInput('文字', getNodeLabel(node), (value) => {
+          setNodeLabel(node, value)
+          fitTextHeight(node)
+        })
+      )
+      this.host.appendChild(
+        textAlignButtons(getTextAlign(node), (value) => {
+          setTextAlign(node, value)
+          this.render([node])
+        })
+      )
+      this.host.appendChild(
+        hint(
+          kind === 'drawRect'
+            ? '作図用の図形です。何にも追従せず、常に最前面に描かれます。ハンドルで大きさを変更できます。'
+            : '作図用のテキストです。何にも追従せず、常に最前面に描かれます。ハンドルで横幅を変更（高さは自動）。'
+        )
+      )
+      return true
+    }
+
+    if (kind === 'drawArrow') {
+      const edge = cell as Edge
+      this.host.appendChild(
+        labelInput('ラベル', getMessageLabel(edge), (value) => setMessageLabel(edge, value))
+      )
+      this.host.appendChild(
+        choiceSelect('矢じり', ARROW_HEADS_LABEL, getArrowHeads(edge), (value: ArrowHeads) =>
+          setArrowHeads(edge, value)
+        )
+      )
+      this.host.appendChild(
+        hint(
+          '作図用の矢印です。端の丸をドラッグして好きな位置へ（要素には繋がりません）。' +
+            '線をドラッグすると折れ点が増え、点をダブルクリックすると消せます。'
+        )
+      )
+      return true
+    }
+
     if (kind === 'text' || kind === 'note') {
       const node = cell as Node
-      const caption = kind === 'note' ? 'ノート' : 'テキスト'
+      const caption = kind === 'note' ? 'ノート' : '付属テキスト'
       this.host.appendChild(
         labelInput(caption, getNodeLabel(node), (value) => {
           setNodeLabel(node, value)
@@ -603,6 +659,25 @@ export class PropertiesPanel {
         colorInput('線の色', getNodeStroke(node), (value) => setNodeStroke(node, value))
       )
     }
+    if (canSetNodeStrokeWidth(node)) {
+      this.host.appendChild(
+        numberInput(
+          '線の太さ',
+          getNodeStrokeWidth(node),
+          EDGE_WIDTH.min,
+          EDGE_WIDTH.max,
+          (value) => setNodeStrokeWidth(node, value),
+          EDGE_WIDTH.step
+        )
+      )
+    }
+    if (canSetLineStyle(node)) {
+      this.host.appendChild(
+        choiceSelect('線の種類', LINE_STYLE_LABEL, getLineStyle(node), (value: LineStyle) =>
+          setLineStyle(node, value)
+        )
+      )
+    }
     if (text) {
       // 文字が変わるとラベルの実寸も変わるので、サイズ追従の仕組みを呼び直す。
       // テキスト/ノートは高さが行数追従、アクション/分岐はラベル連動の自動サイズ。
@@ -660,6 +735,13 @@ export class PropertiesPanel {
           EDGE_WIDTH.max,
           (value) => setEdgeStrokeWidth(edge, value),
           EDGE_WIDTH.step
+        )
+      )
+    }
+    if (canSetLineStyle(edge)) {
+      this.host.appendChild(
+        choiceSelect('線の種類', LINE_STYLE_LABEL, getLineStyle(edge), (value: LineStyle) =>
+          setLineStyle(edge, value)
         )
       )
     }
@@ -780,6 +862,28 @@ function textAlignButtons(
   return wrap
 }
 
+/** 選択肢が固定の選択欄（値 → 表示名の表から作る） */
+function choiceSelect<T extends string>(
+  caption: string,
+  labels: Record<T, string>,
+  value: T,
+  onChange: (value: T) => void
+): HTMLElement {
+  const wrap = document.createElement('label')
+  wrap.textContent = caption
+  const select = document.createElement('select')
+  for (const [key, label] of Object.entries(labels) as [T, string][]) {
+    const opt = document.createElement('option')
+    opt.value = key
+    opt.textContent = label
+    select.appendChild(opt)
+  }
+  select.value = value
+  select.addEventListener('change', () => onChange(select.value as T))
+  wrap.appendChild(select)
+  return wrap
+}
+
 function fontFamilySelect(value: string, onChange: (value: string) => void): HTMLElement {
   const wrap = document.createElement('label')
   wrap.textContent = 'フォント'
@@ -866,7 +970,12 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
       text = '区切り線'
       break
     case 'text':
-      text = 'テキスト'
+      text = '付属テキスト'
+      break
+    case 'drawRect':
+    case 'drawText':
+    case 'drawArrow':
+      text = DRAWING_KIND_LABEL[kind]
       break
     case 'note':
       text = 'ノート'

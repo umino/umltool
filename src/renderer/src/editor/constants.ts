@@ -31,7 +31,12 @@ export const Z = {
   divider: 3,
   message: 4,
   attachLink: 5,
-  annotation: 20
+  annotation: 20,
+  /**
+   * 作図用の部品（角丸四角 / 矢印 / テキスト。issue #53）。図の上に描き足す
+   * 注記なので、ノートも含めた図の要素すべてより手前に置く
+   */
+  drawing: 30
 } as const
 
 /**
@@ -61,7 +66,10 @@ export const Z_BY_KIND: Partial<Record<CellKind, number>> = {
   flow: Z.message,
   attachLink: Z.attachLink,
   text: Z.annotation,
-  note: Z.annotation
+  note: Z.annotation,
+  drawRect: Z.drawing,
+  drawText: Z.drawing,
+  drawArrow: Z.drawing
 }
 
 /** 複数行テキストの水平揃え */
@@ -183,7 +191,10 @@ export const SHAPE = {
   rootTopic: 'uml-root-topic',
   topic: 'uml-topic',
   branch: 'uml-branch',
-  topicLink: 'uml-topic-link'
+  topicLink: 'uml-topic-link',
+  drawRect: 'uml-draw-rect',
+  drawText: 'uml-draw-text',
+  drawArrow: 'uml-draw-arrow'
 } as const
 
 // アクティビティ図のレイアウト定数
@@ -292,6 +303,65 @@ export const NOTE = {
   stroke: '#d9b441',
   textColor: '#5c4a12'
 } as const
+
+// ---- 作図用の部品（issue #53） ----
+//
+// シーケンス図・アクティビティ図の上に描き足す、図の意味を持たない図形。
+// 他の要素とは繋がらず（矢印の端点も点のまま）、動かしても何も追従しない。
+
+export type DrawingKind = 'drawRect' | 'drawText' | 'drawArrow'
+
+export function isDrawingKind(kind: string | undefined): kind is DrawingKind {
+  return kind === 'drawRect' || kind === 'drawText' || kind === 'drawArrow'
+}
+
+export const DRAWING_KIND_LABEL: Record<DrawingKind, string> = {
+  drawRect: '角丸四角',
+  drawText: 'テキスト',
+  drawArrow: '矢印'
+}
+
+export const DRAW = {
+  rect: {
+    width: 160,
+    height: 64,
+    minWidth: 24,
+    minHeight: 16,
+    radius: 8,
+    /** 文字の左右の余白（片側） */
+    padX: 10,
+    /** 文字の上下の余白（片側） */
+    padY: 8,
+    fontSize: 14,
+    strokeWidth: 1.5
+  },
+  arrow: { length: 160, strokeWidth: 1.6 }
+} as const
+
+/** 線の種類。作図用の四角と矢印で選べる */
+export type LineStyle = 'solid' | 'dashed' | 'dotted'
+
+export const LINE_STYLE_LABEL: Record<LineStyle, string> = {
+  solid: '実線',
+  dashed: '破線',
+  dotted: '点線'
+}
+
+/** 線の種類ごとの破線パターン（線の太さを掛けて使う。実線は無し） */
+export const LINE_STYLE_DASH: Record<LineStyle, [number, number] | null> = {
+  solid: null,
+  dashed: [4, 3],
+  dotted: [1, 2]
+}
+
+/** 矢印の矢じりをどちらに付けるか */
+export type ArrowHeads = 'end' | 'both' | 'none'
+
+export const ARROW_HEADS_LABEL: Record<ArrowHeads, string> = {
+  end: '終点に矢じり',
+  both: '両端に矢じり',
+  none: '矢じり無し（線）'
+}
 
 // ---- マインドマップ ----
 
@@ -465,6 +535,7 @@ export type CellKind =
   | MindmapNodeKind
   | 'branch'
   | 'topicLink'
+  | DrawingKind
   | 'unknown'
 
 export const ACTIVITY_KIND_LABEL: Record<

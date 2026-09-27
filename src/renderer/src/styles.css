@@ -511,6 +511,17 @@ body,
   outline-offset: 1px;
 }
 
+/* 部品パレットの区切り見出し（図の部品と作図用の部品を分ける） */
+.palette-heading {
+  margin: 10px 2px 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
 /* 選択の見え方: X6 既定のオレンジ＋影をアプリのアクセント色に寄せる。
    -box は選択された各セル、-inner は複数選択時に全体を囲む枠。 */
 .x6-widget-selection-box {
