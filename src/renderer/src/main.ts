@@ -2023,11 +2023,18 @@ B --> A : 返す`
               centerX: viewCenter.x,
               centerY: viewCenter.y + 40
             })
+            // 見たいのはレーンと中身の重なり順だけなので、サンプル図のノードや矢印が
+            // たまたま判定点を通っても拾わないよう、判定の間だけ隠す
+            const hiddenCells = graph
+              .getCells()
+              .filter((c) => c.id !== lane.id && c.id !== inside.id && c.isVisible())
+            hiddenCells.forEach((c) => c.hide())
             await new Promise((r) => setTimeout(r, 120))
             const box = lane.getBBox()
             const header = hitCellId({ x: box.center.x, y: box.y + ACTIVITY.laneHeaderHeight / 2 })
             const empty = hitCellId({ x: box.x + 40, y: box.y + 160 })
             const overNode = hitCellId(inside.getBBox().center)
+            hiddenCells.forEach((c) => c.show())
             activity['swimlaneGrip'] =
               header === lane.id && empty !== lane.id && overNode === inside.id
                 ? 'ok'
@@ -2493,6 +2500,21 @@ B --> A : 返す`
             mover.position(1500 - 75, 270 - 22)
             graph.trigger('node:moved', { node: mover })
           }
+          // 9. 斜めの位置関係（自動接続が角に付きやすい。issue #63）
+          {
+            const offsets: Array<[number, number]> = [
+              [-160, -90], [160, -90], [-160, 90], [160, 90],
+              [-90, -160], [90, -160], [-90, 160], [90, 160],
+              [-200, -40], [200, 40], [-40, -200], [40, 200]
+            ]
+            offsets.forEach(([dx, dy], i) => {
+              const cx = 400 + (i % 4) * 600
+              const cy = 1900 + Math.floor(i / 4) * 500
+              const a = act(`斜め元${i}`, cx, cy)
+              const b = act(`斜め先${i}`, cx + dx, cy + dy)
+              cases.push({ name: `diag${i}`, edge: addFlow(graph, a, b) })
+            })
+          }
           this.editor.normalizeBranchPorts()
           await wait(200)
           const nodes = graph.getNodes()
@@ -2511,6 +2533,23 @@ B --> A : 返す`
               .filter((n) => polylineEntersRect(pts, n.getBBox()))
               .map((n) => getNodeLabel(n) || getCellKind(n))
             if (hit.length > 0) results.push(`${name}:over(${hit.join('/')})`)
+            // 端点は辺の中央に付き、そこから辺に垂直に出入りする（角に付かない）
+            for (const end of ['source', 'target'] as const) {
+              const node = end === 'source' ? edge.getSourceNode() : edge.getTargetNode()
+              const p = end === 'source' ? view.sourcePoint : view.targetPoint
+              const next = end === 'source' ? pts[1] : pts[pts.length - 2]
+              if (!node || !next) continue
+              const b = node.getBBox()
+              const mids = [b.getTopCenter(), b.getBottomCenter(), b.getLeftMiddle(), b.getRightMiddle()]
+              const nearMid = mids.some((m) => Math.hypot(m.x - p.x, m.y - p.y) <= 4)
+              const isHorizontalSide = Math.abs(p.y - b.y) <= 4 || Math.abs(p.y - b.y - b.height) <= 4
+              const perpendicular = isHorizontalSide
+                ? Math.abs(next.x - p.x) <= 1
+                : Math.abs(next.y - p.y) <= 1
+              if (!nearMid || !perpendicular) {
+                results.push(`${name}:${end}(${Math.round(p.x - b.x)},${Math.round(p.y - b.y)})`)
+              }
+            }
           }
           activity['flowAvoidNodes'] =
             results.length === 0 ? `ok(${cases.length})` : `ng(${results.join(', ')})`
@@ -2695,14 +2734,14 @@ B --> A : 返す`
             mm.setCollapsed(target, true)
             mm.updateMindmapVisibility(graph)
             const hiddenNodes = graph.getNodes().filter((n) => !n.isVisible()).length
-            const hiddenEdges = graph.getEdges().filter((e) => !e.isVisible()).length
+            const hiddenCells = graph.getEdges().filter((e) => !e.isVisible()).length
             mm.setCollapsed(target, false)
             mm.updateMindmapVisibility(graph)
             const restored = graph.getCells().every((c) => c.isVisible())
             mindmap['collapse'] =
-              hiddenNodes === 2 && hiddenEdges === 2 && restored
+              hiddenNodes === 2 && hiddenCells === 2 && restored
                 ? 'ok'
-                : `ng(nodes=${hiddenNodes}, edges=${hiddenEdges}, restored=${restored})`
+                : `ng(nodes=${hiddenNodes}, edges=${hiddenCells}, restored=${restored})`
           }
         }
 
