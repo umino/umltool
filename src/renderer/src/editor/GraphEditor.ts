@@ -37,6 +37,7 @@ import {
   applyFrameHeader,
   applyLifelineGeometry,
   applyNoteGeometry,
+  applyArrowScale,
   centerlineY,
   getCellKind,
   getDividerGuard,
@@ -47,6 +48,7 @@ import {
   getTextAlign,
   getTextFontSize,
   isCodeTopic,
+  isRouteObstacle,
   normalizeLabelFor,
   registerShapes,
   setDividerGuard,
@@ -66,6 +68,7 @@ import {
   setFlowTerminalSide
 } from './activity'
 import { droppedSide, type Side } from './branchPorts'
+import { polylineEntersRect, type Pt } from './routeCheck'
 import { applyBranchStyle, arrangeMindmap, checkBranch, revealTopic } from './mindmap'
 import { activationDepths } from './activationNesting'
 import { closeInlineEditor, openInlineEditor } from './inlineEditor'
@@ -289,6 +292,7 @@ export class GraphEditor {
     this.wireActivityResize()
     this.wireCenterSnap()
     this.wireBranchPorts()
+    this.wireFlowReroute()
 
     // 新しく増えた分岐は、パレット・DSL・貼り付けのどれで来ても現在の図形に揃える
     this.graph.on('node:added', ({ node }: { node: Node }) => {
@@ -303,6 +307,9 @@ export class GraphEditor {
       if (z !== undefined && cell.getZIndex() !== z) {
         this.withNormalizing(() => cell.setZIndex(z))
       }
+      // 旧形式で保存された太い線も、矢じりの大きさと線の止め位置を今の形に揃える
+      // （値が合っていれば何も変えない）
+      if (cell.isEdge()) this.withNormalizing(() => applyArrowScale(cell as Edge))
     })
   }
 
@@ -367,6 +374,60 @@ export class GraphEditor {
       if (dx === 0 && dy === 0) return
       node.translate(dx, dy)
     })
+  }
+
+  // ---- ノードに重なったフローを引き直す ----
+
+  /**
+   * フローの経路は、その線の両端のノードが動いたときしか計算し直されない。
+   * そのため、繋がっていないノードを既存の線の上へ動かす（置く・大きくする）と、
+   * 線がノードの上にかぶったまま残る。
+   *
+   * ノードの移動・リサイズ・追加のたびに（1 フレームにまとめて）、そのノードの
+   * 内側を通っているフローだけを引き直す。経路の障害物マップは X6 が変更時に
+   * 作り直すので、引き直せば新しい位置を避けた経路になる。
+   */
+  private wireFlowReroute(): void {
+    const graph = this.graph
+    const pending = new Set<string>()
+    let scheduled = false
+
+    const flush = (): void => {
+      scheduled = false
+      const movers = [...pending]
+        .map((id) => graph.getCellById(id))
+        .filter((c): c is Node => c != null && c.isNode() && isRouteObstacle(c))
+      pending.clear()
+      if (movers.length === 0) return
+      for (const edge of graph.getEdges()) {
+        if (getCellKind(edge) !== 'flow') continue
+        const view = graph.findViewByCell(edge) as unknown as {
+          sourcePoint?: Pt
+          targetPoint?: Pt
+          routePoints?: Pt[]
+          update: () => void
+        } | null
+        if (!view?.sourcePoint || !view.targetPoint) continue
+        const points = [view.sourcePoint, ...(view.routePoints ?? []), view.targetPoint]
+        const ends = [edge.getSourceCellId(), edge.getTargetCellId()]
+        // 両端のノードの移動では X6 自身が引き直すので対象外
+        const covered = movers.some(
+          (n) => !ends.includes(n.id) && polylineEntersRect(points, n.getBBox())
+        )
+        if (covered) view.update()
+      }
+    }
+
+    const schedule = ({ node }: { node: Node }): void => {
+      pending.add(node.id)
+      if (scheduled) return
+      scheduled = true
+      requestAnimationFrame(flush)
+    }
+
+    graph.on('node:change:position', schedule)
+    graph.on('node:change:size', schedule)
+    graph.on('node:added', schedule)
   }
 
   // ---- 分岐/合流の枝が重ならないよう接続辺を割り当て直す ----
