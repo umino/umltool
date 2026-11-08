@@ -40,6 +40,7 @@ import {
 import { clampCenterlineY } from './centerline'
 import { normalizeCodeText } from './codeText'
 import { arrowGeometry, arrowTrim } from './arrowGeometry'
+import { sideAwareRoute, sideOfPointOnRect, type RectSide } from './routeCheck'
 
 const COLOR = {
   stroke: '#1d2330',
@@ -93,13 +94,56 @@ function registerFlowRouter(): void {
         original.apply(console, args)
       }
       try {
-        return routerPresets.manhattan.call(this as never, vertices, options, edgeView)
+        const view = edgeView as EdgeView
+        const opts = options as Record<string, unknown>
+        const sourceSide = opts.startDirections == null ? terminalSide(view, 'source') : null
+        const targetSide = opts.endDirections == null ? terminalSide(view, 'target') : null
+        const restricted: Record<string, unknown> = { ...opts }
+        if (sourceSide) restricted.startDirections = [sourceSide]
+        if (targetSide) restricted.endDirections = [targetSide]
+        if (sourceSide && targetSide && opts.fallbackRouter == null) {
+          // 経路が見つからないときも、辺から垂直に出入りする経路にする
+          restricted.fallbackRouter = function (
+            this: unknown,
+            fallbackVertices: Array<{ x: number; y: number }>,
+            fallbackOptions: unknown,
+            fallbackView: EdgeView
+          ) {
+            const s = fallbackView.sourceAnchor
+            const t = fallbackView.targetAnchor
+            if (fallbackVertices.length > 0 || !s || !t) {
+              return routerPresets.orth.call(
+                this as never,
+                fallbackVertices,
+                fallbackOptions as never,
+                fallbackView
+              )
+            }
+            return sideAwareRoute(s, sourceSide, t, targetSide).map((p) => new Point(p.x, p.y))
+          }
+        }
+        return routerPresets.manhattan.call(this as never, vertices, restricted as never, edgeView)
       } finally {
         console.warn = original
       }
     },
     true
   )
+}
+
+/**
+ * フローの端点が乗っているノードの辺。
+ *
+ * 端点（辺の中央やポート）がノードの輪郭上にあっても、manhattan は上下左右
+ * どの方向にも出られる。上辺中央から左へ出ると線が上辺に沿って走り、輪郭との
+ * 交点が角になってしまう（issue #63）。端点が 1 つの辺に乗っているときは、
+ * その辺の外向きにだけ出入りするよう制限するために使う。
+ */
+function terminalSide(view: EdgeView, side: 'source' | 'target'): RectSide | null {
+  const anchor = side === 'source' ? view.sourceAnchor : view.targetAnchor
+  const cell = side === 'source' ? view.cell.getSourceCell() : view.cell.getTargetCell()
+  if (!anchor || !cell?.isNode() || cell.getAngle() !== 0) return null
+  return sideOfPointOnRect(anchor, cell.getBBox())
 }
 
 /** マインドマップのツリー表示で使うルータ名 */
