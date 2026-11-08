@@ -69,7 +69,8 @@ export const Z_BY_KIND: Partial<Record<CellKind, number>> = {
   note: Z.annotation,
   drawRect: Z.drawing,
   drawText: Z.drawing,
-  drawArrow: Z.drawing
+  drawArrow: Z.drawing,
+  connector: Z.node
 }
 
 /** 複数行テキストの水平揃え */
@@ -194,7 +195,8 @@ export const SHAPE = {
   topicLink: 'uml-topic-link',
   drawRect: 'uml-draw-rect',
   drawText: 'uml-draw-text',
-  drawArrow: 'uml-draw-arrow'
+  drawArrow: 'uml-draw-arrow',
+  connector: 'uml-connector'
 } as const
 
 // アクティビティ図のレイアウト定数
@@ -302,6 +304,16 @@ export const NOTE = {
   fill: '#fffbe6',
   stroke: '#d9b441',
   textColor: '#5c4a12'
+} as const
+
+/**
+ * コネクタ（結合子。いわゆる「おたまじゃくし」）。中にラベルを書いた小さな円で、
+ * 同じラベルのコネクタ同士は線が続いていることを表す。全図種で使える。
+ */
+export const CONNECTOR = {
+  size: 32,
+  minSize: 16,
+  fontSize: 13
 } as const
 
 // ---- 作図用の部品（issue #53） ----
@@ -530,6 +542,7 @@ export type CellKind =
   | 'frame'
   | 'text'
   | 'note'
+  | 'connector'
   | 'attachLink'
   | 'flow'
   | MindmapNodeKind

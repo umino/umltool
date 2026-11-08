@@ -12,6 +12,7 @@ import {
   ACTIVATION,
   ACTIVITY,
   CODE_TOPIC,
+  CONNECTOR,
   DECISION_SHAPE_POINTS,
   DEFAULT_DECISION_SHAPE,
   DRAW,
@@ -63,7 +64,14 @@ const ROUTER_TRANSPARENT_SHAPES = [
   SHAPE.note,
   SHAPE.text,
   SHAPE.drawRect,
-  SHAPE.drawText
+  SHAPE.drawText,
+  // シーケンス図の要素。フローがここに来るのはコネクタとの線だけで、生存線の
+  // 中から出るので、縦長の箱を避けて大回りしないよう障害物にしない
+  SHAPE.lifeline,
+  SHAPE.activation,
+  SHAPE.fragment,
+  SHAPE.fragmentBg,
+  SHAPE.fragmentDivider
 ]
 
 /** フロー用のルータ名（manhattan を包んだもの） */
@@ -565,6 +573,31 @@ export function registerShapes(): void {
           stroke: 'none',
           cursor: 'move'
         }
+      },
+      ports: activityPorts
+    },
+    true
+  )
+
+  // ---- コネクタ（結合子）: ラベル入りの小さな円。全図種で使う ----
+  Graph.registerNode(
+    SHAPE.connector,
+    {
+      markup: [
+        { tagName: 'circle', selector: 'body' },
+        { tagName: 'text', selector: 'label' }
+      ],
+      attrs: {
+        body: {
+          refCx: '50%',
+          refCy: '50%',
+          refR: '50%',
+          fill: '#ffffff',
+          stroke: COLOR.stroke,
+          strokeWidth: 1.5,
+          cursor: 'move'
+        },
+        label: { ...centeredLabel, fontSize: CONNECTOR.fontSize, fontWeight: 'bold' }
       },
       ports: activityPorts
     },
@@ -1395,6 +1428,7 @@ const STYLE_TARGETS: Partial<Record<CellKind, StyleTargets>> = {
   final: { fill: ['outer'], stroke: ['outer', 'inner'], label: null },
   fork: { fill: ['body'], stroke: [], label: null },
   join: { fill: ['body'], stroke: [], label: null },
+  connector: { fill: ['body'], stroke: ['body'], label: 'label' },
   swimlane: { fill: ['body'], stroke: ['body', 'header'], label: 'label' },
   frame: { fill: ['body'], stroke: ['body', 'tab'], label: 'label' },
   text: { fill: [], stroke: [], label: 'label' },

@@ -185,6 +185,15 @@ function createWindow(): void {
             await writeFile(outLink, Buffer.from(linkPng.split(',')[1], 'base64'))
             console.log(`[DIAG-PNG-LINK] ${outLink}`)
           }
+          const connectorPngs = (await mainWindow!.webContents.executeJavaScript(
+            'window.__connectorPngs ?? {}'
+          )) as Record<string, string>
+          for (const [type, png] of Object.entries(connectorPngs)) {
+            if (typeof png !== 'string' || !png.startsWith('data:image/png')) continue
+            const out = join(process.cwd(), `diag-output-connector-${type}.png`)
+            await writeFile(out, Buffer.from(png.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-CONNECTOR] ${out}`)
+          }
           const svg = await mainWindow!.webContents.executeJavaScript(
             'window.__umlExportSvg ? window.__umlExportSvg() : ""'
           )

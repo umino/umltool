@@ -15,7 +15,8 @@ const ACTIVITY_KINDS: CellKind[] = [
   'initial',
   'final',
   'fork',
-  'join'
+  'join',
+  'connector'
 ]
 const MINDMAP_KINDS: CellKind[] = ['rootTopic', 'topic']
 

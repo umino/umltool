@@ -90,6 +90,7 @@ import {
 import {
   ACTIVITY_KIND_LABEL,
   ACTIVITY_MIN_SIZE,
+  CONNECTOR,
   ARROW_HEADS_LABEL,
   DRAWING_KIND_LABEL,
   LINE_STYLE_LABEL,
@@ -382,6 +383,30 @@ export class PropertiesPanel {
       return true
     }
 
+    if (kind === 'connector') {
+      const node = cell as Node
+      this.host.appendChild(
+        labelInput('ラベル', getNodeLabel(node), (value) => {
+          setNodeLabel(node, value)
+        })
+      )
+      this.appendSizeSection(node)
+      const label = getNodeLabel(node)
+      const peers = this.editor.graph
+        .getNodes()
+        .filter((n) => getCellKind(n) === 'connector' && n.id !== node.id && getNodeLabel(n) === label)
+      this.host.appendChild(
+        hint(
+          (peers.length === 0
+            ? `同じラベル「${label}」のコネクタがまだありません。`
+            : `同じラベル「${label}」のコネクタが他に ${peers.length} 個あります。`) +
+            '同じラベルのコネクタ同士で線が続いていることを表します。' +
+            'ポートからドラッグして矢印を繋げます。'
+        )
+      )
+      return true
+    }
+
     if (kind === 'flow') {
       const edge = cell as Edge
       this.host.appendChild(
@@ -515,7 +540,9 @@ export class PropertiesPanel {
       ? ACTIVITY_MIN_SIZE[kind]
       : isMindmapNodeKind(kind)
         ? MINDMAP_MIN_SIZE[kind]
-        : { width: 1, height: 1 }
+        : kind === 'connector'
+          ? { width: CONNECTOR.minSize, height: CONNECTOR.minSize }
+          : { width: 1, height: 1 }
 
     const resize = (w: number, h: number): void => {
       const bbox = node.getBBox()
@@ -977,6 +1004,9 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
     case 'drawText':
     case 'drawArrow':
       text = DRAWING_KIND_LABEL[kind]
+      break
+    case 'connector':
+      text = 'コネクタ（結合子）'
       break
     case 'note':
       text = 'ノート'
