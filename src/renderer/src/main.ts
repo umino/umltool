@@ -2410,6 +2410,183 @@ B --> A : 返す`
         activity['error'] = (e as Error).message
       }
 
+      // フローの経路がノードの上を通らないか（矢印がノードにかぶる問題）。
+      // かぶりやすい配置を並べ、各フローの折れ線がどのノードの内側も通らないことを見る
+      {
+        const { polylineEntersRect } = await import('./editor/routeCheck')
+        const { setFlowPort, markTerminalManual } = await import('./editor/activity')
+        const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+        const results: string[] = []
+        try {
+          graph.clearCells()
+          const act = (label: string, x: number, y: number): Node =>
+            addActivityNode(graph, 'action', label, { centerX: x, centerY: y })
+          const fix = (e: Edge, node: Node, side: 'top' | 'right' | 'bottom' | 'left'): void => {
+            const end = e.getSourceCellId() === node.id ? 'source' : 'target'
+            setFlowPort(e, node, side)
+            markTerminalManual(e, end)
+          }
+          const cases: Array<{ name: string; edge: Edge }> = []
+          // 1. 戻りの線（下 → 上）。自動の接続辺
+          {
+            const a = act('戻り元', 200, 300)
+            const b = act('戻り先', 200, 120)
+            cases.push({ name: 'back', edge: addFlow(graph, a, b) })
+          }
+          // 2. 出口を下に固定したまま、相手は真横
+          {
+            const a = act('下固定', 500, 120)
+            const b = act('真横', 760, 120)
+            const e = addFlow(graph, a, b)
+            fix(e, a, 'bottom')
+            fix(e, b, 'top')
+            cases.push({ name: 'fixedBottomSide', edge: e })
+          }
+          // 3. 入口を左に固定、相手は左側
+          {
+            const a = act('左へ', 1100, 120)
+            const b = act('入口左', 950, 300)
+            const e = addFlow(graph, a, b)
+            fix(e, b, 'left')
+            cases.push({ name: 'fixedLeftFromRight', edge: e })
+          }
+          // 4. 間隔の狭いノード（余白 12px×2 より近い）
+          {
+            const a = act('近い上', 200, 520)
+            const b = act('近い下', 200, 580)
+            const c = act('近い横', 420, 550)
+            cases.push({ name: 'tightGap', edge: addFlow(graph, a, c) })
+            cases.push({ name: 'tightGap2', edge: addFlow(graph, b, a) })
+          }
+          // 5. 間に別のノードがある縦の線
+          {
+            const a = act('上', 600, 450)
+            act('間', 600, 560)
+            const b = act('下', 600, 670)
+            cases.push({ name: 'obstacleBetween', edge: addFlow(graph, a, b) })
+          }
+          // 6. 遠い相手（探索回数の上限に掛かりやすい）
+          {
+            const a = act('遠い元', 200, 800)
+            for (let i = 0; i < 6; i++) act(`障害${i}`, 400 + i * 220, 900 + (i % 2) * 120)
+            const b = act('遠い先', 1700, 1500)
+            cases.push({ name: 'far', edge: addFlow(graph, a, b) })
+          }
+          // 7. 分岐の枝が上と左上へ戻る
+          {
+            const d = addActivityNode(graph, 'decision', '条件?', { centerX: 1100, centerY: 600 })
+            const up = act('上へ戻る', 1100, 450)
+            const ul = act('左上へ', 900, 500)
+            const into = act('入口', 1100, 750)
+            cases.push({ name: 'decisionUp', edge: addFlow(graph, d, up) })
+            cases.push({ name: 'decisionUpLeft', edge: addFlow(graph, d, ul) })
+            cases.push({ name: 'decisionIn', edge: addFlow(graph, into, d) })
+          }
+          // 8. 既にある線の上へ、繋がっていないノードを後から動かして重ねる
+          {
+            const a = act('既存の上', 1500, 120)
+            const b = act('既存の下', 1500, 420)
+            cases.push({ name: 'movedOnto', edge: addFlow(graph, a, b) })
+            await wait(100)
+            const mover = act('後から来た', 1800, 270)
+            await wait(100)
+            mover.position(1500 - 75, 270 - 22)
+            graph.trigger('node:moved', { node: mover })
+          }
+          this.editor.normalizeBranchPorts()
+          await wait(200)
+          const nodes = graph.getNodes()
+          for (const { name, edge } of cases) {
+            const view = graph.findViewByCell(edge) as unknown as {
+              sourcePoint?: { x: number; y: number }
+              targetPoint?: { x: number; y: number }
+              routePoints?: Array<{ x: number; y: number }>
+            } | null
+            if (!view?.sourcePoint || !view.targetPoint) {
+              results.push(`${name}:no-view`)
+              continue
+            }
+            const pts = [view.sourcePoint, ...(view.routePoints ?? []), view.targetPoint]
+            const hit = nodes
+              .filter((n) => polylineEntersRect(pts, n.getBBox()))
+              .map((n) => getNodeLabel(n) || getCellKind(n))
+            if (hit.length > 0) results.push(`${name}:over(${hit.join('/')})`)
+          }
+          activity['flowAvoidNodes'] =
+            results.length === 0 ? `ok(${cases.length})` : `ng(${results.join(', ')})`
+          ;(window as unknown as Record<string, unknown>).__routePng = await exportGraphToDataUrl(
+            graph,
+            'png',
+            { pixelRatio: 1 }
+          )
+        } catch (e) {
+          activity['flowAvoidNodes'] = `error: ${(e as Error).message}`
+        }
+      }
+
+      // 太い線の矢じり: 線の太さに対して矢じりが小さく、線の端がはみ出さないか（見た目確認用）
+      try {
+        const s = await import('./editor/shapes')
+        const { addDrawArrow } = await import('./editor/drawing')
+        graph.clearCells()
+        const widths = [1.5, 3, 5, 8, 12]
+        const flows: Edge[] = []
+        widths.forEach((w, i) => {
+          const x = 120 + i * 200
+          const a = addActivityNode(graph, 'action', `w=${w}`, { centerX: x, centerY: 60 })
+          const b = addActivityNode(graph, 'action', 'フロー', { centerX: x, centerY: 260 })
+          const flow = addFlow(graph, a, b)
+          s.setEdgeStrokeWidth(flow, w)
+          flows.push(flow)
+          const arrow = addDrawArrow(graph, { x, y: 380 })
+          s.setEdgeStrokeWidth(arrow, w)
+          s.setArrowHeads(arrow, 'both')
+          // メッセージ（同期＝塗り / 非同期＝開 / 戻り＝破線の開）
+          ;(['sync', 'async', 'return'] as const).forEach((kind, j) => {
+            const y = 470 + j * 80
+            const from = addActivityNode(graph, 'merge', '', { centerX: x - 75, centerY: y })
+            const to = addActivityNode(graph, 'merge', '', { centerX: x + 75, centerY: y })
+            const msg = graph.addEdge({
+              shape: SHAPE.message,
+              source: { cell: from.id, connectionPoint: { name: 'boundary' } },
+              target: { cell: to.id, connectionPoint: { name: 'boundary' } },
+              data: { kind: 'message', msgKind: kind }
+            })
+            s.setMessageKind(msg, kind)
+            s.setEdgeStrokeWidth(msg, w)
+          })
+        })
+        await new Promise((r) => setTimeout(r, 200))
+        // 線は矢じりの内側で止まり（終点より手前）、矢じりの先端は元の終点のまま
+        const bad: string[] = []
+        flows.forEach((flow, i) => {
+          const view = graph.findViewByCell(flow) as unknown as {
+            targetPoint?: { x: number; y: number }
+            getConnection?: () => { end?: { x: number; y: number } } | null
+          } | null
+          const tp = view?.targetPoint
+          const end = view?.getConnection?.()?.end
+          if (!tp || !end) {
+            bad.push(`w${widths[i]}:no-view`)
+            return
+          }
+          const gap = Math.hypot(tp.x - end.x, tp.y - end.y)
+          // 開矢印: 線の太さ ＋ 頂点のマイター（√5/2 × 太さ）だけ手前で止まる
+          const expected = widths[i] * (1 + Math.sqrt(5) / 2)
+          if (Math.abs(gap - expected) > 1.5) bad.push(`w${widths[i]}:gap=${gap.toFixed(1)}/${expected.toFixed(1)}`)
+          const size = Number((flow.attr('line/targetMarker') as { size?: number }).size)
+          if (widths[i] >= 5 && size < widths[i] * 3) bad.push(`w${widths[i]}:size=${size}`)
+        })
+        activity['thickArrow'] = bad.length === 0 ? 'ok' : `ng(${bad.join(', ')})`
+        ;(window as unknown as Record<string, unknown>).__arrowPng = await exportGraphToDataUrl(
+          graph,
+          'png',
+          { pixelRatio: 2 }
+        )
+      } catch (e) {
+        activity['thickArrow'] = `error: ${(e as Error).message}`
+      }
+
       // マインドマップ: 生成・2 つの配置・折りたたみ・ラウンドトリップ検証
       // （最後にアクティビティ図へ戻すので、DIAG-PNG の中身は変わらない）
       const mindmap: Record<string, unknown> = {}
