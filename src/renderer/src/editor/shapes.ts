@@ -6,7 +6,7 @@
 //     Y をノード範囲にクランプし (中心X, y) へ投影するため、常に水平になる
 //   - 中央 vertex を上下ドラッグするとメッセージ全体が連続的に上下移動する
 
-import { Graph, Point, routerPresets } from '@antv/x6'
+import { Graph, Point, connectorRegistry, routerPresets } from '@antv/x6'
 import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
 import {
   ACTIVATION,
@@ -40,6 +40,8 @@ import {
 } from './constants'
 import { clampCenterlineY } from './centerline'
 import { normalizeCodeText } from './codeText'
+import { arrowGeometry, arrowTrim } from './arrowGeometry'
+import { sideAwareRoute, sideOfPointOnRect, type RectSide } from './routeCheck'
 
 const COLOR = {
   stroke: '#1d2330',
@@ -74,7 +76,12 @@ const ROUTER_TRANSPARENT_SHAPES = [
   SHAPE.fragmentDivider
 ]
 
-/** フロー用のルータ名（manhattan を包んだもの） */
+/** フローの経路探索で避ける（＝障害物になる）ノードか */
+export function isRouteObstacle(node: Node): boolean {
+  return !(ROUTER_TRANSPARENT_SHAPES as string[]).includes(node.shape)
+}
+
+/** フローのルータ名（manhattan を包んだもの） */
 export const FLOW_ROUTER = 'uml-manhattan'
 
 const MANHATTAN_FAILURE_WARNING = 'Unable to execute manhattan algorithm'
@@ -95,13 +102,56 @@ function registerFlowRouter(): void {
         original.apply(console, args)
       }
       try {
-        return routerPresets.manhattan.call(this as never, vertices, options, edgeView)
+        const view = edgeView as EdgeView
+        const opts = options as Record<string, unknown>
+        const sourceSide = opts.startDirections == null ? terminalSide(view, 'source') : null
+        const targetSide = opts.endDirections == null ? terminalSide(view, 'target') : null
+        const restricted: Record<string, unknown> = { ...opts }
+        if (sourceSide) restricted.startDirections = [sourceSide]
+        if (targetSide) restricted.endDirections = [targetSide]
+        if (sourceSide && targetSide && opts.fallbackRouter == null) {
+          // 経路が見つからないときも、辺から垂直に出入りする経路にする
+          restricted.fallbackRouter = function (
+            this: unknown,
+            fallbackVertices: Array<{ x: number; y: number }>,
+            fallbackOptions: unknown,
+            fallbackView: EdgeView
+          ) {
+            const s = fallbackView.sourceAnchor
+            const t = fallbackView.targetAnchor
+            if (fallbackVertices.length > 0 || !s || !t) {
+              return routerPresets.orth.call(
+                this as never,
+                fallbackVertices,
+                fallbackOptions as never,
+                fallbackView
+              )
+            }
+            return sideAwareRoute(s, sourceSide, t, targetSide).map((p) => new Point(p.x, p.y))
+          }
+        }
+        return routerPresets.manhattan.call(this as never, vertices, restricted as never, edgeView)
       } finally {
         console.warn = original
       }
     },
     true
   )
+}
+
+/**
+ * フローの端点が乗っているノードの辺。
+ *
+ * 端点（辺の中央やポート）がノードの輪郭上にあっても、manhattan は上下左右
+ * どの方向にも出られる。上辺中央から左へ出ると線が上辺に沿って走り、輪郭との
+ * 交点が角になってしまう（issue #63）。端点が 1 つの辺に乗っているときは、
+ * その辺の外向きにだけ出入りするよう制限するために使う。
+ */
+function terminalSide(view: EdgeView, side: 'source' | 'target'): RectSide | null {
+  const anchor = side === 'source' ? view.sourceAnchor : view.targetAnchor
+  const cell = side === 'source' ? view.cell.getSourceCell() : view.cell.getTargetCell()
+  if (!anchor || !cell?.isNode() || cell.getAngle() !== 0) return null
+  return sideOfPointOnRect(anchor, cell.getBBox())
 }
 
 /** マインドマップのツリー表示で使うルータ名 */
@@ -127,10 +177,26 @@ function registerTreeRouter(): void {
   )
 }
 
+/**
+ * 種別ごとの矢じりの既定の大きさ。線を太くするとこれを下限に大きくなる
+ * （arrowGeometry。線の終点は矢じりの内側で止める）。
+ */
+const ARROW_BASE_SIZE: Partial<Record<CellKind, number>> = {
+  message: 12,
+  flow: 12,
+  topicLink: 9,
+  drawArrow: 10
+}
+
+/** 既定の太さ 1.5 の線に付ける矢じり（refX も既定の太さで決めておく） */
+const DEFAULT_FILLED_GEOMETRY = arrowGeometry(12, 1.5, false)
+const DEFAULT_OPEN_GEOMETRY = arrowGeometry(12, 1.5, true)
+
 /** 塗り矢印（同期） */
 const MARKER_FILLED = {
   name: 'block',
-  size: 12,
+  size: DEFAULT_FILLED_GEOMETRY.size,
+  refX: DEFAULT_FILLED_GEOMETRY.refX,
   fill: COLOR.stroke,
   stroke: COLOR.stroke
 } as const
@@ -139,11 +205,82 @@ const MARKER_FILLED = {
 const MARKER_OPEN = {
   name: 'block',
   open: true,
-  size: 12,
+  size: DEFAULT_OPEN_GEOMETRY.size,
+  refX: DEFAULT_OPEN_GEOMETRY.refX,
   fill: 'none',
   stroke: COLOR.stroke,
   strokeWidth: 1.5
 } as const
+
+/**
+ * 線の終点を矢じりの内側で止めるコネクタ。既存のコネクタ（args.base）を包み、
+ * 矢じりのある端だけ、終点を最後の区間に沿って手前へ縮めてから渡す。
+ * 縮める量は矢じりの refX から決まるので、先端の位置は元の終点のまま。
+ */
+export const TRIM_CONNECTOR = 'uml-trimmed'
+
+interface BlockMarker {
+  name?: string
+  open?: boolean
+  size?: number
+  refX?: number
+  strokeWidth?: number
+}
+
+/** 矢じりのある端で、線をどれだけ手前で止めるか（refX を持たない旧形式は 0） */
+function markerTrimOf(edge: Edge, name: 'targetMarker' | 'sourceMarker'): number {
+  const m = edge.attr(`line/${name}`) as BlockMarker | null | undefined
+  if (m == null || typeof m !== 'object' || m.name !== 'block') return 0
+  if (typeof m.refX !== 'number') return 0
+  // 始点側は refX の符号が逆（markerRefX 参照）なので大きさだけを使う
+  return arrowTrim(-Math.abs(m.refX), m.open === true, Number(m.strokeWidth) || 1)
+}
+
+/**
+ * 端ごとの refX。X6 は終点の矢じりだけ 180° 回して描くので、先端を線の先へ
+ * 出すには、終点は負、始点は正の refX にする。
+ */
+function markerRefX(name: 'targetMarker' | 'sourceMarker', refX: number): number {
+  return name === 'sourceMarker' ? -refX : refX
+}
+
+/** 点 p を toward の方向へ d だけ動かす（区間が短いときは半分弱まで） */
+function moveToward(p: Point, toward: Point | undefined, d: number): Point {
+  if (d <= 0 || toward == null) return p
+  const len = p.distance(toward)
+  if (len === 0) return p
+  return p.clone().move(toward, -Math.min(d, len * 0.45))
+}
+
+function registerTrimConnector(): void {
+  Graph.registerConnector(
+    TRIM_CONNECTOR,
+    function (
+      this: EdgeView,
+      sourcePoint: Point,
+      targetPoint: Point,
+      routePoints: Point[],
+      options: { base?: string; [key: string]: unknown }
+    ) {
+      const { base, ...rest } = options
+      const fn = (connectorRegistry.get(base ?? 'normal') ??
+        connectorRegistry.get('normal')) as unknown as (...args: unknown[]) => unknown
+      const edge = this.cell as Edge
+      // X6 は矢じりのある端を線の太さぶん縮めた点を渡してくる。縮める量は
+      // こちらで決めるので、縮める前の本来の端点（接続点）から測り直す
+      const view = this as unknown as { sourcePoint?: Point; targetPoint?: Point }
+      const sourceMarker = markerTrimOf(edge, 'sourceMarker')
+      const targetMarker = markerTrimOf(edge, 'targetMarker')
+      const from = sourceMarker > 0 && view.sourcePoint ? view.sourcePoint : sourcePoint
+      const to = targetMarker > 0 && view.targetPoint ? view.targetPoint : targetPoint
+      const pts = [from, ...routePoints.map((p) => Point.create(p)), to]
+      const s = moveToward(Point.create(from), pts[1], sourceMarker)
+      const t = moveToward(Point.create(to), pts[pts.length - 2], targetMarker)
+      return fn.call(this, s, t, routePoints, rest, this)
+    } as never,
+    true
+  )
+}
 
 /**
  * ラベルを持つエッジ種別の既定文字スタイル。
@@ -170,6 +307,7 @@ export function registerShapes(): void {
 
   registerFlowRouter()
   registerTreeRouter()
+  registerTrimConnector()
 
   // ---- ライフライン: ヘッダ矩形 + 破線の生存線 + 接続用ヒット領域 ----
   // X6 v3 に calc() 構文は無いため、サイズ依存の座標は lifelineGeometryAttrs で
@@ -244,6 +382,7 @@ export function registerShapes(): void {
   Graph.registerEdge(
     SHAPE.message,
     {
+      connector: { name: TRIM_CONNECTOR },
       attrs: {
         line: {
           stroke: COLOR.stroke,
@@ -881,6 +1020,7 @@ export function registerShapes(): void {
     SHAPE.drawArrow,
     {
       zIndex: Z.drawing,
+      connector: { name: TRIM_CONNECTOR },
       attrs: {
         line: {
           stroke: COLOR.stroke,
@@ -930,7 +1070,7 @@ export function registerShapes(): void {
         args: { padding: 12, excludeShapes: ROUTER_TRANSPARENT_SHAPES }
       },
       zIndex: Z.message,
-      connector: { name: 'rounded', args: { radius: 8 } },
+      connector: { name: TRIM_CONNECTOR, args: { base: 'rounded', radius: 8 } },
       attrs: {
         line: {
           stroke: COLOR.stroke,
@@ -1033,6 +1173,7 @@ export function registerShapes(): void {
     SHAPE.topicLink,
     {
       zIndex: Z.branch,
+      connector: { name: TRIM_CONNECTOR },
       attrs: {
         line: {
           stroke: TOPIC_LINK_COLOR,
@@ -1040,7 +1181,7 @@ export function registerShapes(): void {
           strokeDasharray: '6 4',
           targetMarker: {
             name: 'block',
-            size: 9,
+            ...arrowGeometry(9, 1.6, false),
             fill: TOPIC_LINK_COLOR,
             stroke: TOPIC_LINK_COLOR,
             strokeDasharray: 'none'
@@ -1706,6 +1847,41 @@ export function setEdgeStrokeWidth(edge: Edge, width: number): void {
   }
   if (edge.attr('wrap') != null) edge.attr('wrap/strokeWidth', Math.max(12, width + 8))
   if (canSetLineStyle(edge)) applyLineDash(edge)
+  // 戻りメッセージの破線も太さに合わせて粗くする（細かいままだと梯子状に見える）
+  if (getCellKind(edge) === 'message' && getMessageKind(edge) === 'return') {
+    const k = Math.max(1, width / 1.5)
+    edge.attr('line/strokeDasharray', `${5 * k} ${3 * k}`)
+  }
+  applyArrowScale(edge)
+}
+
+/**
+ * 矢じりの大きさを線の太さに合わせ、線の終点を矢じりの内側で止める設定にする。
+ *
+ * 太い線に既定の大きさの矢じりのままだと、線の端が矢じりの外へはみ出したり
+ * 開矢印の V 字が線に埋もれたりする。値が既に合っていれば何も変えないので、
+ * 読み込み時・追加時に呼んでも履歴を汚さない。
+ */
+export function applyArrowScale(edge: Edge): void {
+  const base = ARROW_BASE_SIZE[getCellKind(edge)]
+  if (base === undefined) return
+  const width = getEdgeStrokeWidth(edge)
+  let hasArrow = false
+  for (const name of ['targetMarker', 'sourceMarker'] as const) {
+    const m = edge.attr(`line/${name}`) as BlockMarker | null | undefined
+    if (m == null || typeof m !== 'object' || m.name !== 'block') continue
+    hasArrow = true
+    const g = arrowGeometry(base, width, m.open === true)
+    const refX = markerRefX(name, g.refX)
+    if (m.size !== g.size) edge.attr(`line/${name}/size`, g.size)
+    if (m.refX !== refX) edge.attr(`line/${name}/refX`, refX)
+  }
+  // 旧形式で保存された図は、コネクタが縮めない既定（rounded など）のまま入って
+  // くることがある。矢じりがあるなら縮めるコネクタで包み直す
+  const connector = edge.getConnector() as { name?: string; args?: object } | undefined
+  if (hasArrow && connector?.name !== TRIM_CONNECTOR) {
+    edge.setConnector(TRIM_CONNECTOR, { base: connector?.name ?? 'normal', ...connector?.args })
+  }
 }
 
 /**
@@ -1841,8 +2017,9 @@ export { ACTIVATION, LIFELINE, MESSAGE }
 // ---- 作図用の部品（issue #53）: 線の種類・線の太さ・矢じり ----
 
 /** 矢じりの形。線と同じ色で塗る（破線にしても矢じりは実線のまま） */
-function drawArrowMarker(color: string): { [key: string]: string | number } {
-  return { name: 'block', size: 10, fill: color, stroke: color, strokeDasharray: 'none' }
+function drawArrowMarker(color: string, width: number): { [key: string]: string | number } {
+  const g = arrowGeometry(ARROW_BASE_SIZE.drawArrow ?? 10, width, false)
+  return { name: 'block', ...g, fill: color, stroke: color, strokeDasharray: 'none' }
 }
 
 /** 線の種類を選べる要素か（作図用の四角と矢印） */
@@ -1906,7 +2083,9 @@ export function getArrowHeads(edge: Edge): ArrowHeads {
 
 export function setArrowHeads(edge: Edge, heads: ArrowHeads): void {
   if (getCellKind(edge) !== 'drawArrow') return
-  const marker = drawArrowMarker(getEdgeStroke(edge))
+  const marker = drawArrowMarker(getEdgeStroke(edge), getEdgeStrokeWidth(edge))
   edge.attr('line/targetMarker', heads === 'none' ? null : marker)
   edge.attr('line/sourceMarker', heads === 'both' ? marker : null)
+  // 始点側の矢じりは refX の向きが逆なので、端ごとに整え直す
+  applyArrowScale(edge)
 }

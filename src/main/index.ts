@@ -194,6 +194,22 @@ function createWindow(): void {
             await writeFile(out, Buffer.from(png.split(',')[1], 'base64'))
             console.log(`[DIAG-PNG-CONNECTOR] ${out}`)
           }
+          const arrowPng = await mainWindow!.webContents.executeJavaScript(
+            'window.__arrowPng ?? ""'
+          )
+          if (typeof arrowPng === 'string' && arrowPng.startsWith('data:image/png')) {
+            const outArrow = join(process.cwd(), 'diag-output-arrow.png')
+            await writeFile(outArrow, Buffer.from(arrowPng.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-ARROW] ${outArrow}`)
+          }
+          const routePng = await mainWindow!.webContents.executeJavaScript(
+            'window.__routePng ?? ""'
+          )
+          if (typeof routePng === 'string' && routePng.startsWith('data:image/png')) {
+            const outRoute = join(process.cwd(), 'diag-output-route.png')
+            await writeFile(outRoute, Buffer.from(routePng.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-ROUTE] ${outRoute}`)
+          }
           const svg = await mainWindow!.webContents.executeJavaScript(
             'window.__umlExportSvg ? window.__umlExportSvg() : ""'
           )
