@@ -14,6 +14,7 @@ import type { Cell, Edge, EdgeView, Node } from '@antv/x6'
 import {
   ACTIVATION,
   ACTIVITY_MIN_SIZE,
+  CONNECTOR,
   DEFAULT_DECISION_SHAPE,
   DRAW,
   FRAGMENT,
@@ -102,9 +103,15 @@ const CONNECTABLE_KINDS = new Set([
   'final',
   'fork',
   'join',
+  'connector',
   'rootTopic',
   'topic'
 ])
+
+/** コネクタ（結合子）か。どの図種でも、コネクタに繋ぐ線はフロー（矢印）にする */
+function isConnector(cell: Cell | null | undefined): boolean {
+  return getCellKind(cell) === 'connector'
+}
 
 /**
  * 線の端点を付け替えるハンドル（半径 5 の丸）。
@@ -173,8 +180,10 @@ export class GraphEditor {
         highlight: true,
         anchor: SHAPE.centerlineAnchor,
         connectionPoint: 'anchor',
-        createEdge: () => {
-          if (this.mode === 'activity') {
+        createEdge: ({ sourceCell }: { sourceCell?: Cell | null }) => {
+          // コネクタから引き出す線は図種に関わらずフロー。逆向き（ライフライン・
+          // トピックからコネクタへ）は edge:connected でフローに置き換える
+          if (this.mode === 'activity' || isConnector(sourceCell)) {
             return graphRef!.createEdge({ shape: SHAPE.flow, data: { kind: 'flow' } })
           }
           if (this.mode === 'mindmap') {
@@ -191,6 +200,10 @@ export class GraphEditor {
           const ok = (c: Cell | null | undefined): boolean =>
             CONNECTABLE_KINDS.has(getCellKind(c))
           if (!ok(sourceCell) || !ok(targetCell)) return false
+          // コネクタが絡む線は確定後にフローとして扱うので、図種の制約は掛けない
+          if (isConnector(sourceCell) || isConnector(targetCell)) return true
+          // コネクタ以外どうしをフローで結べるのはアクティビティ図だけ
+          if (getCellKind(edge) === 'flow' && this.mode !== 'activity') return false
           // 枝は「親 → 子」の木なので、二重の親や輪になる繋ぎ方は受け付けない
           if (this.mode === 'mindmap') {
             if (!sourceCell?.isNode() || !targetCell?.isNode()) return false
@@ -242,6 +255,7 @@ export class GraphEditor {
               kind === 'note' ||
               kind === 'drawRect' ||
               kind === 'drawText' ||
+              kind === 'connector' ||
               isActivityNodeKind(kind) ||
               isMindmapNodeKind(kind)
             )
@@ -258,6 +272,7 @@ export class GraphEditor {
             if (kind === 'note') return NOTE.minWidth
             if (kind === 'drawRect') return DRAW.rect.minWidth
             if (kind === 'drawText') return TEXT.minWidth
+            if (kind === 'connector') return CONNECTOR.minSize
             return 60
           },
           minHeight: (node: Node) => {
@@ -272,12 +287,13 @@ export class GraphEditor {
             if (kind === 'note') return NOTE.minHeight
             if (kind === 'drawRect') return DRAW.rect.minHeight
             if (kind === 'drawText') return TEXT.minHeight
+            if (kind === 'connector') return CONNECTOR.minSize
             return LIFELINE.headHeight + 60
           },
           // 開始/終了は真円で描かれる（refR は 50%）ので縦横比を保つ
           preserveAspectRatio: (node: Node) => {
             const kind = getCellKind(node)
-            return kind === 'initial' || kind === 'final'
+            return kind === 'initial' || kind === 'final' || kind === 'connector'
           }
         },
         rotating: false
@@ -334,7 +350,7 @@ export class GraphEditor {
     // からポインタまでの距離で新しいサイズを決めるので、途中で位置を動かすと
     // 次の mousemove でその分さらに大きくなり、際限なく膨らんでしまう。
     this.graph.on('node:resize', ({ node }: { node: Node }) => {
-      if (!isActivityNodeKind(getCellKind(node))) return
+      if (!isActivityNodeKind(getCellKind(node)) && !isConnector(node)) return
       this.resizeCenters.set(node.id, node.getBBox().center)
     })
     this.graph.on('node:resized', ({ node }: { node: Node }) => {
@@ -362,7 +378,7 @@ export class GraphEditor {
   private wireCenterSnap(): void {
     this.graph.on('node:moved', ({ node }: { node: Node }) => {
       if (this.mode !== 'activity' || this.normalizing) return
-      if (!isActivityNodeKind(getCellKind(node))) return
+      if (!isActivityNodeKind(getCellKind(node)) && !isConnector(node)) return
       if (this.graph.getSelectedCells().filter((c) => c.isNode()).length > 1) return
       const neighbours = this.graph.model
         .getConnectedEdges(node)
@@ -646,6 +662,7 @@ export class GraphEditor {
       kind !== 'action' &&
       kind !== 'decision' &&
       kind !== 'swimlane' &&
+      kind !== 'connector' &&
       !isMindmapNodeKind(kind)
     ) {
       return
@@ -741,7 +758,17 @@ export class GraphEditor {
         currentPort?: string
         currentPoint?: { x: number; y: number }
       }) => {
-        const kind = getCellKind(edge)
+        let kind = getCellKind(edge)
+        // ライフライン・トピックからコネクタへ引いた線は、メッセージ／枝ではなく
+        // フロー（矢印）に置き換える。シーケンスの水平維持やマインドマップの親子は
+        // コネクタには意味を持たないため
+        if (
+          (kind === 'message' || kind === 'branch') &&
+          (isConnector(edge.getSourceCell()) || isConnector(edge.getTargetCell()))
+        ) {
+          edge = this.replaceWithFlow(edge)
+          kind = 'flow'
+        }
         if (kind === 'branch') {
           // 親から見た子の側で枝の形を決める（整列するまでの暫定）
           const source = edge.getSourceCell()
@@ -765,6 +792,20 @@ export class GraphEditor {
             // ユーザーが選んだ接続先なので、以後の自動割り当てから外す
             this.withNormalizing(() => markTerminalManual(edge, side))
             const cell = graph.getCellById(t.cell)
+            // ライフライン／活性化バー（コネクタとの線）は、メッセージと同じく
+            // 生存線上で相手の高さに付ける（辺の中央に付けると図の下端から出てしまう）
+            const cellKind = getCellKind(cell)
+            if (cellKind === 'lifeline' || cellKind === 'activation') {
+              const next = {
+                cell: t.cell,
+                anchor: { name: SHAPE.centerlineAnchor },
+                connectionPoint: { name: 'anchor' }
+              }
+              this.withNormalizing(() =>
+                side === 'source' ? edge.setSource(next) : edge.setTarget(next)
+              )
+              continue
+            }
             if (side === dropped && currentPort === undefined && cell?.isNode()) {
               // ポートの丸を正確に掴めなくても、落とした位置に近い辺へ付ける。
               // 分岐・合流は小さくポートが密集していて狙った辺に落としにくく、
@@ -848,6 +889,26 @@ export class GraphEditor {
         })
       }
     })
+  }
+
+  /**
+   * メッセージ／枝を、同じ両端を結ぶフローに置き換える（コネクタに繋いだとき用）。
+   * 端点はセルとポートだけ引き継ぎ、アンカーはフロー側の既定に任せる。
+   */
+  private replaceWithFlow(edge: Edge): Edge {
+    const terminal = (t: unknown): { cell: string; port?: string } => {
+      const { cell, port } = t as { cell: string; port?: string }
+      return port ? { cell, port } : { cell }
+    }
+    const flow = this.graph.createEdge({
+      shape: SHAPE.flow,
+      source: terminal(edge.getSource()),
+      target: terminal(edge.getTarget()),
+      data: { kind: 'flow' }
+    })
+    this.graph.removeCell(edge)
+    this.graph.addEdge(flow)
+    return flow
   }
 
   /** メッセージに中央 vertex（自己メッセージはループ vertex）を設定する */

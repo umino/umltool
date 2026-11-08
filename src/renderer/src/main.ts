@@ -42,6 +42,7 @@ import {
 } from './editor/mindmap'
 import { nextPeerIndex } from './text/mindmapLinks'
 import { addNoteNode } from './editor/note'
+import { addConnectorNode, connectorLabels, nextConnectorLabel } from './editor/connector'
 import { addDrawArrow, addDrawRect, addDrawText } from './editor/drawing'
 import { resolveConnectionEndpoints } from './editor/connect'
 import { DIRECTION_LABEL, type Direction } from './editor/arrange'
@@ -87,6 +88,7 @@ import {
   MINDMAP_FONT_SIZE,
   MINDMAP_TOPIC_PALETTE,
   NOTE,
+  CONNECTOR,
   SHAPE,
   TEXT,
   Z,
@@ -262,6 +264,7 @@ class AppController {
       addFrame: () => this.addActivityFrame(),
       addText: () => this.addText(),
       addNote: () => this.addNote(),
+      addConnector: () => this.addConnector(),
       addRootTopic: () => this.addRootTopic(),
       addChildTopic: () => this.addRelatedTopic('child'),
       addSiblingTopic: () => this.addRelatedTopic('sibling'),
@@ -1776,7 +1779,7 @@ B --> A : 返す`
           ;(tile as HTMLButtonElement | undefined)?.click()
           const nodes = graph.getNodes()
           activity['palette'] =
-            items.length === 11 && nodes.length === before + 1
+            items.length === 12 && nodes.length === before + 1
               ? 'ok'
               : `ng(items=${items.length}, before=${before}, after=${nodes.length})`
           if (nodes.length === before + 1) graph.removeCells([nodes[nodes.length - 1]])
@@ -3316,6 +3319,124 @@ B --> A : 返す`
         mindmap['error'] = (e as Error).message
       }
 
+      // コネクタ（結合子）: 3 図種のパレットから追加でき、ラベルが対になり、
+      // ポートからのドラッグで線が繋がる（相手側から引いた線もフローになる）
+      const connector: Record<string, unknown> = {}
+      const connectorPngs: Record<string, string> = {}
+      {
+        const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+        // ポート（または本体）から相手ノードの中心へ、実際のマウスイベントでドラッグする
+        const dragConnect = async (from: Node, to: Node): Promise<void> => {
+          this.editor.ensureCellVisible(from)
+          await wait(50)
+          const view = graph.findViewByCell(from)
+          const magnet =
+            (view?.container.querySelector('[port="left"]') as Element | null) ??
+            (view?.container.querySelector('[magnet="true"]') as Element | null)
+          if (!magnet) throw new Error(`no magnet on ${getCellKind(from)}`)
+          const r = magnet.getBoundingClientRect()
+          const sx = r.x + r.width / 2
+          const sy = r.y + r.height / 2
+          const tr = (graph.findViewByCell(to)!.container as Element).getBoundingClientRect()
+          const tx = tr.x + tr.width / 2
+          // X6 の吸着はノード中心から半径 24px 以内なので、長いライフラインも中心を狙う
+          const ty = tr.y + tr.height / 2
+          const opts = (x: number, y: number): MouseEventInit => ({
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+            button: 0,
+            buttons: 1
+          })
+          magnet.dispatchEvent(new MouseEvent('mousedown', opts(sx, sy)))
+          for (let i = 1; i <= 5; i++) {
+            const x = sx + ((tx - sx) * i) / 5
+            const y = sy + ((ty - sy) * i) / 5
+            const el = document.elementFromPoint(x, y) ?? document
+            el.dispatchEvent(new MouseEvent('mousemove', opts(x, y)))
+            await wait(20)
+          }
+          const el = document.elementFromPoint(tx, ty) ?? document
+          el.dispatchEvent(new MouseEvent('mouseup', { ...opts(tx, ty), buttons: 0 }))
+          await wait(100)
+        }
+        const clickTile = (): void => {
+          // 部品タブ自体は隠れていることがあるので、図種ごとの枠の表示状態で判定する
+          const shown = (el: Element): boolean => {
+            for (let p: Element | null = el; p && p.id !== 'palette-body'; p = p.parentElement) {
+              if ((p as HTMLElement).style.display === 'none') return false
+            }
+            return true
+          }
+          const tiles = [...document.querySelectorAll('#palette-body .palette-item')].filter(
+            (b) => shown(b) && b.textContent?.includes('コネクタ')
+          )
+          if (tiles.length !== 1) throw new Error(`visible connector tiles=${tiles.length}`)
+          ;(tiles[0] as HTMLButtonElement).click()
+        }
+        const connectors = (): Node[] =>
+          graph.getNodes().filter((n) => getCellKind(n) === 'connector')
+        const flowsOf = (n: Node): Edge[] =>
+          graph.getConnectedEdges(n).filter((e) => getCellKind(e) === 'flow')
+
+        for (const type of ['activity', 'sequence', 'mindmap'] as const) {
+          try {
+            this.applyDiagramType(type)
+            if (type === 'activity') buildActivityFromText(this.editor, SAMPLE_ACTIVITY)
+            else if (type === 'sequence') buildSequenceFromText(this.editor, SAMPLE_SEQUENCE)
+            else buildMindmapFromText(this.editor, SAMPLE_MINDMAP, 'map')
+            await wait(150)
+            const partner =
+              type === 'activity'
+                ? graph.getNodes().find((n) => getCellKind(n) === 'action')!
+                : type === 'sequence'
+                  ? graph.getNodes().find((n) => getCellKind(n) === 'lifeline')!
+                  : graph.getNodes().find((n) => getCellKind(n) === 'topic')!
+            graph.cleanSelection()
+            clickTile()
+            clickTile()
+            clickTile()
+            const cs = connectors()
+            const labels = cs.map((n) => getNodeLabel(n)).join('')
+            // 置く位置: 相手の右側に並べる（ライフラインは隣の頭と重ならない生存線の脇）
+            const pb = partner.getBBox()
+            const top = type === 'sequence' ? pb.y + 120 : pb.y
+            const gx = type === 'sequence' ? 30 : 80
+            cs[0].position(pb.x + pb.width + gx, top)
+            cs[1].position(pb.x + pb.width + gx, top + 140)
+            cs[2].position(pb.x + pb.width + gx + 80, top + 140)
+            await wait(50)
+            // コネクタ → 相手（コネクタ起点はどの図種でもフロー）
+            await dragConnect(cs[0], partner)
+            // 相手 → コネクタ（メッセージ／枝で引き始めてもフローに置き換わる）
+            await dragConnect(partner, cs[1])
+            const out = flowsOf(cs[0]).length
+            const inn = flowsOf(cs[1]).length
+            const stray = graph
+              .getEdges()
+              .filter(
+                (e) =>
+                  getCellKind(e) !== 'flow' &&
+                  [e.getSourceCell(), e.getTargetCell()].some((c) => getCellKind(c) === 'connector')
+              ).length
+            const view = graph.findViewByCell(cs[0])
+            const text = view?.container.querySelector('text')?.textContent ?? ''
+            connector[type] =
+              labels === 'AAB' && out === 1 && inn === 1 && stray === 0 && text === 'A'
+                ? 'ok'
+                : `ng(labels=${labels}, out=${out}, in=${inn}, stray=${stray}, text=${text})`
+            graph.cleanSelection()
+            await wait(50)
+            connectorPngs[type] = await exportGraphToDataUrl(graph, 'png', { pixelRatio: 1 })
+          } catch (e) {
+            connector[type] = `error: ${(e as Error).message}`
+          }
+        }
+        ;(window as unknown as Record<string, unknown>).__connectorPngs = connectorPngs
+      }
+      mindmap['connector'] = connector
+
       // 以降の入力テストはアクティビティ図の状態を前提にしているので戻す
       try {
         this.applyDiagramType('activity')
@@ -4087,6 +4208,34 @@ B --> A : 返す`
       this.editor.ensureCellVisible(created)
       this.setStatusMessage(
         'ノートを追加しました。内容はダブルクリック、フォント等は右パネルで設定できます。'
+      )
+    }
+  }
+
+  // コネクタ（結合子）: 全図種。相方のいないラベルがあれば同じ文字で対にする
+  private addConnector(): void {
+    const graph = this.editor.graph
+    const c = this.editor.getVisibleCenter()
+    // 続けて置いたとき完全に重ならないよう、既存の要素と重なる間は右へずらす
+    const center = { x: c.x, y: c.y }
+    const half = CONNECTOR.size / 2
+    for (let i = 0; i < 20; i++) {
+      const hit = graph.getNodesInArea(center.x - half, center.y - half, CONNECTOR.size, CONNECTOR.size)
+        .some((n) => getCellKind(n) === 'connector')
+      if (!hit) break
+      center.x += CONNECTOR.size * 1.5
+    }
+    const label = nextConnectorLabel(connectorLabels(graph))
+    let created: Node | null = null
+    this.editor.batch(() => {
+      created = addConnectorNode(graph, label, center)
+    })
+    if (created) {
+      graph.resetSelection(created)
+      this.editor.ensureCellVisible(created)
+      this.setStatusMessage(
+        `コネクタ「${label}」を追加しました。同じ文字のコネクタ同士で線が続いていることを表します。` +
+          'ポートからドラッグして矢印を繋げます。文字はダブルクリックで変更できます。'
       )
     }
   }

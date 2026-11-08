@@ -10,6 +10,7 @@ export interface PaletteActions {
   addExecutionSpec: () => void
   addFragment: () => void
   addNote: () => void
+  addConnector: () => void
   addConnection: () => void
   addGate: (direction: 'in' | 'out') => void
   addActivityNode: (kind: ActivityNodeKind) => void
@@ -51,6 +52,22 @@ function noteItem(a: PaletteActions): PaletteItem {
       `<path d="M 14 4 H 38 V 26 H 8 V 10 Z" fill="#fffbe6" stroke="#d9b441" stroke-width="1.4"/>` +
       `<path d="M 14 4 V 10 H 8 Z" fill="#f2e4b8" stroke="#d9b441" stroke-width="1.2"/>`,
     onClick: a.addNote
+  }
+}
+
+/** 全図種で使えるコネクタ（結合子。いわゆる「おたまじゃくし」）タイル */
+function connectorItem(a: PaletteActions): PaletteItem {
+  return {
+    label: 'コネクタ',
+    title:
+      'コネクタ（結合子）を追加。同じ文字のコネクタ同士で線が続いていることを表します' +
+      '（遠くへ伸びる線を省くときに使います）。2 つ続けて押すと同じ文字の組になります',
+    icon:
+      `<line x1="3" y1="15" x2="13" y2="15" stroke="${C.stroke}" stroke-width="1.6"/>` +
+      `<path d="M 16 15 L 10 11.5 V 18.5 Z" fill="${C.stroke}"/>` +
+      `<circle cx="27" cy="15" r="10" fill="#ffffff" stroke="${C.stroke}" stroke-width="1.5"/>` +
+      `<text x="27" y="19.5" text-anchor="middle" font-size="12" font-weight="700" fill="${C.stroke}">A</text>`,
+    onClick: a.addConnector
   }
 }
 
@@ -181,6 +198,7 @@ function sequenceItems(a: PaletteActions): PaletteItem[] {
       onClick: a.addFragment
     },
     textItem(a),
+    connectorItem(a),
     noteItem(a)
   ]
 }
@@ -259,6 +277,7 @@ function activityItems(a: PaletteActions): PaletteItem[] {
         `<path d="M 38 8 L 30 3.5 V 12.5 Z" fill="none" stroke="${C.stroke}" stroke-width="1.4"/>`,
       onClick: () => a.addConnection()
     },
+    connectorItem(a),
     noteItem(a)
   ]
 }
@@ -334,6 +353,7 @@ function mindmapItems(a: PaletteActions): PaletteItem[] {
         `<path d="M 24 9 L 20 21" stroke="${C.gray}" stroke-width="1.4"/>`,
       onClick: a.toggleCodeTopic
     },
+    connectorItem(a),
     noteItem(a)
   ]
 }
