@@ -5,6 +5,7 @@
 
 import type { Graph } from '@antv/x6'
 import { applyJpegDpi, applyPngDpi } from './dpiMetadata'
+import { splitIntoTiles, type Tile } from './tiles'
 
 export type ImageFormat = 'png' | 'jpg' | 'webp'
 
@@ -169,6 +170,110 @@ export async function exportGraphToDataUrl(
   options: ExportOptions = {}
 ): Promise<string> {
   return (await exportGraphToImage(graph, format, options)).dataUrl
+}
+
+
+/**
+ * 分割書き出しのときの全体の 1 辺の上限 px。分割すれば 1 枚あたりは小さく
+ * 収まるので、MAX_IMAGE_SIDE より大きくまで解像度を保つ。ただし枚数や処理時間が
+ * 際限なく増えないよう、ここで頭打ちにする。
+ */
+export const MAX_SPLIT_TOTAL_SIDE = 32768
+
+export interface SplitOptions {
+  /** 1 辺がしきい値を超えたら分割するか */
+  enabled: boolean
+  /** 分割のしきい値（1 枚の 1 辺の上限 px） */
+  maxSide: number
+}
+
+export interface TiledExportResult extends ExportScale {
+  /** 呼び出し側が要求した dpi */
+  requestedDpi: number
+  /** 書き出した画像。分割しないとき（収まったときも）は 1 枚 */
+  tiles: Array<Tile & { dataUrl: string }>
+}
+
+/**
+ * グラフを画像化し、1 辺が split.maxSide を超えるときはタイルに分けて返す。
+ *
+ * タイルごとに SVG の viewBox をその範囲へ絞ってから描くので、全体の巨大な
+ * canvas を作らずに済む（canvas の大きさの上限にも当たらない）。
+ */
+export async function exportGraphToImageTiles(
+  graph: Graph,
+  format: ImageFormat,
+  options: ExportOptions & { split?: SplitOptions } = {}
+): Promise<TiledExportResult> {
+  const split = options.split
+  if (!split?.enabled) {
+    const single = await exportGraphToImage(graph, format, options)
+    const { dataUrl, ...rest } = single
+    return {
+      ...rest,
+      tiles: [{ row: 0, col: 0, x: 0, y: 0, width: single.width, height: single.height, dataUrl }]
+    }
+  }
+  const requestedDpi =
+    options.dpi ?? (options.pixelRatio != null ? options.pixelRatio * CSS_DPI : DEFAULT_DPI)
+  const { svg, width, height } = await exportGraphToSvg(graph, options.margin ?? 16)
+  const scale = resolveExportScale(
+    requestedDpi,
+    width,
+    height,
+    options.maxSide ?? MAX_SPLIT_TOTAL_SIDE
+  )
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+  const root = doc.documentElement
+  const vb = (root.getAttribute('viewBox') ?? `0 0 ${width} ${height}`)
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number)
+  const [vx, vy, vw, vh] = vb.length === 4 && vb.every(Number.isFinite) ? vb : [0, 0, width, height]
+  // 出力 1px あたりの SVG 座標
+  const unitX = vw / scale.width
+  const unitY = vh / scale.height
+  const serializer = new XMLSerializer()
+
+  const tiles: TiledExportResult['tiles'] = []
+  for (const tile of splitIntoTiles(scale.width, scale.height, split.maxSide)) {
+    root.setAttribute(
+      'viewBox',
+      `${vx + tile.x * unitX} ${vy + tile.y * unitY} ${tile.width * unitX} ${tile.height * unitY}`
+    )
+    root.setAttribute('width', String(tile.width))
+    root.setAttribute('height', String(tile.height))
+    root.setAttribute('preserveAspectRatio', 'none')
+    const img = await loadSvg(serializer.serializeToString(root))
+    const dataUrl = renderToDataUrl(img, tile.width, tile.height, format, scale.dpi)
+    tiles.push({ ...tile, dataUrl })
+  }
+  return { ...scale, requestedDpi, tiles }
+}
+
+/** 読み込んだ SVG 画像を width × height の画像にする */
+function renderToDataUrl(
+  img: HTMLImageElement,
+  width: number,
+  height: number,
+  format: ImageFormat,
+  dpi: number
+): string {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('canvas 2D コンテキストを取得できません')
+  if (format === 'jpg') {
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
+  }
+  ctx.drawImage(img, 0, 0, width, height)
+  const dataUrl = canvas.toDataURL(MIME[format], 0.92)
+  if (!dataUrl.startsWith(`data:${MIME[format]}`)) {
+    throw new Error(`${format} 形式への変換に失敗しました`)
+  }
+  return embedDpi(dataUrl, format, dpi)
 }
 
 /** dataURL の中身へ解像度情報を書き込む（書けない形式はそのまま返す） */

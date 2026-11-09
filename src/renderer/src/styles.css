@@ -676,3 +676,17 @@ body,
 .x6-cell.search-current {
   filter: drop-shadow(0 0 2px #ff7a00) drop-shadow(0 0 4px #ff7a00) drop-shadow(0 0 7px #ff7a00);
 }
+
+/* ツールバーのチェックボックス（文字ごとクリックできるようにラベルで包む） */
+#toolbar .toolbar-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#toolbar select:disabled {
+  opacity: 0.5;
+}

@@ -4,7 +4,16 @@ import {
   type DecisionShape,
   type MindmapLayout
 } from '../editor/constants'
-import { CSS_DPI, DEFAULT_DPI, DPI_CHOICES, MAX_IMAGE_SIDE } from '../export/raster'
+import {
+  CSS_DPI,
+  DEFAULT_DPI,
+  DPI_CHOICES,
+  MAX_IMAGE_SIDE,
+  MAX_SPLIT_TOTAL_SIDE,
+  type SplitOptions
+} from '../export/raster'
+import { SPLIT_SIZE_CHOICES } from '../export/tiles'
+import { loadSplitSettings, saveSplitSettings } from './exportSettings'
 
 export type ToolbarDiagramType = 'sequence' | 'activity' | 'mindmap'
 
@@ -24,6 +33,8 @@ export interface ToolbarActions {
   zoomReset: () => void
   fit: () => void
   setExportDpi: (dpi: number) => void
+  /** 大きな画像の分割設定（ツールバーで変えたとき） */
+  setExportSplit: (split: SplitOptions) => void
   exportImage: (format: 'png' | 'jpg' | 'webp') => void
   showShortcuts: () => void
 }
@@ -154,13 +165,46 @@ export function buildToolbar(host: HTMLElement, actions: ToolbarActions): Toolba
   dpiSelect.value = String(DEFAULT_DPI)
   dpiSelect.title =
     `書き出す画像の解像度。96dpi が画面の実寸と等倍です。\n` +
-    `1 辺が ${MAX_IMAGE_SIDE}px（Excel に貼れる上限）を超える場合は自動で下げます。`
+    `分割しない設定で 1 辺が ${MAX_IMAGE_SIDE}px（Excel に貼れる上限）を超える場合は自動で下げます。\n` +
+    `分割する設定では 1 辺 ${MAX_SPLIT_TOTAL_SIDE}px まで解像度を保ちます。`
   dpiSelect.addEventListener('change', () => actions.setExportDpi(Number(dpiSelect.value)))
+
+  // 大きな画像の分割。1 辺がしきい値を超えたら、しきい値以内の画像に分けて書き出す
+  const split = loadSplitSettings()
+  const splitCheck = document.createElement('input')
+  splitCheck.type = 'checkbox'
+  splitCheck.checked = split.enabled
+  const splitLabel = document.createElement('label')
+  splitLabel.className = 'toolbar-check'
+  splitLabel.title =
+    '縦か横が選んだ大きさを超える画像を、その大きさ以内の複数の画像に分けて書き出します。\n' +
+    'ファイル名には「_r1c2」（1 行目 2 列目）のように位置が付きます。'
+  splitLabel.append(splitCheck, document.createTextNode('分割'))
+  const splitSelect = document.createElement('select')
+  for (const size of SPLIT_SIZE_CHOICES) {
+    const opt = document.createElement('option')
+    opt.value = String(size)
+    opt.textContent = `${size}px 超`
+    splitSelect.appendChild(opt)
+  }
+  splitSelect.value = String(split.maxSide)
+  splitSelect.disabled = !split.enabled
+  splitSelect.title = '分割する大きさ（1 枚の縦・横の上限）'
+  const onSplitChange = (): void => {
+    splitSelect.disabled = !splitCheck.checked
+    const next = { enabled: splitCheck.checked, maxSide: Number(splitSelect.value) }
+    saveSplitSettings(next)
+    actions.setExportSplit(next)
+  }
+  splitCheck.addEventListener('change', onSplitChange)
+  splitSelect.addEventListener('change', onSplitChange)
 
   host.appendChild(
     group(
       label('書き出し:'),
       dpiSelect,
+      splitLabel,
+      splitSelect,
       button('PNG', 'PNG で書き出し', () => actions.exportImage('png')),
       button('JPG', 'JPEG で書き出し', () => actions.exportImage('jpg')),
       button('WebP', 'WebP で書き出し', () => actions.exportImage('webp'))

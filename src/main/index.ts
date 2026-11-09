@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -508,6 +508,42 @@ ipcMain.handle(
     const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '')
     await writeFile(result.filePath, Buffer.from(base64, 'base64'))
     return result.filePath
+  }
+)
+
+/**
+ * 分割した画像をまとめて書き出す。保存先は 1 回だけ尋ね、選んだ名前に
+ * `_r1c1` のような行・列の接尾辞を付けて同じフォルダへ並べる。
+ * 1 枚だけのときは選んだ名前そのままで書く。書いたパスの一覧を返す。
+ */
+ipcMain.handle(
+  'image:exportTiles',
+  async (
+    _e,
+    tiles: Array<{ dataUrl: string; suffix: string }>,
+    format: 'png' | 'jpg' | 'webp',
+    defaultName: string
+  ) => {
+    // 自己診断では保存ダイアログを出さず、決まった名前で書く（書き出しの流れを通しで確かめる）
+    const result = process.env['UMLTOOL_DIAG']
+      ? { canceled: false, filePath: join(process.cwd(), `diag-output-split.${format}`) }
+      : await dialog.showSaveDialog(mainWindow!, {
+          title: tiles.length > 1 ? `画像を分割して書き出し（${tiles.length} 枚）` : '画像を書き出し',
+          defaultPath: defaultName || `diagram.${format}`,
+          filters: IMAGE_FILTERS[format] ?? IMAGE_FILTERS.png
+        })
+    if (result.canceled || !result.filePath) return null
+    const chosen = result.filePath
+    const ext = extname(chosen) || `.${format}`
+    const stem = basename(chosen, extname(chosen))
+    const written: string[] = []
+    for (const tile of tiles) {
+      const path = tiles.length > 1 ? join(dirname(chosen), `${stem}${tile.suffix}${ext}`) : chosen
+      const base64 = tile.dataUrl.replace(/^data:[^;]+;base64,/, '')
+      await writeFile(path, Buffer.from(base64, 'base64'))
+      written.push(path)
+    }
+    return written
   }
 )
 
