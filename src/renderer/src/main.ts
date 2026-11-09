@@ -115,9 +115,14 @@ import {
   MAX_IMAGE_SIDE,
   exportGraphToDataUrl,
   exportGraphToImage,
+  exportGraphToImageTiles,
+  MAX_SPLIT_TOTAL_SIDE,
+  type SplitOptions,
   exportGraphToSvg,
   type ImageFormat
 } from './export/raster'
+import { tileSuffix } from './export/tiles'
+import { loadSplitSettings } from './ui/exportSettings'
 
 const SAMPLE_SEQUENCE = `participant ユーザー
 participant "Web ブラウザ" as ブラウザ
@@ -202,6 +207,8 @@ class AppController {
   private mindmapClip: MindmapClip | null = null
   /** 画像書き出しの解像度（ツールバーのセレクトと同期。メニュー経由でも使う） */
   private exportDpi: number = DEFAULT_DPI
+  /** 大きな画像の分割設定（ツールバーと同期。localStorage に残る） */
+  private exportSplit: SplitOptions = loadSplitSettings()
 
   private readonly shortcuts = buildShortcutOverlay(document.getElementById('app') as HTMLElement)
 
@@ -245,6 +252,9 @@ class AppController {
       zoomOut: () => this.editor.zoomOut(),
       zoomReset: () => this.editor.zoomActual(),
       fit: () => this.editor.fit(),
+      setExportSplit: (split) => {
+        this.exportSplit = split
+      },
       setExportDpi: (dpi) => {
         this.exportDpi = dpi
       },
@@ -401,6 +411,100 @@ class AppController {
                 bytes.charCodeAt(phys + 7)) >>>
               0
         exportDpi['png-phys'] = ppm === dpiToPixelsPerMeter(192) ? 'ok' : `ng(ppm=${ppm})`
+
+        // 分割書き出し: しきい値以内のタイルに分かれ、並べ直すと分割しない画像と一致するか
+        {
+          const loadImg = (url: string): Promise<HTMLImageElement> =>
+            new Promise((resolve, reject) => {
+              const img = new Image()
+              img.onload = () => resolve(img)
+              img.onerror = () => reject(new Error('タイルを読み込めません'))
+              img.src = url
+            })
+          const pixels = (img: CanvasImageSource, w: number, h: number): Uint8ClampedArray => {
+            const c = document.createElement('canvas')
+            c.width = w
+            c.height = h
+            const ctx = c.getContext('2d')!
+            ctx.fillStyle = '#fff'
+            ctx.fillRect(0, 0, w, h)
+            ctx.drawImage(img, 0, 0)
+            return ctx.getImageData(0, 0, w, h).data
+          }
+          const whole = await exportGraphToImage(graph, 'png', { dpi: 144, maxSide: Infinity })
+          const tiled = await exportGraphToImageTiles(graph, 'png', {
+            dpi: 144,
+            split: { enabled: true, maxSide: 300 }
+          })
+          const cols = Math.ceil(whole.width / 300)
+          const rows = Math.ceil(whole.height / 300)
+          const stitched = document.createElement('canvas')
+          stitched.width = tiled.width
+          stitched.height = tiled.height
+          const sctx = stitched.getContext('2d')!
+          let sizesOk = true
+          for (const t of tiled.tiles) {
+            const img = await loadImg(t.dataUrl)
+            if (img.naturalWidth !== t.width || img.naturalHeight !== t.height) sizesOk = false
+            if (t.width > 300 || t.height > 300) sizesOk = false
+            sctx.drawImage(img, t.x, t.y)
+          }
+          const a = pixels(stitched, whole.width, whole.height)
+          const b = pixels(await loadImg(whole.dataUrl), whole.width, whole.height)
+          let diff = 0
+          let ink = 0
+          for (let i = 0; i < a.length; i += 4) {
+            const d = Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])
+            if (d > 96) diff++
+            if (b[i] < 128) ink++
+          }
+          const diffRatio = diff / (a.length / 4)
+          const off = await exportGraphToImageTiles(graph, 'png', {
+            dpi: 144,
+            split: { enabled: false, maxSide: 300 }
+          })
+          const fits = await exportGraphToImageTiles(graph, 'png', {
+            dpi: 144,
+            split: { enabled: true, maxSide: 4096 }
+          })
+          exportDpi['split'] =
+            tiled.tiles.length === rows * cols &&
+            tiled.width === whole.width &&
+            sizesOk &&
+            ink > 0 &&
+            diffRatio < 0.002 &&
+            off.tiles.length === 1 &&
+            fits.tiles.length === 1
+              ? `ok(${rows}x${cols}, diff=${(diffRatio * 100).toFixed(3)}%)`
+              : `ng(tiles=${tiled.tiles.length}/${rows}x${cols}, size=${tiled.width}x${tiled.height}` +
+                ` vs ${whole.width}x${whole.height}, sizesOk=${sizesOk}, diff=${diffRatio}, ink=${ink},` +
+                ` off=${off.tiles.length}, fits=${fits.tiles.length})`
+
+          // ツールバー: 既定で「分割」がオン・しきい値 4096
+          const check = Array.from(document.querySelectorAll('#toolbar .toolbar-check')).find((l) =>
+            (l.textContent ?? '').includes('分割')
+          )
+          const box = check?.querySelector('input[type=checkbox]') as HTMLInputElement | null
+          const sizeSelect = check?.nextElementSibling as HTMLSelectElement | null
+          exportDpi['splitToolbar'] =
+            box?.checked === true && sizeSelect?.value === '4096' && this.exportSplit.enabled
+              ? 'ok'
+              : `ng(checked=${box?.checked}, size=${sizeSelect?.value}, state=${JSON.stringify(this.exportSplit)})`
+
+          // 保存: 1 回の書き出しで行・列の接尾辞付きのファイルが並ぶ（診断ではダイアログを出さない）
+          const savedPaths = await window.uml.exportImageTiles(
+            tiled.tiles.map((t) => ({ dataUrl: t.dataUrl, suffix: tileSuffix(t, tiled.tiles.length) })),
+            'png',
+            'diag.png'
+          )
+          const names = (savedPaths ?? []).map((p) => p.split(/[\\/]/).pop())
+          exportDpi['splitSave'] =
+            names.length === tiled.tiles.length &&
+            names[0] === 'diag-output-split_r1c1.png' &&
+            names[names.length - 1] === `diag-output-split_r${rows}c${cols}.png`
+              ? 'ok'
+              : `ng(${names.join(',')})`
+        }
       } catch (e) {
         exportDpi['error'] = (e as Error).message
       }
@@ -4726,15 +4830,34 @@ B --> A : 返す`
   // ---- 書き出し ----
   private async exportImage(format: ImageFormat): Promise<void> {
     try {
-      const image = await exportGraphToImage(this.editor.graph, format, { dpi: this.exportDpi })
+      const split = this.exportSplit
+      const image = await exportGraphToImageTiles(this.editor.graph, format, {
+        dpi: this.exportDpi,
+        split
+      })
       const name = this.defaultBaseName()
-      const saved = await window.uml.exportImage(image.dataUrl, format, `${name}.${format}`)
-      if (!saved) return
+      const total = image.tiles.length
+      const saved = await window.uml.exportImageTiles(
+        image.tiles.map((t) => ({ dataUrl: t.dataUrl, suffix: tileSuffix(t, total) })),
+        format,
+        `${name}.${format}`
+      )
+      if (!saved || saved.length === 0) return
       const size = `${image.width}×${image.height}px / ${Math.round(image.dpi)}dpi`
+      const limit = split.enabled ? MAX_SPLIT_TOTAL_SIDE : MAX_IMAGE_SIDE
       const note = image.clamped
-        ? `（1辺 ${MAX_IMAGE_SIDE}px の上限に合わせて ${image.requestedDpi}dpi から下げました）`
+        ? `（1辺 ${limit}px の上限に合わせて ${image.requestedDpi}dpi から下げました）`
         : ''
-      this.setStatusMessage(`書き出しました: ${saved} ${size}${note}`)
+      if (total > 1) {
+        const rows = Math.max(...image.tiles.map((t) => t.row)) + 1
+        const cols = Math.max(...image.tiles.map((t) => t.col)) + 1
+        this.setStatusMessage(
+          `${split.maxSide}px を超えるため ${rows}×${cols} の ${total} 枚に分割して書き出しました: ` +
+            `${saved[0]} ほか / 全体 ${size}${note}`
+        )
+      } else {
+        this.setStatusMessage(`書き出しました: ${saved[0]} ${size}${note}`)
+      }
     } catch (e) {
       this.setStatusMessage(`書き出しに失敗しました: ${(e as Error).message}`)
     }

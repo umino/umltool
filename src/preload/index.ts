@@ -18,6 +18,12 @@ const api = {
   // 画像書き出し
   exportImage: (dataUrl: string, format: ImageFormat, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('image:export', dataUrl, format, defaultName),
+  // 分割した画像をまとめて書き出す（保存先は 1 回だけ尋ねる）。書いたパスの一覧を返す
+  exportImageTiles: (
+    tiles: Array<{ dataUrl: string; suffix: string }>,
+    format: ImageFormat,
+    defaultName: string
+  ): Promise<string[] | null> => ipcRenderer.invoke('image:exportTiles', tiles, format, defaultName),
 
   // 確認ダイアログ（window.confirm はフォーカスを壊すため使わない）
   confirmDialog: (message: string): Promise<boolean> =>
