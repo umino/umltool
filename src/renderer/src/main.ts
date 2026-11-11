@@ -14,7 +14,15 @@ import {
   nextMessageY,
   setAttachLinkVisible
 } from './editor/sequence'
-import { addActivityNode, addFlow, addFrame, addSwimlane } from './editor/activity'
+import {
+  addActivityNode,
+  addCallBehaviorNode,
+  addFlow,
+  addFrame,
+  addSwimlane,
+  isCallBehavior,
+  setCallBehavior
+} from './editor/activity'
 import {
   addBranch,
   addRootTopic,
@@ -270,6 +278,7 @@ class AppController {
       addConnection: () => this.addConnection(),
       addGate: (direction) => this.addGate(direction),
       addActivityNode: (kind) => this.addActivityNode(kind),
+      addCallBehavior: () => this.addCallBehavior(),
       addSwimlane: () => this.addSwimlane(),
       addFrame: () => this.addActivityFrame(),
       addText: () => this.addText(),
@@ -1883,7 +1892,7 @@ B --> A : 返す`
           ;(tile as HTMLButtonElement | undefined)?.click()
           const nodes = graph.getNodes()
           activity['palette'] =
-            items.length === 12 && nodes.length === before + 1
+            items.length === 13 && nodes.length === before + 1
               ? 'ok'
               : `ng(items=${items.length}, before=${before}, after=${nodes.length})`
           if (nodes.length === before + 1) graph.removeCells([nodes[nodes.length - 1]])
@@ -2731,6 +2740,100 @@ B --> A : 返す`
         )
       } catch (e) {
         activity['thickArrow'] = `error: ${(e as Error).message}`
+      }
+
+      // 呼び出し動作（サブルーチン。issue #66）: パレットから追加でき、右下に熊手の印が出て
+      // 文字と重ならず、オン / オフと保存 ⇄ 読込で印が保たれるか
+      try {
+        graph.clearCells()
+        const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+        const bad: string[] = []
+        const rakeBox = (n: Node): DOMRect | null => {
+          const el = graph.findViewByCell(n)?.findOne('rake') as
+            | SVGGraphicsElement
+            | null
+          if (!el || getComputedStyle(el).display === 'none') return null
+          return el.getBoundingClientRect()
+        }
+        const labelBox = (n: Node): DOMRect | null => {
+          const el = graph.findViewByCell(n)?.findOne('label') as
+            | SVGGraphicsElement
+            | null
+          return el ? el.getBoundingClientRect() : null
+        }
+        const overlaps = (a: DOMRect, b: DOMRect): boolean =>
+          a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+        const grids = document.querySelectorAll('#palette-body .palette-grid')
+        const actGrid = [...grids].find((g) => g.textContent?.includes('アクション'))
+        const tile = [...(actGrid?.querySelectorAll('.palette-item') ?? [])].find((b) =>
+          b.textContent?.includes('呼び出し')
+        ) as HTMLButtonElement | undefined
+        tile?.click()
+        const added = graph.getNodes()[0]
+        if (!tile || !added || !isCallBehavior(added)) bad.push('palette')
+
+        // 長い名前（折り返して印の近くまで文字が来る）でも印と重ならない
+        const long = addCallBehaviorNode(
+          graph,
+          '在庫を引き当てて出荷指示を作成する（詳細は別図）',
+          { centerX: 400, centerY: 300 }
+        )
+        const plain = addActivityNode(graph, 'action', '在庫を引き当てて出荷指示を作成する（詳細は別図）', {
+          centerX: 400,
+          centerY: 420
+        })
+        await wait(60)
+        for (const n of [added, long].filter(Boolean)) {
+          const rake = rakeBox(n)
+          const view = graph.findViewByCell(n)?.findOne('body') as
+            | SVGGraphicsElement
+            | null
+          const body = view?.getBoundingClientRect()
+          const label = labelBox(n)
+          if (!rake || !body) {
+            bad.push(`${getNodeLabel(n)}:no-rake`)
+            continue
+          }
+          // 右下の内側に収まっている
+          const inside =
+            rake.left > body.left + body.width / 2 &&
+            rake.right < body.right &&
+            rake.top > body.top + body.height / 2 &&
+            rake.bottom < body.bottom
+          if (!inside) bad.push(`${getNodeLabel(n)}:rake-outside`)
+          if (label && overlaps(label, rake)) bad.push(`${getNodeLabel(n)}:overlap`)
+        }
+        // 印の分だけ普通のアクションより幅か高さが増えている
+        if (long.getSize().width * long.getSize().height <= plain.getSize().width * plain.getSize().height) {
+          bad.push('no-room')
+        }
+
+        // オフで印が消えて普通のアクションに戻り、オンで戻る
+        setCallBehavior(long, false)
+        await wait(30)
+        if (rakeBox(long) || isCallBehavior(long)) bad.push('off')
+        if (Math.abs(long.getSize().width - plain.getSize().width) > 1) bad.push('off-size')
+        setCallBehavior(long, true)
+        await wait(30)
+        if (!rakeBox(long)) bad.push('on')
+
+        // 保存 ⇄ 読込で保たれる
+        const saved = serializeProject(this.editor, 'activity')
+        loadProject(this.editor, saved)
+        await wait(60)
+        const reloaded = graph.getNodes().filter((n) => isCallBehavior(n))
+        if (reloaded.length !== 2 || reloaded.some((n) => !rakeBox(n))) {
+          bad.push(`roundtrip(${reloaded.length})`)
+        }
+        activity['callBehavior'] = bad.length === 0 ? 'ok' : `ng(${bad.join(', ')})`
+        ;(window as unknown as Record<string, unknown>).__callPng = await exportGraphToDataUrl(
+          graph,
+          'png',
+          { pixelRatio: 2 }
+        )
+      } catch (e) {
+        activity['callBehavior'] = `error: ${(e as Error).message}`
       }
 
       // マインドマップ: 生成・2 つの配置・折りたたみ・ラウンドトリップ検証
@@ -4219,6 +4322,20 @@ B --> A : 返す`
     this.editor.batch(() => {
       const label = kind === 'action' ? '新しいアクション' : kind === 'decision' ? '条件?' : ''
       created = addActivityNode(graph, kind, label, { centerX: p.x, centerY: p.y })
+    })
+    if (created) {
+      graph.resetSelection(created)
+      this.editor.ensureCellVisible(created)
+    }
+  }
+
+  /** 呼び出し動作（サブルーチン。issue #66）を追加する */
+  private addCallBehavior(): void {
+    const graph = this.editor.graph
+    const p = this.nextActivityPlacement()
+    let created: Node | null = null
+    this.editor.batch(() => {
+      created = addCallBehaviorNode(graph, '処理名', { centerX: p.x, centerY: p.y })
     })
     if (created) {
       graph.resetSelection(created)

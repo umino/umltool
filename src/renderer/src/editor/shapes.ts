@@ -12,6 +12,7 @@ import {
   ACTIVATION,
   ACTIVITY,
   CODE_TOPIC,
+  CALL_RAKE,
   CONNECTOR,
   DECISION_SHAPE_POINTS,
   DEFAULT_DECISION_SHAPE,
@@ -585,7 +586,9 @@ export function registerShapes(): void {
     {
       markup: [
         { tagName: 'rect', selector: 'body' },
-        { tagName: 'text', selector: 'label' }
+        { tagName: 'text', selector: 'label' },
+        // 呼び出し動作（サブルーチン）の印（UML の「熊手」）。普段は隠しておく
+        { tagName: 'path', selector: 'rake' }
       ],
       attrs: {
         body: {
@@ -597,7 +600,21 @@ export function registerShapes(): void {
           strokeWidth: 1.2,
           cursor: 'move'
         },
-        label: { ...centeredLabel, textWrap: { width: -28, breakWord: true } }
+        label: { ...centeredLabel, textWrap: { width: -28, breakWord: true } },
+        rake: {
+          d: CALL_RAKE.path,
+          refX: '100%',
+          refY: '100%',
+          refX2: -CALL_RAKE.right - CALL_RAKE.size,
+          refY2: -CALL_RAKE.bottom - CALL_RAKE.size,
+          fill: 'none',
+          stroke: COLOR.headStroke,
+          strokeWidth: 1.4,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          pointerEvents: 'none',
+          display: 'none'
+        }
       },
       ports: activityPorts
     },
@@ -1560,7 +1577,7 @@ const STYLE_TARGETS: Partial<Record<CellKind, StyleTargets>> = {
   lifeline: { fill: ['head'], stroke: ['head'], label: 'label' },
   activation: { fill: ['body'], stroke: ['body'], label: null },
   fragment: { fill: ['body'], stroke: ['body', 'tab'], label: 'label' },
-  action: { fill: ['body'], stroke: ['body'], label: 'label' },
+  action: { fill: ['body'], stroke: ['body', 'rake'], label: 'label' },
   decision: { fill: ['body'], stroke: ['body'], label: 'label' },
   merge: { fill: ['body'], stroke: ['body'], label: null },
   // 開始は塗り潰しの円なので「背景色」がそのまま図形の色になる

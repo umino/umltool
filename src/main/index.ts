@@ -202,6 +202,14 @@ function createWindow(): void {
             await writeFile(outArrow, Buffer.from(arrowPng.split(',')[1], 'base64'))
             console.log(`[DIAG-PNG-ARROW] ${outArrow}`)
           }
+          const callPng = await mainWindow!.webContents.executeJavaScript(
+            'window.__callPng ?? ""'
+          )
+          if (typeof callPng === 'string' && callPng.startsWith('data:image/png')) {
+            const outCall = join(process.cwd(), 'diag-output-call.png')
+            await writeFile(outCall, Buffer.from(callPng.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-CALL] ${outCall}`)
+          }
           const routePng = await mainWindow!.webContents.executeJavaScript(
             'window.__routePng ?? ""'
           )

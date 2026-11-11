@@ -2,6 +2,7 @@ import type { Cell, Edge, Node } from '@antv/x6'
 import type { GraphEditor } from '../editor/GraphEditor'
 import type { Side } from '../editor/branchPorts'
 import { alphaPercent, formatColor, parseColor } from '../editor/color'
+import { isCallBehavior, setCallBehavior } from '../editor/activity'
 import {
   autoSizeNode,
   clearManualSize,
@@ -367,13 +368,37 @@ export class PropertiesPanel {
     }
 
     if (kind === 'action' || kind === 'decision' || kind === 'swimlane') {
-      const caption = kind === 'swimlane' ? 'レーン名' : kind === 'decision' ? '条件' : 'アクション'
+      const caption =
+        kind === 'swimlane'
+          ? 'レーン名'
+          : kind === 'decision'
+            ? '条件'
+            : isCallBehavior(cell as Node)
+              ? '呼び出す処理'
+              : 'アクション'
       this.host.appendChild(
         labelInput(caption, getNodeLabel(cell as Node), (value) => {
           setNodeLabel(cell as Node, value)
           autoSizeNode(cell as Node, value)
         })
       )
+      if (kind === 'action') {
+        const node = cell as Node
+        this.host.appendChild(
+          checkboxInput('呼び出し動作（サブルーチン）', isCallBehavior(node), (checked) => {
+            setCallBehavior(node, checked)
+            this.render([node])
+          })
+        )
+        if (isCallBehavior(node)) {
+          this.host.appendChild(
+            hint(
+              '中身を別のアクティビティ図に描いた処理を、ここでは省略して呼び出すことを表します' +
+                '（右下の熊手の印）。名前には呼び出す図（関数）の名前を書きます。'
+            )
+          )
+        }
+      }
       if (kind !== 'swimlane') this.appendSizeSection(cell as Node)
       return true
     }
@@ -1012,6 +1037,8 @@ function typeRow(kind: CellKind, cell: Cell): HTMLElement {
       text = 'ノート'
       break
     case 'action':
+      text = isCallBehavior(cell as Node) ? '呼び出し動作（サブルーチン）' : ACTIVITY_KIND_LABEL.action
+      break
     case 'decision':
     case 'merge':
     case 'initial':

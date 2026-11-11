@@ -310,6 +310,20 @@ export const NOTE = {
  * コネクタ（結合子。いわゆる「おたまじゃくし」）。中にラベルを書いた小さな円で、
  * 同じラベルのコネクタ同士は線が続いていることを表す。全図種で使える。
  */
+/**
+ * 呼び出し動作（サブルーチン）の印。UML の Call Behavior Action で、
+ * アクションの右下に描く「熊手」（下向きの三叉）。size 四方の箱に描き、
+ * ノードの右端・下端からそれぞれ right / bottom 離す。
+ */
+export const CALL_RAKE = {
+  size: 12,
+  right: 9,
+  bottom: 7,
+  path: 'M 6 0 V 6 M 1 6 H 11 M 1 6 V 12 M 6 6 V 12 M 11 6 V 12',
+  /** 印の分だけ文字を置ける幅を左右とも狭める（px、片側） */
+  labelPad: 14
+} as const
+
 export const CONNECTOR = {
   size: 32,
   minSize: 16,
