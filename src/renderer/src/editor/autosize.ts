@@ -5,6 +5,7 @@
 import type { Node } from '@antv/x6'
 import {
   ACTIVITY,
+  CALL_RAKE,
   CODE_TOPIC,
   DECISION_SHAPE_POINTS,
   DECISION_WIDTH_FACTOR,
@@ -167,7 +168,9 @@ export function clearManualSize(node: Node): void {
  * ユーザーが手動リサイズしたノードは、その意思を優先して対象外にする。
  */
 export function autoSizeNode(node: Node, label: string): void {
-  const data = node.getData() as { kind?: string; code?: boolean } | undefined
+  const data = node.getData() as
+    | { kind?: string; code?: boolean; callBehavior?: boolean }
+    | undefined
   const rawKind = data?.kind
   if (rawKind === undefined || !(rawKind in AUTO_SIZE_SPECS)) return
   const kind = rawKind as AutoSizeKind
@@ -203,6 +206,10 @@ export function autoSizeNode(node: Node, label: string): void {
         // 分岐は図形（菱形 / 6 角形）によって文字を置ける幅が変わる
         ...(kind === 'decision'
           ? { widthFactor: DECISION_WIDTH_FACTOR[decisionShapeOf(node)] }
+          : {}),
+        // 呼び出し動作は右下の印の分だけ文字を内側に寄せる
+        ...(kind === 'action' && data?.callBehavior === true
+          ? { padX: defaults.padX + CALL_RAKE.labelPad }
           : {})
       }
   const size = computeAutoSize(label, spec, domMeasurer(fontSize, fontFamily))

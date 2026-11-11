@@ -1,8 +1,8 @@
 // アクティビティ図の図形ファクトリ
 
 import type { Edge, Graph, Node } from '@antv/x6'
-import { ACTIVITY, SHAPE, Z, type ActivityNodeKind } from './constants'
-import { applyFrameHeader, getCellKind, setMessageLabel } from './shapes'
+import { ACTIVITY, CALL_RAKE, SHAPE, Z, type ActivityNodeKind } from './constants'
+import { applyFrameHeader, getCellKind, getNodeLabel, setMessageLabel } from './shapes'
 import { autoSizeNode } from './autosize'
 import {
   DECISION_OUT_SIDES,
@@ -72,6 +72,44 @@ export function addActivityNode(
   if (hasLabel && opts.width == null && opts.height == null) {
     autoSizeNode(node, label)
   }
+  return node
+}
+
+/** アクションのラベルの折り返し幅（ノード幅からの差 px）。呼び出し動作は印の分だけ狭い */
+const ACTION_WRAP = -28
+
+/**
+ * 呼び出し動作（サブルーチン）か（issue #66）。
+ *
+ * UML の Call Behavior Action。別のアクティビティ図に描いた処理を、ここでは
+ * 中身を省略して呼び出すだけであることを、右下の「熊手」の印で示す。
+ * 種別は普通のアクションのままで、data.callBehavior で区別する（ラベル編集・
+ * 自動サイズ・接続・スタイル・保存はアクションと同じ扱いになる）。
+ */
+export function isCallBehavior(node: Node): boolean {
+  return (
+    getCellKind(node) === 'action' &&
+    (node.getData() as { callBehavior?: boolean } | undefined)?.callBehavior === true
+  )
+}
+
+/** アクションを呼び出し動作にする / 普通のアクションに戻す */
+export function setCallBehavior(node: Node, on: boolean): void {
+  if (getCellKind(node) !== 'action') return
+  node.updateData({ callBehavior: on })
+  node.attr('rake/display', on ? 'inline' : 'none')
+  node.attr('label/textWrap/width', on ? ACTION_WRAP - CALL_RAKE.labelPad * 2 : ACTION_WRAP)
+  autoSizeNode(node, getNodeLabel(node))
+}
+
+/** 呼び出し動作を追加する（中身を別の図に描いたアクションを呼び出す） */
+export function addCallBehaviorNode(
+  graph: Graph,
+  label: string,
+  opts: ActivityNodeOptions
+): Node {
+  const node = addActivityNode(graph, 'action', label, opts)
+  setCallBehavior(node, true)
   return node
 }
 

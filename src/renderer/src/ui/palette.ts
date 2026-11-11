@@ -14,6 +14,8 @@ export interface PaletteActions {
   addConnection: () => void
   addGate: (direction: 'in' | 'out') => void
   addActivityNode: (kind: ActivityNodeKind) => void
+  /** 呼び出し動作（サブルーチン。issue #66）を追加 */
+  addCallBehavior: () => void
   addSwimlane: () => void
   addFrame: () => void
   addText: () => void
@@ -210,6 +212,16 @@ function activityItems(a: PaletteActions): PaletteItem[] {
       title: 'アクションを追加',
       icon: `<rect x="6" y="7" width="32" height="16" rx="7" fill="#ffffff" stroke="${C.blue}" stroke-width="1.4"/>`,
       onClick: () => a.addActivityNode('action')
+    },
+    {
+      label: '呼び出し',
+      title:
+        '呼び出し動作（サブルーチン）を追加。中身を別のアクティビティ図に描いた処理を、' +
+        'ここでは省略して呼び出すことを右下の印（熊手）で示します',
+      icon:
+        `<rect x="6" y="7" width="32" height="16" rx="7" fill="#ffffff" stroke="${C.blue}" stroke-width="1.4"/>` +
+        `<path d="M 31 12 V 15 M 28 15 H 34 M 28 15 V 19 M 31 15 V 19 M 34 15 V 19" fill="none" stroke="${C.blue}" stroke-width="1.2" stroke-linecap="round"/>`,
+      onClick: a.addCallBehavior
     },
     {
       label: '分岐',
