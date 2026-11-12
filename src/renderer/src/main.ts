@@ -131,6 +131,7 @@ import {
 } from './export/raster'
 import { tileSuffix } from './export/tiles'
 import { loadSplitSettings } from './ui/exportSettings'
+import { loadViewFor, saveViewFor } from './ui/viewMemory'
 
 const SAMPLE_SEQUENCE = `participant ユーザー
 participant "Web ブラウザ" as ブラウザ
@@ -238,6 +239,9 @@ class AppController {
   constructor() {
     const container = document.getElementById('graph-container') as HTMLElement
     this.editor = new GraphEditor(container)
+    // 開いているファイルの表示位置・倍率を覚えておき、次に開いたときに戻す（issue #68）
+    this.editor.onViewChange(() => this.scheduleViewSave())
+    window.addEventListener('beforeunload', () => this.flushViewSave())
 
     this.textInput.value = SAMPLE_SEQUENCE
 
@@ -4033,6 +4037,100 @@ B --> A : 返す`
         })
       }
 
+      // 矩形選択（issue #69）の実入力テスト用: アクションを 3 つ横に並べ、
+      // 左 2 つだけを囲む矩形と、パン確認用の空白点をクライアント座標で返す
+      ;(window as unknown as Record<string, unknown>).__umlRubberSetup = async () => {
+        // 直前の撮影で広げたペインを戻し、キャンバスを十分に広くする
+        this.panes?.left.setWidth(200, false)
+        this.panes?.right.setWidth(240, false)
+        this.searchBar.close()
+        graph.cleanSelection()
+        graph.clearCells()
+        const nodes = [0, 1, 2].map((i) =>
+          addActivityNode(graph, 'action', `範囲${i + 1}`, { centerX: 200 + i * 200, centerY: 200 })
+        )
+        await new Promise((r) => setTimeout(r, 300))
+        this.editor.fit()
+        await new Promise((r) => setTimeout(r, 300))
+        // localToClient はスクローラ越しだと位置がずれるので、描画済みの矩形から測る
+        const [a, b] = nodes.map((n) =>
+          (graph.findViewByCell(n)!.container as Element).getBoundingClientRect()
+        )
+        const from = { x: a.left - 30, y: a.top - 30 }
+        const to = { x: b.right + 30, y: b.bottom + 30 }
+        const blank = { x: a.left - 30, y: a.bottom + 60 }
+        const sc = document.querySelector('.x6-graph-scroller') as HTMLElement
+        return JSON.stringify({
+          from: { x: Math.round(from.x), y: Math.round(from.y) },
+          to: { x: Math.round(to.x), y: Math.round(to.y) },
+          blank: { x: Math.round(blank.x), y: Math.round(blank.y) },
+          ids: nodes.slice(0, 2).map((n) => n.id),
+          grab: { x: Math.round((a.left + a.right) / 2), y: Math.round((a.top + a.bottom) / 2) },
+          scroll: { left: sc.scrollLeft, top: sc.scrollTop }
+        })
+      }
+      // 開いたときの表示（issue #68）: 原点から遠い所にある図を、覚えていなければ
+      // 全体表示で、覚えていればその位置・倍率で、覚えた位置が空なら全体表示で見せる
+      ;(window as unknown as Record<string, unknown>).__umlViewMemoryCheck = async () => {
+        const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+        const sc = document.querySelector('.x6-graph-scroller') as HTMLElement
+        graph.cleanSelection()
+        graph.clearCells()
+        addActivityNode(graph, 'action', '遠くA', { centerX: 4000, centerY: 3000 })
+        addActivityNode(graph, 'action', '遠くB', { centerX: 4400, centerY: 3300 })
+        this.editor.refreshScrollArea()
+        this.editor.setViewState({ zoom: 1, cx: 0, cy: 0 })
+        await wait(100)
+        const hiddenBefore = !this.editor.isAnyContentVisible()
+        const unknownPath = `diag-unknown-${Date.now()}.umlproj`
+        this.showOpenedView(unknownPath)
+        await wait(100)
+        const fitShown = this.editor.isAnyContentVisible()
+
+        // 覚えた位置・倍率へ戻る
+        const remembered = { zoom: 1.5, cx: 4400, cy: 3300 }
+        const knownPath = `diag-known-${Date.now()}.umlproj`
+        saveViewFor(knownPath, remembered)
+        this.editor.setViewState({ zoom: 1, cx: 0, cy: 0 })
+        await wait(100)
+        this.showOpenedView(knownPath)
+        await wait(100)
+        const now = this.editor.getViewState()
+        const restored =
+          Math.abs(now.zoom - remembered.zoom) < 0.01 &&
+          Math.abs(now.cx - remembered.cx) < 4 &&
+          Math.abs(now.cy - remembered.cy) < 4
+
+        // 覚えた位置に何も無ければ全体表示に切り替える
+        const emptyPath = `diag-empty-${Date.now()}.umlproj`
+        saveViewFor(emptyPath, { zoom: 1, cx: -3000, cy: -3000 })
+        this.showOpenedView(emptyPath)
+        await wait(100)
+        const fallback = this.editor.isAnyContentVisible()
+
+        // スクロールするとそのファイルの位置として記録される
+        const prevPath = this.currentPath
+        this.currentPath = knownPath
+        sc.scrollLeft += 37
+        await wait(600)
+        const after = loadViewFor(knownPath)
+        const tracked = after !== null && Math.abs(after.cx - this.editor.getViewState().cx) < 1
+        this.currentPath = prevPath
+
+        const ok = hiddenBefore && fitShown && restored && fallback && tracked
+        return ok
+          ? 'ok'
+          : `ng(hidden=${hiddenBefore}, fit=${fitShown}, restored=${restored}:${JSON.stringify(now)}, fallback=${fallback}, tracked=${tracked})`
+      }
+      ;(window as unknown as Record<string, unknown>).__umlRubberState = () => {
+        const sc = document.querySelector('.x6-graph-scroller') as HTMLElement
+        return JSON.stringify({
+          selected: graph.getSelectedCells().map((c) => c.id),
+          pos: graph.getNodes().map((n) => n.getPosition()),
+          scroll: { left: sc.scrollLeft, top: sc.scrollTop }
+        })
+      }
+
       ;(window as unknown as Record<string, unknown>).__umlExportPng = () =>
         exportGraphToDataUrl(graph, 'png', { pixelRatio: 2 })
       ;(window as unknown as Record<string, unknown>).__umlExportSvg = async () =>
@@ -5003,6 +5101,7 @@ B --> A : 返す`
 
   /** 図をクリアして未保存状態に戻す（確認はしない） */
   private newProject(): void {
+    this.flushViewSave()
     this.mindmapClip = null
     this.editor.clear()
     this.currentPath = null
@@ -5015,15 +5114,47 @@ B --> A : 返す`
     const result = await window.uml.openProject()
     if (!result) return
     try {
+      this.flushViewSave()
       const type = loadProject(this.editor, result.content)
       this.applyDiagramType(type)
       this.editor.refreshScrollArea()
       this.currentPath = result.path
+      this.showOpenedView(result.path)
       this.setDirty(false)
       this.updateStatus()
     } catch (e) {
       this.setStatusMessage(`読み込みに失敗しました: ${(e as Error).message}`)
     }
+  }
+
+  // ---- 表示位置の記憶（issue #68） ----
+
+  private viewSaveTimer: number | null = null
+
+  /**
+   * 開いたファイルを見える状態で表示する。前回の位置・倍率を覚えていればそこへ
+   * 戻し、覚えていないか、戻しても要素が 1 つも見えない（ファイルが外で書き換え
+   * られた等）ときは「全体」表示にする。
+   */
+  private showOpenedView(path: string): void {
+    const saved = loadViewFor(path)
+    if (saved) this.editor.setViewState(saved)
+    if (!saved || !this.editor.isAnyContentVisible()) this.editor.fit()
+  }
+
+  /** スクロール・ズームのたびに書くと重いので、落ち着いてから記録する */
+  private scheduleViewSave(): void {
+    if (!this.currentPath) return
+    if (this.viewSaveTimer !== null) window.clearTimeout(this.viewSaveTimer)
+    this.viewSaveTimer = window.setTimeout(() => this.flushViewSave(), 400)
+  }
+
+  /** 記録待ちがあれば今のファイルの表示状態をすぐ記録する */
+  private flushViewSave(): void {
+    if (this.viewSaveTimer === null) return
+    window.clearTimeout(this.viewSaveTimer)
+    this.viewSaveTimer = null
+    if (this.currentPath) saveViewFor(this.currentPath, this.editor.getViewState())
   }
 
   /** 保存できたら true（保存先ダイアログをキャンセルしたら false） */
@@ -5032,6 +5163,7 @@ B --> A : 返す`
     const path = await window.uml.saveProject(content, this.currentPath)
     if (!path) return false
     this.currentPath = path
+    saveViewFor(path, this.editor.getViewState())
     this.setDirty(false)
     this.updateStatus()
     return true
@@ -5042,6 +5174,7 @@ B --> A : 返す`
     const path = await window.uml.saveProjectAs(content, `${this.defaultBaseName()}.umlproj`)
     if (!path) return false
     this.currentPath = path
+    saveViewFor(path, this.editor.getViewState())
     this.setDirty(false)
     this.updateStatus()
     return true

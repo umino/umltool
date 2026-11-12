@@ -45,8 +45,8 @@ export const MOUSE_SHORTCUTS: ShortcutGroup = {
   rows: [
     { keys: ['ホイール'], label: 'スクロール' },
     { keys: ['Ctrl', '＋', 'ホイール'], label: 'ズーム（カーソル位置基準）' },
-    { keys: ['中ドラッグ'], label: 'パン（空白を左ドラッグでも可）' },
-    { keys: ['Shift', '＋', '左ドラッグ'], label: '矩形選択' },
+    { keys: ['左ドラッグ'], label: '空白から囲んで矩形選択' },
+    { keys: ['右ドラッグ'], label: 'パン（中ドラッグでも可）' },
     { keys: ['Ctrl', '＋', 'クリック'], label: '選択に追加 / 解除' },
     { keys: ['ダブルクリック'], label: 'ラベルをその場で編集' }
   ]
