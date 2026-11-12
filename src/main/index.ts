@@ -276,6 +276,71 @@ function createWindow(): void {
               console.log(`[DIAG-SEARCH] ${outSearch}`)
             }
           }
+
+          // 矩形選択（issue #69）: 空白の左ドラッグで囲んだものだけが選ばれ、
+          // 右ドラッグはパンになる（選択は変えない）
+          const rubber = await wc.executeJavaScript(
+            'window.__umlRubberSetup ? window.__umlRubberSetup() : ""'
+          )
+          if (typeof rubber === 'string' && rubber !== '') {
+            const r = JSON.parse(rubber)
+            const drag = async (
+              from: { x: number; y: number },
+              to: { x: number; y: number },
+              button: 'left' | 'right'
+            ): Promise<void> => {
+              wc.sendInputEvent({ type: 'mouseDown', x: from.x, y: from.y, button, clickCount: 1 })
+              for (let i = 1; i <= 8; i++) {
+                const x = Math.round(from.x + ((to.x - from.x) * i) / 8)
+                const y = Math.round(from.y + ((to.y - from.y) * i) / 8)
+                wc.sendInputEvent({
+                  type: 'mouseMove',
+                  x,
+                  y,
+                  button,
+                  modifiers: [button === 'left' ? 'leftbuttondown' : 'rightbuttondown']
+                })
+                await sleep(20)
+              }
+              wc.sendInputEvent({ type: 'mouseUp', x: to.x, y: to.y, button, clickCount: 1 })
+              await sleep(200)
+            }
+            await drag(r.from, r.to, 'left')
+            const afterSelect = JSON.parse(await wc.executeJavaScript('window.__umlRubberState()'))
+            const sel: string[] = afterSelect.selected
+            const selectedOk =
+              sel.length === r.ids.length && r.ids.every((id: string) => sel.includes(id))
+            const notPanned =
+              afterSelect.scroll.left === r.scroll.left && afterSelect.scroll.top === r.scroll.top
+            // 囲んで選んだものは、どれか 1 つを掴めばまとめて動く（3 つ目は動かない）
+            await drag(r.grab, { x: r.grab.x + 48, y: r.grab.y + 40 }, 'left')
+            const afterMove = JSON.parse(await wc.executeJavaScript('window.__umlRubberState()'))
+            const delta = (i: number): { x: number; y: number } => ({
+              x: afterMove.pos[i].x - afterSelect.pos[i].x,
+              y: afterMove.pos[i].y - afterSelect.pos[i].y
+            })
+            const [d0, d1, d2] = [delta(0), delta(1), delta(2)]
+            const movedTogether =
+              d0.x > 0 && d0.y > 0 && d0.x === d1.x && d0.y === d1.y && d2.x === 0 && d2.y === 0
+            await drag(r.blank, { x: r.blank.x + 120, y: r.blank.y + 80 }, 'right')
+            const afterPan = JSON.parse(await wc.executeJavaScript('window.__umlRubberState()'))
+            const panned =
+              afterPan.scroll.left !== afterMove.scroll.left ||
+              afterPan.scroll.top !== afterMove.scroll.top
+            const keptSelection = afterPan.selected.length === sel.length
+            const ok = selectedOk && notPanned && movedTogether && panned && keptSelection
+            console.log(
+              `[DIAG-RUBBER] ${ok ? 'ok' : 'ng'} selected=${sel.length}/${r.ids.length} ` +
+                `match=${selectedOk} noPanOnLeft=${notPanned} moved=${movedTogether}(${JSON.stringify([d0, d1, d2])}) ` +
+                `rightPan=${panned} kept=${keptSelection}`
+            )
+          }
+
+          // 開いたときの表示位置（issue #68）
+          const viewMemory = await wc.executeJavaScript(
+            'window.__umlViewMemoryCheck ? window.__umlViewMemoryCheck() : "missing"'
+          )
+          console.log(`[DIAG-VIEW] ${viewMemory}`)
         } catch (err) {
           console.log(`[DIAG-ERROR] ${(err as Error).message}`)
         }

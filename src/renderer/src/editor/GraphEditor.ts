@@ -218,15 +218,20 @@ export class GraphEditor {
     this.scroller = new Scroller({
       enabled: true,
       autoResize: true,
-      pannable: { enabled: true, eventTypes: ['leftMouseDown'] }
+      // 空白の左ドラッグは矩形選択に使うので、パンは右ドラッグ（と中ドラッグ）
+      pannable: { enabled: true, eventTypes: ['rightMouseDown'] }
     })
     this.graph.use(this.scroller)
     this.graph.use(
       new Selection({
         enabled: true,
         multiple: true,
+        // 空白を左ドラッグすると矩形選択（Visio と同じ）。Shift / Ctrl を
+        // 押しながらでも選べる。枠に完全に収まった要素だけを選ぶので、
+        // スイムレーンや複合フラグメントの中で囲んでも外枠は選ばれない。
         rubberband: true,
-        modifiers: 'shift',
+        modifiers: null,
+        strict: true,
         movable: true,
         // 背景色レイヤは純描画用なので選択させない（削除・移動されると壊れる）
         filter: (cell: Cell) => getCellKind(cell) !== 'fragmentBg',
@@ -1439,6 +1444,33 @@ export class GraphEditor {
   getVisibleCenter(): { x: number; y: number } {
     const area = this.scroller.getVisibleArea()
     return { x: area.x + area.width / 2, y: area.y + area.height / 2 }
+  }
+
+  /** 今の倍率と、画面中央に見えている点（ファイルごとに覚えておく用） */
+  getViewState(): { zoom: number; cx: number; cy: number } {
+    const c = this.getVisibleCenter()
+    return { zoom: this.scroller.zoom(), cx: c.x, cy: c.y }
+  }
+
+  /** 覚えておいた倍率と中央の点に戻す（倍率は許容範囲に収める） */
+  setViewState(view: { zoom: number; cx: number; cy: number }): void {
+    const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, view.zoom))
+    this.scroller.zoomTo(zoom)
+    this.scroller.centerPoint(view.cx, view.cy)
+  }
+
+  /** 図の要素が 1 つでも画面に見えているか（要素が無ければ true） */
+  isAnyContentVisible(): boolean {
+    const cells = this.graph.getCells().filter((c) => getCellKind(c) !== 'fragmentBg')
+    if (cells.length === 0) return true
+    const area = this.scroller.getVisibleArea()
+    return cells.some((c) => c.getBBox().isIntersectWithRect(area))
+  }
+
+  /** 表示位置・倍率が変わったら呼ぶ（スクロール・ズームの両方） */
+  onViewChange(fn: () => void): void {
+    this.scroller.container.addEventListener('scroll', fn, { passive: true })
+    this.graph.on('scale', fn)
   }
 
   /** セルが画面外なら見える位置までスクロールする */
