@@ -341,6 +341,18 @@ function createWindow(): void {
             'window.__umlViewMemoryCheck ? window.__umlViewMemoryCheck() : "missing"'
           )
           console.log(`[DIAG-VIEW] ${viewMemory}`)
+
+          // C++ のコードからアクティビティ図を作る
+          const cpp = await wc.executeJavaScript(
+            'window.__umlCppCheck ? window.__umlCppCheck() : "missing"'
+          )
+          console.log(`[DIAG-CPP] ${cpp}`)
+          const cppPng = await wc.executeJavaScript('window.__cppPng ?? ""')
+          if (typeof cppPng === 'string' && cppPng.startsWith('data:image/png')) {
+            const outCpp = join(process.cwd(), 'diag-output-cpp.png')
+            await writeFile(outCpp, Buffer.from(cppPng.split(',')[1], 'base64'))
+            console.log(`[DIAG-PNG-CPP] ${outCpp}`)
+          }
         } catch (err) {
           console.log(`[DIAG-ERROR] ${(err as Error).message}`)
         }
@@ -565,6 +577,33 @@ ipcMain.handle('project:open', async () => {
   const path = result.filePaths[0]
   const content = await readFile(path, 'utf-8')
   return { path, content }
+})
+
+// ---- IPC: C++ ソースを開く（アクティビティ図へ変換する元） ----
+
+const CPP_FILTERS = [
+  { name: 'C / C++ ソース', extensions: ['cpp', 'cc', 'cxx', 'c++', 'c', 'h', 'hpp', 'hh', 'hxx', 'inl', 'ipp'] },
+  { name: 'すべてのファイル', extensions: ['*'] }
+]
+
+/** UTF-8 として読めなければ Shift_JIS とみなす（日本語の Windows で多い） */
+function decodeSource(buf: Buffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^﻿/, '')
+  } catch {
+    return new TextDecoder('shift_jis').decode(buf)
+  }
+}
+
+ipcMain.handle('cpp:open', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    title: 'C++ のソースを開く',
+    properties: ['openFile'],
+    filters: CPP_FILTERS
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  const path = result.filePaths[0]
+  return { path, content: decodeSource(await readFile(path)) }
 })
 
 // ---- IPC: 画像書き出し ----
