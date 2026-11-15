@@ -132,6 +132,7 @@ import {
 import { tileSuffix } from './export/tiles'
 import { loadSplitSettings } from './ui/exportSettings'
 import { loadViewFor, saveViewFor } from './ui/viewMemory'
+import { CppImportPanel } from './ui/cppImport'
 
 const SAMPLE_SEQUENCE = `participant ユーザー
 participant "Web ブラウザ" as ブラウザ
@@ -209,6 +210,7 @@ class AppController {
   private readonly editor: GraphEditor
   private readonly toolbar: ToolbarHandle
   private readonly palette: PaletteHandle
+  private cppPanel: CppImportPanel | null = null
   private currentPath: string | null = null
   private dirty = false
   private diagramType: DiagramType = 'sequence'
@@ -339,6 +341,26 @@ class AppController {
     this.bindKeys()
 
     document.getElementById('generate-btn')?.addEventListener('click', () => this.generate())
+
+    // C++ のコードからアクティビティ図を作る（アクティビティ図のときだけ表示）
+    this.cppPanel = new CppImportPanel(
+      document.getElementById('tab-text') as HTMLElement,
+      this.textError,
+      {
+        getText: () => this.textInput.value,
+        applyActivityText: (text) => {
+          this.textInput.value = text
+          this.generate()
+          return this.textError.textContent === ''
+        },
+        showError: (message) => {
+          this.textError.textContent = message
+        },
+        showStatus: (message) => this.setStatusMessage(message),
+        openCppSource: () => window.uml.openCppSource()
+      }
+    )
+    this.cppPanel.setVisible(this.diagramType === 'activity')
 
     // 初期表示としてサンプルを描画
     this.generate()
@@ -4071,6 +4093,68 @@ B --> A : 返す`
       }
       // 開いたときの表示（issue #68）: 原点から遠い所にある図を、覚えていなければ
       // 全体表示で、覚えていればその位置・倍率で、覚えた位置が空なら全体表示で見せる
+      // C++ → アクティビティ図: 操作欄の表示切替と、変換結果が図になるところまで
+      ;(window as unknown as Record<string, unknown>).__umlCppCheck = async () => {
+        const row = document.querySelector('.cpp-row') as HTMLElement | null
+        this.applyDiagramType('sequence')
+        const hiddenInSequence = row?.hidden === true
+        this.applyDiagramType('activity')
+        const shownInActivity = row?.hidden === false
+        const src = [
+          '#include <vector>',
+          'namespace app {',
+          'class OrderService {',
+          'public:',
+          '  OrderService(Repo& r) : repo_(r), count_{0} {}',
+          '  int process(const std::vector<Order>& orders) {',
+          '    int total = 0;',
+          '    for (const auto& o : orders) {',
+          '      if (!o.valid()) { log("invalid"); continue; }',
+          '      switch (o.kind) {',
+          '        case Kind::A: total += o.price; break;',
+          '        default: throw std::runtime_error("unknown");',
+          '      }',
+          '    }',
+          '    int retry = 0;',
+          '    do { ++retry; } while (!repo_.save(total) && retry < 3);',
+          '    return total;',
+          '  }',
+          '};',
+          '}'
+        ].join('\n')
+        this.textError.textContent = ''
+        this.cppPanel?.loadSource(src, 'diag.cpp')
+        await new Promise((r) => setTimeout(r, 300))
+        const select = document.getElementById('cpp-func') as HTMLSelectElement | null
+        const nodes = graph.getNodes().length
+        const flows = graph.getEdges().length
+        const textOk = this.textInput.value.includes('while (orders の各要素')
+        const errorText = this.textError.textContent ?? ''
+        ;(window as unknown as Record<string, unknown>).__cppPng = await exportGraphToDataUrl(
+          graph,
+          'png',
+          { pixelRatio: 1 }
+        )
+        // 関数を切り替えると図も変わる（コンストラクタは中身が無いので start → stop だけ）
+        if (select) {
+          select.value = '0'
+          select.dispatchEvent(new Event('change'))
+        }
+        const ctorNodes = graph.getNodes().length
+        const ok =
+          hiddenInSequence &&
+          shownInActivity &&
+          errorText === '' &&
+          textOk &&
+          nodes > 15 &&
+          flows > 15 &&
+          select?.hidden === false &&
+          select.value === '0' &&
+          ctorNodes === 2
+        return ok
+          ? `ok(nodes=${nodes}, flows=${flows})`
+          : `ng(hidden=${hiddenInSequence}, shown=${shownInActivity}, err=${errorText}, text=${textOk}, nodes=${nodes}, flows=${flows}, select=${select?.hidden}/${select?.value}, ctor=${ctorNodes})`
+      }
       ;(window as unknown as Record<string, unknown>).__umlViewMemoryCheck = async () => {
         const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
         const sc = document.querySelector('.x6-graph-scroller') as HTMLElement
@@ -4224,6 +4308,7 @@ B --> A : 返す`
     this.toolbar.setDecisionShape(this.editor.getDecisionShape())
     this.toolbar.setMindmapLayout(this.editor.getMindmapLayout())
     this.palette.setDiagramType(type)
+    this.cppPanel?.setVisible(type === 'activity')
   }
 
   /** 左ペインのタブ（テキスト / 部品）切替 */

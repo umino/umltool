@@ -14,6 +14,8 @@ const api = {
   saveProjectAs: (content: string, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('project:saveAs', content, defaultName),
   openProject: (): Promise<OpenedProject | null> => ipcRenderer.invoke('project:open'),
+  // C++ のソースを開く（アクティビティ図へ変換する元。文字コードは UTF-8 / Shift_JIS を判別）
+  openCppSource: (): Promise<OpenedProject | null> => ipcRenderer.invoke('cpp:open'),
 
   // 画像書き出し
   exportImage: (dataUrl: string, format: ImageFormat, defaultName: string): Promise<string | null> =>

@@ -5,6 +5,10 @@
 //   :アクション;
 //   if (条件) then (yes) … else (no) … endif
 //   fork … fork again … end fork
+//   while (条件) is (yes) … endwhile (no)
+//   repeat … repeat while (条件) is (yes) not (no)
+//   break（もっとも内側の while / repeat を抜ける）
+//   continue（もっとも内側の while / repeat の条件へ戻る。PlantUML には無い拡張）
 //   |レーン名|
 //   コメント: 行頭 ' # //、@startuml/@enduml/title は無視
 
@@ -44,7 +48,13 @@ const RE = {
   fork: /^fork$/i,
   forkAgain: /^fork\s+again$/i,
   endFork: /^end\s*fork$/i,
-  lane: /^\|(.+?)\|$/
+  lane: /^\|(.+?)\|$/,
+  while: /^while\s*\((.*?)\)(?:\s*is\s*\((.*?)\))?$/i,
+  endwhile: /^end\s*while(?:\s*\((.*?)\))?$/i,
+  repeat: /^repeat$/i,
+  repeatWhile: /^repeat\s+while\s*\((.*?)\)(?:\s*is\s*\((.*?)\))?(?:\s*not\s*\((.*?)\))?$/i,
+  break: /^break$/i,
+  continue: /^continue$/i
 }
 
 /**
@@ -75,7 +85,31 @@ interface ForkFrame {
   branchEnds: string[]
 }
 
-type Frame = IfFrame | ForkFrame
+/** while: 条件の分岐へ本体の最後から戻る。break した位置は抜けた先で合流する */
+interface WhileFrame {
+  type: 'while'
+  decisionId: string
+  baseCol: number
+  breaks: BranchEnd[]
+}
+
+/** repeat: 先頭の合流点へ、末尾の条件分岐から戻る */
+interface RepeatFrame {
+  type: 'repeat'
+  startId: string
+  breaks: BranchEnd[]
+  /** continue した位置。末尾の条件分岐ができたらそこへ繋ぐ */
+  continues: BranchEnd[]
+}
+
+type Frame = IfFrame | ForkFrame | WhileFrame | RepeatFrame
+
+const FRAME_OPEN: Record<Frame['type'], string> = {
+  if: 'if が endif',
+  fork: 'fork が end fork',
+  while: 'while が endwhile',
+  repeat: 'repeat が repeat while'
+}
 
 export function parseActivity(text: string): ParsedActivity {
   const nodes: ActivityNode[] = []
@@ -113,6 +147,22 @@ export function parseActivity(text: string): ParsedActivity {
     label: endId === decisionId ? pendingLabel : ''
   })
 
+  /**
+   * ループを抜けた先を決める。break が無ければ条件分岐から（pendingLabel を
+   * 付けて）そのまま続け、あれば合流点を作って break した位置もそこへ集める。
+   */
+  const closeLoop = (decisionId: string, breaks: BranchEnd[]): void => {
+    if (breaks.length === 0) {
+      cursor = decisionId
+      return
+    }
+    const mergeId = rawNode('merge', '')
+    edges.push({ from: decisionId, to: mergeId, label: pendingLabel })
+    for (const b of breaks) edges.push({ from: b.id, to: mergeId, label: b.label })
+    pendingLabel = ''
+    cursor = mergeId
+  }
+
   const lines = text.split(/\r?\n/)
   lines.forEach((raw, idx) => {
     const lineNo = idx + 1
@@ -126,6 +176,8 @@ export function parseActivity(text: string): ParsedActivity {
       return
     }
     if (RE.stop.test(line)) {
+      // どこからも流れ着かない stop（直前の枝がすべて stop 済み等）は置かない
+      if (cursor === null && nodes.length > 0) return
       flowNode('final', '')
       cursor = null
       return
@@ -175,6 +227,11 @@ export function parseActivity(text: string): ParsedActivity {
       }
       currentCol = frame.baseCol
       pendingLabel = ''
+      // どの枝も stop / break で終わっていれば、合流点は作らない（後続は到達しない）
+      if (ends.length === 0) {
+        cursor = null
+        return
+      }
       const mergeId = rawNode('merge', '')
       for (const end of ends) edges.push({ from: end.id, to: mergeId, label: end.label })
       cursor = mergeId
@@ -219,6 +276,68 @@ export function parseActivity(text: string): ParsedActivity {
       })
       return
     }
+    // repeat while は repeat より先に判定する
+    if ((m = RE.repeatWhile.exec(line))) {
+      const frame = frames.pop()
+      if (!frame || frame.type !== 'repeat') {
+        throw new ParseError('対応する repeat のない repeat while です', lineNo)
+      }
+      // 本体が continue / break で終わっていれば、条件分岐へは continue からだけ入る
+      const decisionId = flowNode('decision', m[1].trim())
+      for (const c of frame.continues) edges.push({ from: c.id, to: decisionId, label: c.label })
+      edges.push({ from: decisionId, to: frame.startId, label: (m[2] ?? '').trim() })
+      pendingLabel = (m[3] ?? '').trim()
+      closeLoop(decisionId, frame.breaks)
+      return
+    }
+    if (RE.repeat.test(line)) {
+      const startId = flowNode('merge', '')
+      frames.push({ type: 'repeat', startId, breaks: [], continues: [] })
+      return
+    }
+    if ((m = RE.while.exec(line))) {
+      const decisionId = flowNode('decision', m[1].trim())
+      frames.push({ type: 'while', decisionId, baseCol: currentCol, breaks: [] })
+      pendingLabel = (m[2] ?? '').trim()
+      // 本体は 1 列右に置き、抜ける線が本体を貫かずにまっすぐ下へ行けるようにする
+      currentCol += 1
+      return
+    }
+    if ((m = RE.endwhile.exec(line))) {
+      const frame = frames.pop()
+      if (!frame || frame.type !== 'while') {
+        throw new ParseError('対応する while のない endwhile です', lineNo)
+      }
+      // 本体の最後から条件へ戻る（本体が空なら条件の yes がそのまま戻る）
+      if (cursor !== null) {
+        edges.push({ from: cursor, to: frame.decisionId, label: pendingLabel })
+      }
+      pendingLabel = (m[1] ?? '').trim()
+      currentCol = frame.baseCol
+      closeLoop(frame.decisionId, frame.breaks)
+      return
+    }
+    if (RE.break.test(line) || RE.continue.test(line)) {
+      const isBreak = RE.break.test(line)
+      const loop = [...frames]
+        .reverse()
+        .find((f): f is WhileFrame | RepeatFrame => f.type === 'while' || f.type === 'repeat')
+      if (!loop) {
+        throw new ParseError(
+          `while / repeat の外で ${isBreak ? 'break' : 'continue'} は使えません`,
+          lineNo
+        )
+      }
+      if (cursor !== null) {
+        if (isBreak) loop.breaks.push({ id: cursor, label: pendingLabel })
+        else if (loop.type === 'while') {
+          edges.push({ from: cursor, to: loop.decisionId, label: pendingLabel })
+        } else loop.continues.push({ id: cursor, label: pendingLabel })
+      }
+      cursor = null
+      pendingLabel = ''
+      return
+    }
     if ((m = RE.lane.exec(line))) {
       const name = m[1].trim()
       if (name === '') throw new ParseError('レーン名が空です', lineNo)
@@ -232,8 +351,7 @@ export function parseActivity(text: string): ParsedActivity {
 
   if (frames.length > 0) {
     const frame = frames[frames.length - 1]
-    const what = frame.type === 'if' ? 'if が endif' : 'fork が end fork'
-    throw new ParseError(`${what} で閉じられていません`, lines.length)
+    throw new ParseError(`${FRAME_OPEN[frame.type]} で閉じられていません`, lines.length)
   }
 
   return { nodes, edges, lanes }
